@@ -31,5 +31,7 @@
   <string>@MINIMUM_SYSTEM@</string>
   <key>NSHighResolutionCapable</key>
   <true/>
+  <key>NSHumanReadableCopyright</key>
+  <string>MIT License</string>
 </dict>
 </plist>

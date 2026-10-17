@@ -26,6 +26,10 @@
 #   OA_VERSION         the version, MAJOR.MINOR.PATCH[-suffix] [0.0.0-dev]
 #   SOURCE_DATE_EPOCH  the time stamp of the packages' files [the last commit's]
 #   OA_APPIMAGE_RUNTIME  the AppImage runtime [downloaded, its SHA-256 checked]
+#   OA_MKSQUASHFS      squashfs-tools' mksquashfs, 4.4 or later, with zstd
+#                      [mksquashfs]; without root, a build of
+#                      https://github.com/plougher/squashfs-tools (`make
+#                      ZSTD_SUPPORT=1` in its squashfs-tools folder) works
 #   OA_CMAKE_ARGS      extra arguments of the CMake configuration
 #
 # It runs with macOS's bash 3.2: no associative arrays, and the arrays that
@@ -163,7 +167,7 @@ package_linux() {
   fix_times "${appdir}"
   rm -f "${work}/image.squashfs"
   # (mksquashfs stamps every file and the image SOURCE_DATE_EPOCH.)
-  mksquashfs "${appdir}" "${work}/image.squashfs" -root-owned -noappend -comp zstd -quiet
+  "${OA_MKSQUASHFS:-mksquashfs}" "${appdir}" "${work}/image.squashfs" -root-owned -noappend -comp zstd -quiet
   local appimage="${dist}/${name}-linux-${arch}.AppImage"
   cat "$(appimage_runtime "${arch}")" "${work}/image.squashfs" > "${appimage}"
   chmod 755 "${appimage}"

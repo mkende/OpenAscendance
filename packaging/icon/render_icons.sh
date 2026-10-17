@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Renders the launcher icons from packaging/icon/open_ascendance.svg (the
-# placeholder icon) into the committed pictures, so that no build needs an
+# star rise icon) into the committed pictures, so that no build needs an
 # SVG renderer:
 #   packaging/icon/icon-<size>.png  the desktop icons, 16 to 1024 pixels
 #                                   (Linux, and macOS's .icns made by
@@ -9,7 +9,7 @@
 #   android/res/mipmap-<density>/   Android's launcher icons: the legacy
 #                                   square and round 48 dp icons, and the
 #                                   adaptive icon's 108 dp foreground (the
-#                                   galaxy within the central 66 dp the
+#                                   picture within the central 66 dp the
 #                                   launchers keep) and monochrome layer
 # Run it after changing the SVG, and commit its output.
 #

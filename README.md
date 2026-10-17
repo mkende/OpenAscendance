@@ -1,106 +1,84 @@
 # Open Ascendance
 
-A faithful open-source remake of **Ascendancy** (The Logic Factory, 1995) in
-C++20 and SDL3, built from the reverse engineering in this repository
-(`../docs`). It reads the original game files from the player's own install
-(the folder holding `COB.CFG` and the `ASCEND00..02.COB` archives).
+Open Ascendance is an open-source remake of *Ascendancy*, the space
+strategy game published by The Logic Factory in 1995. It runs on Windows,
+macOS, Linux and Android, and plays both the standard game (version 1.6.5)
+and the Antagonizer edition.
 
-Status: milestone 1, the platform layer, the asset decoders, the logo, the
-opening menu and the intro with its subtitles and music, the window toolkit
-(buttons, toggles, list boxes, help, modal dialogs, help mode, exit corners,
-hotkeys, `ascend.cfg`) and the front-end screens (new game, species history,
-load/save lists); milestone 2 (in progress), the game screens over the game
-core: the star map (its new-game, species and diplomacy variants), the saves
-with their window state, the planet and research screens; the diplomacy
-(milestone 6): species selection, negotiation, intelligence and the special
-abilities window; the System Display (milestone 5): the 3D star-system view
-and the battles played in it; the days played from the star map (Next Day,
-the auto next turn, the game-event boxes and the screens they lead to, the
-end of the game) and the tutorials (replays of their recorded input).
+Status: in development. The front end (logo, intro, opening menu, new game,
+species history, load and save), the star map, the System Display and its
+battles, the planets, research and diplomacy screens, the days with their
+game events up to the end of the game, and the tutorials are playable; the
+saves are compatible with the original's.
 
-## Layout
+## Playing
 
-The modules follow the original's (`docs/05-subsystems.md`), comments citing
-the functions they port with their `PATCH.EXE` address:
+1. **Get the original game.** Open Ascendance is only an engine: it plays
+   your own copy of Ascendancy and does not include any of its files. It
+   needs an installed version of the original game (the folder holding
+   `COB.CFG` and the `ASCEND00..02.COB` archives) to read them from.
 
-- `src/core`: install access, the Watcom `rand` and `qsort`, logging.
-- `src/assets`: the COB archives (`cfile`), shapes, palettes, haze tables,
-  fonts, GIF, FLC, sounds and the text tables.
-- `src/game`: the headless game core (no SDL): the game tables, the state
-  (`Cosmos`, races, stars, lanes, planets, ships, research), the saves, the
-  galaxy generation and the day (`cosmos.h`: `cosmos_end_day` and the
-  contested-star walk; planets, research, ships and gizmos, diplomacy, the
-  battle rules and the System Display's turn loop `battle_control.h`), with
-  each variant's AI behind `ai.h` (Standard: `race_ai`, `battle`;
-  Antagonizer: `antag_*`).
-- `src/gfx`: the VFX blitters, the fonts, `GSystem` (screen, DAC, fades).
-- `src/audio`: the mixer and `SoundSystem` (music and effects).
-- `src/platform`: the SDL window, input, clock and sound output.
-- `src/ui`: `WinMgr` (with the game events and the trace replay), `GWindow`
-  and the toolkit's window classes, the game-event box, the FLIC player and
-  window, `GameSession` (the game core as the screens see it)
-  and `GameCoreSession` (it over `src/game`: saves, new game, the day).
-- `src/screens`: the screens (new game, species history, load/save and
-  tutorial lists, the star map, the System Display, planets, research,
-  negotiation, intelligence, end of game).
-- `src/app`: `main`, the command line and the install setup.
+2. **Download** the package for your system from the
+   [latest release](../../releases/latest):
 
-## Build
+   - **Windows** 10 or later (x64): unzip the `.zip` anywhere and start the
+     program. It is not signed, so Windows SmartScreen will ask for
+     confirmation the first time you run it: click "More info", then "Run
+     anyway".
+   - **macOS** 13.3 or later (Apple Silicon and Intel): open the `.dmg` and
+     drag the app onto Applications. As it is not notarized by Apple, macOS
+     will refuse to open it the first time. Click Done, then go to System
+     Settings, Privacy & Security, and click "Open Anyway".
+   - **Linux** (x86_64 or aarch64, with glibc 2.35 or later, as in Ubuntu
+     22.04 and Debian 12): make the `.AppImage` executable and run it. The
+     `.tar.gz` contains the same program, with a menu entry and an icon.
+   - **Android** 7.0 or later (phones, tablets and Chromebooks): the `.apk`,
+     which you will need to sideload.
 
-CMake 3.25 or later, Ninja, clang and git (CMake downloads SDL3 and Catch2;
-`-DFETCHCONTENT_SOURCE_DIR_SDL3=<dir>` and `_CATCH2` reuse a checkout):
+3. **Start it.** The first time you launch the game, it asks for the folder
+   where Ascendancy is installed and remembers it. On Android, the folder's
+   files are copied into the app (the folder may then be removed). Open
+   Ascendance never writes into the original install: your saves and options
+   go to an Open Ascendance folder in your home folder.
 
-    cmake -S . -B build/debug -G Ninja -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
-    ninja -C build/debug
+## Classic and Extended
 
-Debug builds (the default) enable ASan and UBSan; under WSLg set
-`ASAN_OPTIONS=detect_leaks=0`. Add `-DCMAKE_BUILD_TYPE=Release` for a release
-build. [BUILD.md](BUILD.md) has the Windows, macOS and Android builds and the
-packages, [RELEASING.md](RELEASING.md) the releases.
+- **Classic** plays the original game as it was, with the same rules,
+  screens and AI, and even its bugs, in two variants chosen in the opening
+  menu's **Options** (for the next new game, kept in its saves):
+  **Standard** (Ascendancy 1.6.5) and **Antagonizer** (the Antagonizer
+  edition's opponents and rule changes). The interface is only improved
+  where it never changes the game: per-user saves outside the original's
+  folder, scaling of the original 640x480 picture to any window size (smooth
+  or sharp pixels), full screen with Alt+Enter, music and sound toggles.
 
-## Run
+- **Extended** (planned): the classic game with fixes and improvements.
 
-    build/debug/src/app/open_ascendance [--data <install dir> | --setup]
-        [--sharp | --smooth] [--fullscreen | --window] [--variant standard|antagonizer]
+## Building and contributing
 
-Without `--data` the game asks once for the install folder and remembers it.
-Alt+Enter toggles fullscreen. `--screenshot <file.bmp> [--frames N]` with
-`--keys <k1,k2,...>` runs headless and saves a frame, `--save-dir <dir>`
-keeping its saves and Alt+G screenshots, and `--seed N` starts the galaxy of
-the oracle's runs; `--trace <file.bin>` replays a window-event trace (an
-oracle run's `trace.bin`) from the opening menu
-([`src/app/command_line.h`](src/app/command_line.h)).
+See [BUILD.md](BUILD.md) to learn how to build, run and test Open
+Ascendance, and how its sources are organised, and
+[RELEASING.md](RELEASING.md) for how its releases are made.
 
-## Options
+The remake is built from a reverse engineering of the original game, kept
+in a separate, private repository: its specifications (file formats, data
+structures, the game's rules and AI) and the reference runs of the original
+that the tests compare with. Code comments cite the original functions they
+port by their `PATCH.EXE` address, and the specifications of that
+repository by their path there (`docs/…`, `recon/…`, `tools/…`,
+`tests/oracle/…`).
 
-The opening menu has an **Options** button, the remake's own (the seven
-original buttons are a little shorter to make room). Its screen sets:
+## Disclaimer
 
-- **Game variant**: the rules and opponents of the next new game, Standard
-  (Ascendancy 1.6.5) or Antagonizer (the Antagonizer edition's). A game keeps
-  its variant in its saves.
-- **Display**: a window or the full screen (Alt+Enter also switches).
-- **Scaling**: smooth or sharp pixels.
-- **Music** and **Sound effects**: on or off (also Alt+M and Alt+N).
+This project is not affiliated with or endorsed by The Logic Factory,
+Virgin Interactive, or any owner of the Ascendancy trademark or of the
+original game. Its source code contains no data from the original game.
+"Ascendancy" is a trademark of its owner and is only used here to say what
+this software is compatible with.
 
-OK (Enter) keeps the settings, Cancel (Esc) leaves them; Shift and a click on
-a row explains it. They are kept in `options.cfg` in the user folder (the
-sound in the original's `ascend.cfg`, which stays readable by the original);
-`--sharp`/`--smooth`, `--fullscreen`/`--window` and `--variant` override them
-for a run. While a tutorial plays, the opening menu has its original layout.
+## License
 
-## Tests
-
-    ninja -C build/debug oa_tests oa_game_tests
-    OA_DATA=<install dir> ctest --test-dir build/debug -j <processors>
-
-Tests of the original files' content are skipped when `OA_DATA` is unset;
-the comparisons with the original's saves (`docs/12-oracle.md`) when
-`OA_ORACLE` does not name the `work/oracle` folder of the reference runs.
-The day tests (`tests/day_test.cpp`, tag `[day]`) replay every case of the
-corpus; with `OA_DUMP_DIR` set they write the remake's save of the first
-diverging day, to compare with `tools/savdiff.py`. `tests/day_ui_test.cpp`
-plays the oracle's runs through the user interface from their own traces
-(new games, days with their game-event boxes, the tutorials) and compares
-the saves and Alt+G screenshots (`OA_DAY_UI_RUN` picks runs by name,
-`OA_DUMP_DIR` keeps the remake's files).
+Open Ascendance is released under the MIT license; see [LICENSE](LICENSE).
+SDL3 (zlib license) and Catch2 (Boost Software License) are downloaded at
+build time and are not part of this repository. The files of the original
+game are, of course, neither included nor covered by this license.

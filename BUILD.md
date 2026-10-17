@@ -1,9 +1,9 @@
 # Building Open Ascendance
 
-How to build Open Ascendance for each platform and make its packages
-(adapted from SilentHeritage's). The [README](README.md) has the native
-build, the command line and the tests; [RELEASING.md](RELEASING.md)
-describes how the release packages are made and published.
+How to build, run and test Open Ascendance on each platform and make its
+packages (adapted from SilentHeritage's), and how its sources are organised;
+[RELEASING.md](RELEASING.md) describes how the release packages are made and
+published.
 
 The game never ships the original files: every build reads the player's
 own Ascendancy install at run time (the install setup asks for its folder
@@ -22,6 +22,85 @@ SDL3 also needs the usual X11 or Wayland, audio and GL development packages
 `-DFETCHCONTENT_SOURCE_DIR_SDL3=<dir>` (and `_CATCH2`) reuses a checkout
 instead of downloading it. `-DOA_VERSION=` sets the version
 (`MAJOR.MINOR.PATCH[-suffix]`, `0.0.0-dev` by default).
+
+Debug builds (the default) enable ASan and UBSan; under WSLg set
+`ASAN_OPTIONS=detect_leaks=0`. Add `-DCMAKE_BUILD_TYPE=Release` for a release
+build.
+
+## Running
+
+    build/debug/src/app/open_ascendance [--data <install dir> | --setup]
+        [--sharp | --smooth] [--fullscreen | --window] [--variant standard|antagonizer]
+
+Without `--data` the game asks once for the install folder and remembers it.
+Alt+Enter toggles fullscreen. `--screenshot <file.bmp> [--frames N]` with
+`--keys <k1,k2,...>` runs headless and saves a frame, `--save-dir <dir>`
+keeping its saves and Alt+G screenshots, and `--seed N` starts the galaxy of
+the oracle's runs; `--trace <file.bin>` replays a window-event trace (an
+oracle run's `trace.bin`) from the opening menu
+([`src/app/command_line.h`](src/app/command_line.h)).
+
+The opening menu has an **Options** button, the remake's own (the seven
+original buttons are a little shorter to make room). Its screen sets:
+
+- **Game variant**: the rules and opponents of the next new game, Standard
+  (Ascendancy 1.6.5) or Antagonizer (the Antagonizer edition's). A game keeps
+  its variant in its saves.
+- **Display**: a window or the full screen (Alt+Enter also switches).
+- **Scaling**: smooth or sharp pixels.
+- **Music** and **Sound effects**: on or off (also Alt+M and Alt+N).
+
+OK (Enter) keeps the settings, Cancel (Esc) leaves them; Shift and a click on
+a row explains it. They are kept in `options.cfg` in the user folder (the
+sound in the original's `ascend.cfg`, which stays readable by the original);
+`--sharp`/`--smooth`, `--fullscreen`/`--window` and `--variant` override them
+for a run. While a tutorial plays, the opening menu has its original layout.
+
+## Tests
+
+    ninja -C build/debug oa_tests oa_game_tests
+    OA_DATA=<install dir> ctest --test-dir build/debug -j <processors>
+
+Tests of the original files' content are skipped when `OA_DATA` is unset;
+the comparisons with the original's saves when `OA_ORACLE` does not name the
+folder of the original's reference runs (the reverse-engineering
+repository's `work/oracle`, made by its `tools/oracle.py`,
+`docs/12-oracle.md`). The day tests (`tests/day_test.cpp`, tag `[day]`)
+replay every case of the corpus; with `OA_DUMP_DIR` set they write the
+remake's save of the first diverging day, to compare with that repository's
+`tools/savdiff.py`. `tests/day_ui_test.cpp` plays the oracle's runs through
+the user interface from their own traces (new games, days with their
+game-event boxes, the tutorials) and compares the saves and Alt+G
+screenshots (`OA_DAY_UI_RUN` picks runs by name, `OA_DUMP_DIR` keeps the
+remake's files).
+
+## Sources
+
+The modules follow the original's (the reverse-engineering repository's
+`docs/05-subsystems.md`), comments citing the functions they port with their
+`PATCH.EXE` address:
+
+- `src/core`: install access, the Watcom `rand` and `qsort`, logging.
+- `src/assets`: the COB archives (`cfile`), shapes, palettes, haze tables,
+  fonts, GIF, FLC, sounds and the text tables.
+- `src/game`: the headless game core (no SDL): the game tables, the state
+  (`Cosmos`, races, stars, lanes, planets, ships, research), the saves, the
+  galaxy generation and the day (`cosmos.h`: `cosmos_end_day` and the
+  contested-star walk; planets, research, ships and gizmos, diplomacy, the
+  battle rules and the System Display's turn loop `battle_control.h`), with
+  each variant's AI behind `ai.h` (Standard: `race_ai`, `battle`;
+  Antagonizer: `antag_*`).
+- `src/gfx`: the VFX blitters, the fonts, `GSystem` (screen, DAC, fades).
+- `src/audio`: the mixer and `SoundSystem` (music and effects).
+- `src/platform`: the SDL window, input, clock and sound output.
+- `src/ui`: `WinMgr` (with the game events and the trace replay), `GWindow`
+  and the toolkit's window classes, the game-event box, the FLIC player and
+  window, `GameSession` (the game core as the screens see it)
+  and `GameCoreSession` (it over `src/game`: saves, new game, the day).
+- `src/screens`: the screens (new game, species history, load/save and
+  tutorial lists, the star map, the System Display, planets, research,
+  negotiation, intelligence, end of game).
+- `src/app`: `main`, the command line and the install setup.
 
 ## Windows
 
@@ -84,13 +163,24 @@ removed. Install and follow the log with:
 
 `packaging/build_desktop.sh linux|windows|macos` builds the release
 packages into `dist/` (described at its top): the Linux tarball and
-AppImage (needs `mksquashfs`), the Windows zip, the macOS disk image (on a
-Mac). `OA_VERSION` sets their version.
+AppImage, the Windows zip, the macOS disk image (on a Mac). `OA_VERSION`
+sets their version.
+
+The AppImage needs squashfs-tools' `mksquashfs` (4.4 or later, with zstd).
+Without root, build it from its sources (the zlib, liblzma and libzstd
+development headers installed) and give its path in `OA_MKSQUASHFS`:
+
+    curl -fsSL https://github.com/plougher/squashfs-tools/archive/refs/tags/4.6.1.tar.gz | tar -xz
+    make -C squashfs-tools-4.6.1/squashfs-tools ZSTD_SUPPORT=1
+    OA_MKSQUASHFS=$PWD/squashfs-tools-4.6.1/squashfs-tools/mksquashfs packaging/build_desktop.sh linux
+
+The AppImage runs without FUSE too, from a temporary copy:
+`APPIMAGE_EXTRACT_AND_RUN=1 dist/OpenAscendance-<version>-linux-x86_64.AppImage`.
 
 ## Icon
 
-The icon is a placeholder (an original stylised galaxy, not the game's
-art): `packaging/icon/open_ascendance.svg`. `packaging/icon/render_icons.sh`
+The icon is an original design (a rising star, not the game's art):
+`packaging/icon/open_ascendance.svg`. `packaging/icon/render_icons.sh`
 renders the committed pictures from it (the desktop PNGs, the Windows
 `.ico`, Android's launcher icons in `android/res/mipmap-*`), with python3
 and the librsvg and cairo libraries, and ImageMagick 7.
