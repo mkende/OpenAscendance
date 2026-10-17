@@ -5,11 +5,14 @@ strategy game published by The Logic Factory in 1995. It runs on Windows,
 macOS, Linux and Android, and plays both the standard game (version 1.6.5)
 and the Antagonizer edition.
 
-Status: in development. The front end (logo, intro, opening menu, new game,
-species history, load and save), the star map, the System Display and its
-battles, the planets, research and diplomacy screens, the days with their
-game events up to the end of the game, and the tutorials are playable; the
-saves are compatible with the original's.
+**Status:** complete. OpenAscendance plays the whole original game, the
+standard edition and the Antagonizer, and every rule, screen and save has
+been checked against the original. It is new, though: please report anything
+that differs from the original. Improvements beyond the original (the
+Extended variant) are planned.
+
+**Download:** [latest release](https://github.com/mkende/OpenAscendance/releases/latest) (or
+[all releases](https://github.com/mkende/OpenAscendance/releases), including the pre-releases).
 
 ## Playing
 
@@ -19,7 +22,8 @@ saves are compatible with the original's.
    `COB.CFG` and the `ASCEND00..02.COB` archives) to read them from.
 
 2. **Download** the package for your system from the
-   [latest release](../../releases/latest):
+   [latest release](https://github.com/mkende/OpenAscendance/releases/latest) (pre-releases are on the
+   [releases page](https://github.com/mkende/OpenAscendance/releases)):
 
    - **Windows** 10 or later (x64): unzip the `.zip` anywhere and start the
      program. It is not signed, so Windows SmartScreen will ask for
