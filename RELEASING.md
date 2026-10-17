@@ -5,9 +5,7 @@ one-time setup it relies on, and the steps of each release (adapted from
 SilentHeritage's).
 
 The workflows are in `.github/workflows`, their paths relative to the
-repository's root. (While the remake also lives in the `reimpl/` folder of
-the reverse-engineering repository, they are inactive there: GitHub only
-runs the workflows of a repository's root `.github/workflows`.)
+repository's root.
 
 ## How it works
 
