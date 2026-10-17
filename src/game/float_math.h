@@ -39,6 +39,10 @@ std::int32_t chopped_distance(const Vec3& a, const Vec3& b);
 // positive: `vec3_normalize` 0x4e410.
 void normalize(Vec3& v);
 
+// Normalizes `v` then scales it by `len` (each component stored as a float):
+// `vec3_set_length` 0x4e464.
+void set_length(Vec3& v, float len);
+
 // Rotates `v` by `degrees` around the y axis (x' = z sin + x cos, z' = z cos
 // - x sin, cos stored as a float); nothing when `degrees` is +-0:
 // `vec3_rotate_y` 0x4e6bc.

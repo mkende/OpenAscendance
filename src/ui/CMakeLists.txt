@@ -8,6 +8,8 @@ oa_add_module(oa_ui
     flic.cpp
     # The FLIC window (flicwin.cpp).
     flicwnd.cpp
+    # The game session over the game core (saves, new game, the day).
+    game_core_session.cpp
     gwindow.cpp
     # The help window (helpwin.cpp).
     help_wnd.cpp
@@ -19,4 +21,4 @@ oa_add_module(oa_ui
     toggle_button.cpp
     window_factory.cpp
     winmgr.cpp
-  DEPS oa_core oa_assets oa_gfx oa_audio oa_platform)
+  DEPS oa_core oa_assets oa_gfx oa_audio oa_platform oa_game)

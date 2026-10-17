@@ -13,6 +13,7 @@
 #include "assets/gif.h"
 #include "assets/static_strings.h"
 #include "game_data.h"
+#include "screens/cos_wnd.h"
 #include "ui/button_group.h"
 #include "ui/digit_counter.h"
 #include "ui/flicwnd.h"
@@ -77,7 +78,8 @@ TEST_CASE("windows.txt: the 124 windows in their classes and screens", "[ui][con
   }
   CHECK(is.operator()<TextBox>("ALIENDIP"));
   CHECK(is.operator()<RaceColorButton>("ABANDON"));
-  CHECK(is.operator()<CosWndPlaceholder>("COSMOSWnd"));
+  CHECK(is.operator()<CosWnd>("COSMOSWnd"));
+  CHECK(is.operator()<RacesButton>("RACES"));
 
   const auto* group = dynamic_cast<ButtonGroup*>(rig.wm.find_window("RACECONTROLS"));
   REQUIRE(group->controls().size() == 7);

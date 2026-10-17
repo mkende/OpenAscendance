@@ -28,6 +28,7 @@ constexpr int kStringDiscoveries = 0x16;
 constexpr int kStringLoadGame = 0x17;
 constexpr int kStringSaveGame = 0x18;
 constexpr int kStringTutorial = 0x19;
+constexpr int kStringCannotOpen = 0xaa;  // the save cannot be opened
 // The species names (static strings 101..121, `Race_ctor` 0x39a50).
 constexpr int kStringSpecies = 101;
 
@@ -152,7 +153,8 @@ void LoadWnd::pick(int row) {
   switch (mode_) {
     case Mode::kSave:
       if (!game.save(slots_[static_cast<std::size_t>(index)].slot)) {
-        log_warning("cannot save into slot {}", slots_[static_cast<std::size_t>(index)].slot);
+        // Game_save 0x4f458: the file cannot be opened.
+        wm_.message_box(wm_.static_string(kStringCannotOpen));
       }
       wm_.post_message(kMessageBack, 0, 0);
       break;
@@ -160,9 +162,11 @@ void LoadWnd::pick(int row) {
       const SaveSlot& slot = slots_[static_cast<std::size_t>(index)];
       if (slot.header) {
         if (game.load(slot.slot)) {
-          wm_.post_message(kMessageChangeScreen, kScreenStarMap, 0);
+          // Esc from the star map then comes back here, then to the menu.
+          wm_.reset_history_to_opening();
+          wm_.post_message(kMessageChangeScreen, kScreenStarMap, 1);
         } else {
-          log_warning("cannot load slot {}", slot.slot);
+          wm_.message_box(wm_.static_string(kStringCannotOpen));
         }
       }
       break;

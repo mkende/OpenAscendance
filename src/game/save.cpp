@@ -4,6 +4,7 @@
 #include <bit>
 #include <cstring>
 #include <format>
+#include <optional>
 #include <stdexcept>
 #include <string_view>
 
@@ -104,6 +105,7 @@ class Reader {
 
   ByteReader& in() { return in_; }
   void set_cosmos(RawAddress cosmos) { cosmos_ = cosmos; }
+  void set_foreign_cosmos(std::optional<RawAddress> cosmos) { foreign_ = cosmos; }
   std::size_t pos() const { return in_.pos(); }
   void expect(std::size_t start, std::size_t size) const {
     if (in_.pos() != start + size) {
@@ -139,11 +141,22 @@ class Reader {
     if (raw == 0) {
       return kNone;
     }
-    const std::int64_t off = static_cast<std::int64_t>(raw) - cosmos_ - array.offset;
-    if (off < 0 || off % array.stride != 0 || off / array.stride >= static_cast<std::int64_t>(array.count)) {
-      in_.fail(std::format("pointer 0x{:x} is not a {} of the cosmos at 0x{:x}", raw, array.name, cosmos_));
+    const auto element = [&](RawAddress cosmos) -> std::optional<std::int16_t> {
+      const std::int64_t off = static_cast<std::int64_t>(raw) - cosmos - array.offset;
+      if (off < 0 || off % array.stride != 0 || off / array.stride >= static_cast<std::int64_t>(array.count)) {
+        return std::nullopt;
+      }
+      return static_cast<std::int16_t>(off / array.stride);
+    };
+    if (const auto own = element(cosmos_)) {
+      return *own;
     }
-    return static_cast<std::int16_t>(off / array.stride);
+    if (foreign_) {
+      if (const auto other = element(*foreign_)) {
+        return *other;
+      }
+    }
+    in_.fail(std::format("pointer 0x{:x} is not a {} of the cosmos at 0x{:x}", raw, array.name, cosmos_));
   }
   std::int16_t checked_index(std::int32_t v, std::string_view what) const {
     if (v < -1 || v > 0x7fff) {
@@ -162,6 +175,7 @@ class Reader {
  private:
   ByteReader in_;
   RawAddress cosmos_ = kPatchCosmosAddress;
+  std::optional<RawAddress> foreign_;
 };
 
 // The records. `T` is the record type, const when writing.
@@ -458,8 +472,9 @@ void backdrop_record(IO& io, T& b) {
 
 }  // namespace
 
-SaveImage parse_save(std::span<const std::uint8_t> data) {
+SaveImage parse_save(std::span<const std::uint8_t> data, std::optional<RawAddress> foreign_cosmos) {
   Reader r(data);
+  r.set_foreign_cosmos(foreign_cosmos);
   ByteReader& in = r.in();
   SaveImage image;
   header_record(r, image.header);
@@ -622,7 +637,9 @@ SaveImage save_game(const Session& session) {
   const Game& game = *session.game;
   const Cosmos& cosmos = game.cosmos;
   SaveImage image;
-  image.cosmos_address = game.variant == Variant::kAntagonizer ? kAntagCosmosAddress : kPatchCosmosAddress;
+  image.cosmos_address = session.cosmos_address != 0             ? session.cosmos_address
+                         : game.variant == Variant::kAntagonizer ? kAntagCosmosAddress
+                                                                 : kPatchCosmosAddress;
   // The header: the game's summary over the stale stack bytes.
   image.header = session.stale_header;
   image.header.day = cosmos.day;

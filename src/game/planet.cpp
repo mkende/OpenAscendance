@@ -1,12 +1,16 @@
 #include "game/planet.h"
 
 #include <cmath>
+#include <optional>
 #include <utility>
 #include <vector>
 
 #include "core/fixed_width.h"
+#include "game/cosmos.h"
 #include "game/float_math.h"
 #include "game/race.h"
+#include "game/research.h"
+#include "game/ship.h"
 
 namespace oa::game {
 
@@ -14,19 +18,29 @@ namespace {
 
 const PlanItem& item_of(const GameTables& tables, std::uint8_t item) { return tables.planitems.items.at(item); }
 
-// `PlanItem_weapon_stats` 0x34ffc: shots per day of a planetary weapon (the
-// range and damage outputs are not needed here); 0 for other items.
-std::int32_t weapon_shots(std::uint8_t item) {
-  switch (item) {
-    case kItemMissileBase:
-      return 1;
-    case kItemWhopper:
-    case kItemMegaWhopper:
-      return 3;
-    case kItemTractorBeam:
-      return 2;
-    default:
-      return 0;
+// Planet item ids met only here (`planitem.txt` order).
+constexpr std::uint8_t kItemLaboratory = 2;
+constexpr std::uint8_t kItemCloningPlant = 15;
+constexpr std::uint8_t kItemSurfaceShield = 18;
+constexpr std::uint8_t kItemSurfaceMegaShield = 19;
+constexpr std::uint8_t kItemOrbitalShield = 26;
+constexpr std::uint8_t kItemOrbitalMegaShield = 27;
+constexpr std::uint8_t kItemAlienHospitality = 31;
+constexpr std::uint8_t kItemLushGrowthBomb = 37;
+
+// Gives a weapon item's square its shots for the day in the flags' high
+// byte, when the item has shots (the weapon branch of
+// `Planet_set_square_item` and `Planet_daily_update`). The original's stat
+// locals are uninitialised for a weapon item the table does not know; every
+// weapon item of `planitem.txt` is known.
+void set_weapon_shots(const GameTables& tables, Square& sq, std::uint8_t item) {
+  if ((item_of(tables, item).flags & kItemWeapon) == 0) {
+    return;
+  }
+  PlanetWeaponStats stats;
+  planitem_weapon_stats(item, stats);
+  if (stats.shots != 0) {
+    sq.flags = static_cast<std::uint16_t>((sq.flags & 0xff) | (stats.shots << 8));
   }
 }
 
@@ -393,32 +407,7 @@ bool planet_can_place_item(const Session& session, const Planet& planet, std::ui
 }
 
 bool planet_build_item_now(Session& session, Planet& planet, std::uint16_t square, std::uint8_t item) {
-  const GameTables& tables = *session.tables;
-  Cosmos& cosmos = session.game->cosmos;
-  bool placed = false;
-  if (square != kNoSquare) {
-    Square& sq = planet_squares(cosmos, planet)[square];
-    // Original bug kept: the kind test compares `item >= surface_count` (0 or
-    // 1) with `(square < surface_squares) - 1` (0 or -1), so only surface
-    // items on surface squares pass.
-    const bool surface_square = square < planet.surface_squares;
-    if (sq.item == kNoItem && item < PlanItemTable::kItems &&
-        item_of(tables, item).used_population <=
-            static_cast<std::int32_t>(planet.population) - static_cast<std::int32_t>(planet.used_population) &&
-        item < tables.planitems.surface_count && surface_square) {
-      sq.item = item;
-      sq.flags = kSquareBuilt;
-      placed = true;
-      if (item_of(tables, item).flags & kItemWeapon) {
-        const std::int32_t shots = weapon_shots(item);
-        if (shots != 0) {
-          sq.flags = static_cast<std::uint16_t>(sq.flags | (shots << 8));
-        }
-      }
-    }
-  }
-  planet_recalc_output(session, planet);
-  return placed;
+  return planet_set_square_item(session, planet, square, item, SquareMode::kPlaceBuilt);
 }
 
 std::uint16_t planet_pick_random_free_square(Session& session, const Planet& planet, std::uint8_t item) {
@@ -439,11 +428,539 @@ std::uint16_t planet_pick_random_free_square(Session& session, const Planet& pla
 }
 
 std::uint16_t planet_auto_build_item(Session& session, Planet& planet, std::uint8_t item) {
-  const std::uint16_t square = planet_pick_random_free_square(session, planet, item);
-  if (square != kNoSquare && planet_squares(session.game->cosmos, planet)[square].item == kNoItem) {
-    planet_build_item_now(session, planet, square, item);
+  return planet_auto_place_item(session, planet, item, -1);
+}
+
+bool planet_set_square_item(Session& session, Planet& planet, std::uint16_t square, std::uint8_t item,
+                            SquareMode mode) {
+  const GameTables& tables = *session.tables;
+  Cosmos& cosmos = session.game->cosmos;
+  bool done = false;
+  const bool whole_planet = item < PlanItemTable::kItems && (item_of(tables, item).flags & kItemWholePlanet) != 0;
+  if (square != kNoSquare || (whole_planet && mode == SquareMode::kProject)) {
+    const std::span<Square> squares = planet_squares(cosmos, planet);
+    // A planet-wide project points at the planet's first square.
+    Square& sq = squares[square == kNoSquare ? 0 : square];
+    switch (mode) {
+      case SquareMode::kPlaceBuilt:
+        // Original bug kept: the kind test compares `item >= surface_count`
+        // (0 or 1) with `(square < surface_squares) - 1` (0 or -1), so only
+        // surface items on surface squares pass.
+        if (sq.item == kNoItem && item < PlanItemTable::kItems &&
+            item_of(tables, item).used_population <=
+                static_cast<std::int32_t>(planet.population) - static_cast<std::int32_t>(planet.used_population) &&
+            item < tables.planitems.surface_count && square < planet.surface_squares) {
+          sq.item = item;
+          sq.flags = kSquareBuilt;
+          done = true;
+          set_weapon_shots(tables, sq, item);
+        }
+        break;
+      case SquareMode::kRemove:
+        if (sq.item != kNoItem &&
+            (item_of(tables, sq.item).max_population <=
+                 static_cast<std::int32_t>(planet.max_population) - static_cast<std::int32_t>(planet.population) ||
+             (sq.flags & kSquareBuilt) == 0)) {
+          sq.item = kNoItem;
+          sq.flags = 0;
+          if (square == planet.project_square) {
+            planet.project_square = kNoSquare;
+            planet.project_item = kNoItem;
+          }
+          done = true;
+        }
+        break;
+      case SquareMode::kProject:
+      case SquareMode::kForceProject:
+        if (mode == SquareMode::kForceProject || whole_planet ||
+            (planet_can_place_item(session, planet, item, square) &&
+             ((sq.flags & kSquareBuilt) == 0 || (item == kItemAutomation && (sq.flags & kSquareAutomated) == 0)))) {
+          // The previous project is cancelled (its progress is kept).
+          if (planet.project_square != kNoSquare) {
+            Square& old = squares[planet.project_square];
+            if (old.item == kItemShip) {
+              ship_destroy(
+                  session,
+                  cosmos.ships[static_cast<std::size_t>(planet_square_ship(session, planet, planet.project_square))]);
+            }
+            if ((old.flags & kSquareBuilt) == 0) {
+              old.item = kNoItem;
+            }
+          }
+          planet.project_square = kNoSquare;
+          if (!whole_planet) {
+            planet.project_square = square;
+            if (item != kItemAutomation) {
+              sq.item = item;
+            }
+          }
+          planet.project_item = item;
+          set_weapon_shots(tables, sq, item);
+          done = true;
+        }
+        break;
+    }
   }
+  planet_recalc_output(session, planet);
+  return done;
+}
+
+void planet_place_item_if_free(Session& session, Planet& planet, std::uint8_t item, std::uint16_t square,
+                               std::int32_t mode) {
+  if (square != kNoSquare && planet_squares(session.game->cosmos, planet)[square].item == kNoItem) {
+    planet_set_square_item(session, planet, square, item, mode == -1 ? SquareMode::kPlaceBuilt : SquareMode::kProject);
+  }
+}
+
+std::uint16_t planet_auto_place_item(Session& session, Planet& planet, std::uint8_t item, std::int32_t mode) {
+  const std::uint16_t square = planet_pick_random_free_square(session, planet, item);
+  planet_place_item_if_free(session, planet, item, square, mode);
   return square;
+}
+
+void planet_daily_update(Session& session, Planet& planet) {
+  const GameTables& tables = *session.tables;
+  Cosmos& cosmos = session.game->cosmos;
+  planet.protected_turn = 0;
+  if (planet.owner != kNoOwner) {
+    const std::span<Square> squares = planet_squares(cosmos, planet);
+    for (Square& sq : squares) {
+      if (sq.item != kNoItem) {
+        set_weapon_shots(tables, sq, sq.item);
+      }
+    }
+    const PlanetIndex index = planet_index(cosmos, planet);
+    bool completed = false;
+    if (planet.project_item != kNoItem && (item_of(tables, planet.project_item).flags & kItemContinuous) == 0) {
+      // Hostile: +1 production for a weak AI planet (not in the Antagonizer,
+      // ANTAG 0x352e0).
+      if (session.game->variant != Variant::kAntagonizer && planet.owner != session.player_race &&
+          cosmos.atmosphere == Atmosphere::kHostile && static_cast<std::uint16_t>(planet.industry) < 4) {
+        planet.progress = wrap_u16(planet.progress + 1);
+      }
+      planet.progress = wrap_u16(planet.progress + planet.industry);
+      const std::uint16_t cost =
+          wrap_u16(planet_project_cost(session, planet, planet.project_square, planet.project_item));
+      if (planet.progress < cost) {
+        // Alien Hospitality: dead code, the item is continuous (original bug).
+        if (planet.project_item == kItemAlienHospitality && cosmos.day % 10 == 0) {
+          for (std::int32_t r = 0; r < cosmos.race_count; ++r) {
+            std::int16_t& attitude = cosmos.races[static_cast<std::size_t>(r)].attitude[session.player_race];
+            attitude = wrap_i16(attitude + planet.industry / 10 + 1);
+          }
+        }
+      } else {
+        const std::uint8_t item = planet.project_item;
+        if (planet.owner == session.player_race && item == kItemLaboratory &&
+            session.game->research.project[session.player_race] == -1 &&
+            research_race_rate(session, session.player_race) == 0) {
+          session.post_event(EventCode::kLabWithoutResearch, index);
+        }
+        if (planet.owner == session.player_race && session.screen != 17 && item != kItemShip &&
+            planet.self_managed == 0) {
+          completed = true;
+          session.post_event(EventCode::kBuildingComplete, index, item);
+        }
+        // A planet-wide project (Lush Growth Bomb) writes out of bounds at
+        // `squares[0xffff]` in the original; modelled as no effect.
+        if (planet.project_square != kNoSquare) {
+          Square& sq = squares[planet.project_square];
+          if (sq.color & kSquareRuins) {
+            sq.color = static_cast<std::uint8_t>(sq.color & ~kSquareRuins);
+            sq.item = kNoItem;
+            research_grant_random(session, planet.owner, planet);
+          } else {
+            sq.flags |= kSquareBuilt;
+          }
+          if (item == kItemShip) {
+            Ship& ship =
+                cosmos.ships[static_cast<std::size_t>(planet_square_ship(session, planet, planet.project_square))];
+            if (ship.location_kind == ShipLocation::kBuilding) {
+              planet.population = wrap_u16(planet.population - item_of(tables, kItemShip).used_population);
+            }
+            ship_launch(session, ship);
+          }
+          if (item == kItemTerraforming) {
+            sq.flags = 0;
+            sq.item = kNoItem;
+            sq.color = 1;
+          }
+          if (item == kItemAutomation) {
+            sq.flags |= kSquareAutomated;
+          }
+        }
+        if (item == kItemLushGrowthBomb && (planet.flags & 1) == 0) {
+          planet.base_population = wrap_u16(planet.base_population + 10);
+          planet.flags |= 1;
+        }
+        if ((item_of(tables, item).flags & kItemShield) && planet.project_square != kNoSquare &&
+            planet.project_square >= planet.surface_squares) {
+          Square& sq = squares[planet.project_square];
+          const std::uint16_t strength = item == kItemOrbitalMegaShield ? 35 : 15;
+          sq.flags = static_cast<std::uint16_t>((sq.flags & 0xff) | (strength << 8));
+        }
+        planet.project_square = kNoSquare;
+        planet.project_item = kNoItem;
+        planet.progress = 0;
+      }
+    }
+    bool reset_growth = planet.population >= planet.max_population;
+    if (!reset_growth) {
+      planet.growth = wrap_u16(planet.growth + planet.prosperity);
+      if (planet.owner != session.player_race && static_cast<std::uint16_t>(planet.prosperity) < 4) {
+        planet.growth = wrap_u16(planet.growth + 1);
+      }
+      if (tables.planitems.pop_growth <= static_cast<std::int32_t>(planet.growth)) {
+        if (planet.owner == session.player_race && session.screen != 17 &&
+            planet.population == planet.used_population && !completed && planet.self_managed == 0 &&
+            (planet.project_item == kNoItem || (item_of(tables, planet.project_item).flags & kItemContinuous) != 0)) {
+          session.post_event(EventCode::kFreePopulation, index);
+        }
+        planet.population = wrap_u16(planet.population + 1);
+        if (square_built(squares, planet_find_item(cosmos, planet, kItemCloningPlant))) {
+          planet.population = wrap_u16(planet.population + 1);
+        }
+        if (planet.max_population < planet.population) {
+          planet.population = planet.max_population;
+        }
+        reset_growth = true;
+      }
+    }
+    if (reset_growth) {
+      planet.growth = 0;
+    }
+    planet_recalc_output(session, planet);
+  }
+  // The rotation around the star: 4000000 / r^2 degrees a day.
+  Vec3 pos = planet.position;
+  const float r = f32(length(pos));
+  normalize(pos);
+  rotate_y(pos, f32(4000000.0 / (static_cast<double>(r) * r)));
+  planet.position = {f32(static_cast<double>(pos[0]) * r), f32(static_cast<double>(pos[1]) * r),
+                     f32(static_cast<double>(pos[2]) * r)};
+}
+
+std::uint32_t planet_project_cost(const Session& session, const Planet& planet, std::uint16_t square,
+                                  std::uint8_t item) {
+  const Cosmos& cosmos = session.game->cosmos;
+  std::uint32_t cost = 0xffff;
+  if (square != kNoSquare) {
+    item = planet_squares(cosmos, planet)[square].item;
+  }
+  if (item != kNoItem) {
+    if (item == kItemShip) {
+      const Ship& ship = cosmos.ships[static_cast<std::size_t>(planet_square_ship(session, planet, square))];
+      // The refit cost is the low word of the design cost (the high word is
+      // stale register bits the callers mask).
+      cost = ship.location_kind == ShipLocation::kRefit ? static_cast<std::uint32_t>(planet.ship_cost) & 0xffff
+                                                        : static_cast<std::uint32_t>(ship_industry_cost(session, ship));
+    } else {
+      cost = item_of(*session.tables, item).cost;
+    }
+    // Never true: the item was re-read from the square, where Automation is
+    // never written (original bug: automating costs the building's cost).
+    if (item == kItemAutomation && square == planet.project_square) {
+      cost *= 3;
+    }
+  }
+  return cost;
+}
+
+std::int32_t planet_project_eta(const Session& session, const Planet& planet) {
+  const std::uint32_t cost = planet_project_cost(session, planet, planet.project_square, planet.project_item);
+  return research_days_left(static_cast<std::int32_t>(cost & 0xffff), planet.progress,
+                            static_cast<std::uint16_t>(planet.industry));
+}
+
+ShipIndex planet_square_ship(const Session& session, const Planet& planet, std::uint16_t square) {
+  return static_cast<ShipIndex>((planet_squares(session.game->cosmos, planet)[square].flags >> 8) & 0x7f);
+}
+
+void planet_set_square_ship(Session& session, Planet& planet, std::uint16_t square, ShipIndex ship) {
+  Square& sq = planet_squares(session.game->cosmos, planet)[square];
+  sq.flags = static_cast<std::uint16_t>((sq.flags & 0xff) | (static_cast<std::uint16_t>(ship) << 8));
+}
+
+bool planet_dock_ship(Session& session, Planet& planet, Ship& ship) {
+  Cosmos& cosmos = session.game->cosmos;
+  if (planet.owner != ship.owner && planet_has_orbital_guard(session, planet)) {
+    return false;
+  }
+  const std::span<Square> squares = planet_squares(cosmos, planet);
+  for (std::uint16_t i = planet.surface_squares; i < planet.square_count; ++i) {
+    if (squares[i].item == kNoItem) {
+      ship.location_kind = ShipLocation::kOrbit;
+      ship.location = planet_index(cosmos, planet);
+      squares[i].item = kItemShip;
+      squares[i].flags = kSquareBuilt;
+      planet_set_square_ship(session, planet, i, ship_index(cosmos, ship));
+      return true;
+    }
+  }
+  return false;
+}
+
+bool planet_undock_ship(Session& session, Planet& planet, Ship& ship) {
+  Cosmos& cosmos = session.game->cosmos;
+  const std::span<Square> squares = planet_squares(cosmos, planet);
+  const ShipIndex slot = ship_index(cosmos, ship);
+  for (std::uint16_t i = planet.surface_squares; i < planet.square_count; ++i) {
+    if (squares[i].flags != 0 && squares[i].item == kItemShip && planet_square_ship(session, planet, i) == slot) {
+      squares[i].item = kNoItem;
+      squares[i].flags = 0;
+      ship.location_kind = ShipLocation::kSystem;
+      ship.location = planet.star;
+      Vec3 offset{};
+      offset[0] = static_cast<float>(session.rng.rand() % 1000 - 500);
+      offset[1] = static_cast<float>(session.rng.rand() % 1000 - 500);
+      offset[2] = static_cast<float>(session.rng.rand() % 1000 - 500);
+      set_length(offset, 250.0f);
+      const Vec3 position = {f32(static_cast<double>(planet.position[0]) + offset[0]),
+                             f32(static_cast<double>(planet.position[1]) + offset[1]),
+                             f32(static_cast<double>(planet.position[2]) + offset[2])};
+      ship_set_position(session, ship, position);
+      return true;
+    }
+  }
+  return false;
+}
+
+bool planet_has_orbital_guard(const Session& session, const Planet& planet) {
+  const Cosmos& cosmos = session.game->cosmos;
+  const std::span<const Square> squares = planet_squares(cosmos, planet);
+  for (std::uint16_t i = planet.surface_squares; i < planet.square_count; ++i) {
+    const Square& sq = squares[i];
+    if (sq.item == kNoItem || (sq.flags & kSquareBuilt) == 0) {
+      continue;
+    }
+    if (sq.item == kItemShip &&
+        cosmos.ships[static_cast<std::size_t>(planet_square_ship(session, planet, i))].owner == planet.owner) {
+      return true;
+    }
+    if (sq.item == kItemOrbitalShield || sq.item == kItemOrbitalMegaShield) {
+      return true;
+    }
+  }
+  return false;
+}
+
+std::int32_t planet_habitability(const Cosmos& cosmos, const Planet& planet, bool count_black) {
+  const std::span<const Square> squares = planet_squares(cosmos, planet);
+  std::int32_t value = 0;
+  for (std::uint16_t i = 0; i < planet.surface_squares; ++i) {
+    // The whole colour byte: a ruins square counts 2.
+    const std::uint8_t color = squares[i].color;
+    if (color >= 2) {
+      value += 2;
+    } else if (color == 1 || count_black) {
+      value += 1;
+    }
+  }
+  return value;
+}
+
+void planitem_weapon_stats(std::uint8_t item, PlanetWeaponStats& stats) {
+  switch (item) {
+    case kItemMissileBase:
+      stats = {45, 7, 1};
+      break;
+    case kItemWhopper:
+      stats = {45, 7, 3};
+      break;
+    case kItemMegaWhopper:
+      stats = {90, 8, 3};
+      break;
+    case kItemTractorBeam:
+      stats = {200, 0, 2};
+      break;
+    default:
+      break;
+  }
+}
+
+std::uint32_t planet_fire_weapon(Session& session, Planet& planet, bool apply) {
+  Cosmos& cosmos = session.game->cosmos;
+  const std::optional<std::int32_t> global = square_at(session, planet.fire_square);
+  Square& sq = cosmos.squares[static_cast<std::size_t>(*global)];
+  const std::optional<std::int32_t> target = ship_at(session, planet.fire_target);
+  Ship* ship = target ? &cosmos.ships[static_cast<std::size_t>(*target)] : nullptr;
+  PlanetWeaponStats stats{.range = 0, .damage = 0, .shots = 1};
+  planitem_weapon_stats(sq.item, stats);
+  bool valid = true;
+  if (ship != nullptr) {
+    if (ship->location_kind != ShipLocation::kSystem || ship->location != planet.star) {
+      valid = false;
+    }
+    if (stats.range > 0 && static_cast<double>(stats.range << 5) < length(sub(ship->position, planet.position))) {
+      valid = false;
+    }
+  }
+  std::int32_t shots_left = 1;
+  if (stats.shots != 0) {
+    shots_left = sq.flags >> 8;
+  }
+  std::uint32_t result = valid && shots_left != 0 ? kActionPossible : 0;
+  if ((result & kActionPossible) && ship != nullptr) {
+    const std::uint8_t owner = planet.owner;
+    if (stats.damage != 0) {
+      result |= ship_take_damage(session, *ship, apply, stats.damage, owner);
+    }
+    if (apply) {
+      if (sq.item == kItemTractorBeam) {
+        // The ship is pulled to 3200 closer, at least 64 from the planet
+        // (1280 in the Antagonizer, ANTAG 0x3676c).
+        Vec3 d = sub(ship->position, planet.position);
+        const double pulled = length(d) + -3200.0;
+        const float minimum = session.game->variant == Variant::kAntagonizer ? 1280.0f : 64.0f;
+        const float distance = pulled < minimum ? minimum : f32(pulled);
+        set_length(d, distance);
+        ship->position = {f32(static_cast<double>(planet.position[0]) + d[0]),
+                          f32(static_cast<double>(planet.position[1]) + d[1]),
+                          f32(static_cast<double>(planet.position[2]) + d[2])};
+      }
+      if (stats.shots != 0 && shots_left > 0) {
+        sq.flags = static_cast<std::uint16_t>((sq.flags & 0xff) | ((shots_left - 1) << 8));
+      }
+    }
+  }
+  planet.fire_result = result;
+  return result;
+}
+
+void planet_bombard(Session& session, Planet& planet, std::int32_t damage, RaceIndex race) {
+  Cosmos& cosmos = session.game->cosmos;
+  const GameTables& tables = *session.tables;
+  if (planet.protected_turn == -1) {
+    return;
+  }
+  Star& star = cosmos.stars[static_cast<std::size_t>(planet.star)];
+  if (planet.owner != kNoOwner) {
+    race_offended_by(session, cosmos.races[planet.owner], race, star);
+  }
+  const std::span<Square> squares = planet_squares(cosmos, planet);
+  std::vector<std::uint16_t> occupied;
+  std::uint16_t shield = kNoSquare;
+  const bool antagonizer = session.game->variant == Variant::kAntagonizer;
+  for (std::uint16_t i = planet.surface_squares; i < planet.square_count; ++i) {
+    if (squares[i].item != kNoItem) {
+      occupied.push_back(i);
+      // The last shield absorbs; the Antagonizer (ANTAG 0x36a5c) skips one
+      // under construction (the project square).
+      if ((item_of(tables, squares[i].item).flags & kItemShield) && (!antagonizer || i != planet.project_square)) {
+        shield = i;
+      }
+    }
+  }
+  if (occupied.empty()) {
+    return;
+  }
+  std::uint16_t hit = shield;
+  bool destroy = true;
+  if (shield == kNoSquare) {
+    hit = occupied[static_cast<std::size_t>(session.rng.rand() % static_cast<std::int32_t>(occupied.size()))];
+  } else {
+    const std::int32_t strength = (squares[shield].flags >> 8) - damage;
+    // A shield under construction (the project square) is destroyed.
+    if (strength > 0 && shield != planet.project_square) {
+      squares[shield].flags = static_cast<std::uint16_t>((squares[shield].flags & 0xff) | (strength << 8));
+      destroy = false;
+    }
+  }
+  if (squares[hit].item == kItemShip) {
+    Ship& ship = cosmos.ships[static_cast<std::size_t>(planet_square_ship(session, planet, hit))];
+    destroy = (ship_take_damage(session, ship, true, damage * 2, race) & kActionDestroyed) != 0;
+  }
+  if (destroy) {
+    planet_set_square_item(session, planet, hit, kNoItem, SquareMode::kRemove);
+    if (hit == planet.project_square) {
+      planet.project_square = kNoSquare;
+      planet.project_item = kNoItem;
+      planet.progress = 0;
+    }
+  }
+  planet_recalc_output(session, planet);
+}
+
+bool planet_invade(Session& session, Planet& planet, std::uint16_t ship_square, std::int32_t& used) {
+  Cosmos& cosmos = session.game->cosmos;
+  Ship& ship = cosmos.ships[static_cast<std::size_t>(planet_square_ship(session, planet, ship_square))];
+  const RaceIndex attacker = static_cast<RaceIndex>(ship.owner);
+  Race& defender = cosmos.races[planet.owner];
+  Star& star = cosmos.stars[static_cast<std::size_t>(planet.star)];
+  const bool minions = cosmos.races[attacker].ability == 0;
+  if (race_offended_by(session, defender, attacker, star) && defender.declare_war < defender.attitude[attacker]) {
+    defender.attitude[attacker] = wrap_i16(defender.declare_war - 10);
+  }
+  std::int32_t modules = 0;
+  for (std::int32_t i = 0; i < ship.slot_count; ++i) {
+    if (ship.slots[static_cast<std::size_t>(i)].gizmo == kGizmoInvasionModule) {
+      ++modules;
+    }
+  }
+  const std::span<Square> squares = planet_squares(cosmos, planet);
+  std::int32_t shields = 0;
+  for (std::uint16_t i = 0; i < planet.surface_squares; ++i) {
+    if ((squares[i].flags & kSquareBuilt) == 0) {
+      continue;
+    }
+    if (squares[i].item == kItemSurfaceShield) {
+      shields += 1;
+    } else if (squares[i].item == kItemSurfaceMegaShield) {
+      shields += 2;
+    }
+  }
+  const std::int32_t destroyed = shields < modules ? shields + 1 : modules;
+  used = minions ? 1 : destroyed;
+  std::int32_t removed = 0;
+  for (std::int32_t i = 0; i < ship.slot_count && removed < used; ++i) {
+    if (ship.slots[static_cast<std::size_t>(i)].gizmo == kGizmoInvasionModule) {
+      ++removed;
+      ship_remove_gizmo(session, ship, i);
+    }
+  }
+  ship_recompute_stats(session, ship);
+  std::int32_t points = 0;
+  for (std::uint16_t i = 0; i < planet.surface_squares && points < destroyed; ++i) {
+    if (squares[i].item == kItemSurfaceShield && (squares[i].flags & kSquareBuilt) != 0) {
+      ++points;
+      planet_set_square_item(session, planet, i, kNoItem, SquareMode::kRemove);
+    }
+  }
+  // A Mega Shield counts 2 and is only removed while the total fits.
+  for (std::uint16_t i = 0; i < planet.surface_squares && points < destroyed; ++i) {
+    if (squares[i].item == kItemSurfaceMegaShield && (squares[i].flags & kSquareBuilt) != 0) {
+      points += 2;
+      if (points <= destroyed) {
+        planet_set_square_item(session, planet, i, kNoItem, SquareMode::kRemove);
+      }
+    }
+  }
+  bool taken = false;
+  if (shields < modules || minions) {
+    if (planet.owner == session.player_race && session.screen != 16) {
+      session.post_event(EventCode::kColonyInvaded, planet_index(cosmos, planet), attacker);
+    }
+    star_set_planet_owner(session, star, planet, attacker);
+    taken = true;
+    planet.acquired_day = cosmos.day;
+  }
+  planet_recalc_output(session, planet);
+  return taken;
+}
+
+void planet_abandon(Session& session, Planet& planet) {
+  Cosmos& cosmos = session.game->cosmos;
+  star_set_planet_owner(session, cosmos.stars[static_cast<std::size_t>(planet.star)], planet, kNoOwner);
+  for (Square& sq : planet_squares(cosmos, planet)) {
+    if (sq.item != kItemShip) {
+      sq.item = kNoItem;
+      sq.flags = 0;
+    }
+  }
+  planet.used_population = 0;
+  planet.population = 0;
+  planet.owner = kNoOwner;
+  planet_recalc_output(session, planet);
 }
 
 }  // namespace oa::game

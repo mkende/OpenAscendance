@@ -30,6 +30,48 @@ ButtonGroup::ButtonGroup(WinMgr& wm, const WindowRecord& record, const ShapeTabl
   }
 }
 
+void ButtonGroup::update_race_frames() {
+  const GameSession& game = wm_.services().game;
+  for (int r = 0; r < game.race_count() && r < static_cast<int>(controls_.size()); ++r) {
+    controls_[static_cast<std::size_t>(r)].frame = game.race_color(r) * 5 + 20;
+  }
+}
+
+bool ButtonGroup::save_state(std::span<std::uint8_t> out) const {
+  std::size_t at = 0;
+  for (const Control& c : controls_) {
+    for (const int v : {c.id, c.x0, c.x1, c.y0, c.y1, c.flags, c.frame}) {
+      if (at + 2 <= out.size()) {
+        out[at] = static_cast<std::uint8_t>(v);
+        out[at + 1] = static_cast<std::uint8_t>(static_cast<std::uint32_t>(v) >> 8);
+      }
+      at += 2;
+    }
+  }
+  return true;
+}
+
+void ButtonGroup::load_state(std::span<const std::uint8_t> in) {
+  std::size_t at = 0;
+  const auto next = [&]() {
+    const auto v = static_cast<std::int16_t>(in[at] | (in[at + 1] << 8));
+    at += 2;
+    return static_cast<int>(v);
+  };
+  for (Control& c : controls_) {
+    if (at + kControlRecordSize > in.size()) {
+      return;
+    }
+    c.id = next();
+    c.x0 = next();
+    c.x1 = next();
+    c.y0 = next();
+    c.y1 = next();
+    c.flags = next();
+    c.frame = next();
+  }
+}
+
 void ButtonGroup::set_flags(int id, int flags) {
   for (Control& c : controls_) {
     if (c.id == id) {
@@ -87,11 +129,7 @@ bool ButtonGroup::toggle(int index) {
 bool ButtonGroup::handle_event(int type, int a, int b) {
   switch (type) {
     case kEventActivate: {
-      // ButtonGroup_update_race_frames 0x2d490.
-      const GameSession& game = wm_.services().game;
-      for (int r = 0; r < game.race_count() && r < static_cast<int>(controls_.size()); ++r) {
-        controls_[static_cast<std::size_t>(r)].frame = game.race_species(r) * 5 + 20;
-      }
+      update_race_frames();
       GWindow::handle_event(type, a, b);
       return false;
     }

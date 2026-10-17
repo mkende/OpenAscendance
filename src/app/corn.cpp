@@ -6,6 +6,7 @@
 #include <ctime>
 #include <deque>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 
 #include "assets/cfile.h"
@@ -15,14 +16,14 @@
 #include "audio/sound_system.h"
 #include "core/edition.h"
 #include "core/log.h"
-#include "core/watcom_random.h"
+#include "game/new_game.h"
 #include "gfx/gsystem.h"
 #include "platform/audio_device.h"
 #include "platform/clock.h"
 #include "platform/input.h"
 #include "platform/screenshot.h"
 #include "screens/screens.h"
-#include "ui/game_session.h"
+#include "ui/game_core_session.h"
 #include "ui/winmgr.h"
 
 namespace oa {
@@ -74,6 +75,8 @@ class Host {
   void set_pointer_shown(bool shown) { pointer_shown_ = shown; }
   // `GSystem_set_pointer`: the `MOUSE.SHP` frame drawn.
   void set_pointer_frame(int frame) { pointer_frame_ = frame; }
+  // The last frame shown, with the pointer.
+  const Image8& shown_frame() const { return frame_; }
 
   // Reads the system's input events, and the next scripted step when
   // `scripted` (one per main-loop pass).
@@ -150,9 +153,19 @@ void run(const GameOptions& options, const GameFiles& files) {
   gs.fade_window_colors(gs.shadow(), kLogoFadeIn);
 
   SoundSystem sound(files, host.mixer());
-  WatcomRandom random;
-  random.srand(static_cast<std::uint32_t>(std::time(nullptr)));
-  StubGameSession game;
+  // The start-up galaxy (`srand(time(NULL))`, `cosmos.txt`), before the
+  // windows. Headless runs read no save of the install.
+  GameCoreSession game(files, options.user_dir, !options.screenshot.has_value());
+  std::optional<game::CosmosTxt> cosmos_txt;
+  if (options.seed) {
+    cosmos_txt = game::CosmosTxt{.stars = 50, .races = 7, .seed = *options.seed, .species = {}};
+  } else if (!options.user_dir.empty()) {
+    std::error_code ec;
+    if (const std::filesystem::path path = options.user_dir / "cosmos.txt"; std::filesystem::exists(path, ec)) {
+      cosmos_txt = game::parse_cosmos_txt(read_file(path));
+    }
+  }
+  game.start(static_cast<std::uint32_t>(std::time(nullptr)), cosmos_txt ? &*cosmos_txt : nullptr);
   std::unique_ptr<WinMgr> wm_holder;
   WindowFactory factory = WindowFactory::standard();
   add_screen_windows(factory);
@@ -174,9 +187,11 @@ void run(const GameOptions& options, const GameFiles& files) {
                                             }
                                             return host.input().poll();
                                           },
-                                          .present = [&] { host.present(gs); }},
+                                          .present = [&] { host.present(gs); },
+                                          .shown_frame = [&]() -> const Image8& { return host.shown_frame(); }},
                                factory);
   WinMgr& wm = *wm_holder;
+  wm.setup_race_shapes();
 
   gs.fade_window_colors(VgaPalette{}, kLogoFadeOut);
   wm.start_pending_fade();

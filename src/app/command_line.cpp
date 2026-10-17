@@ -205,6 +205,14 @@ CommandLine parse_command_line(std::span<const std::string_view> args) {
       }
     } else if (a == "--keys") {
       parse_keys(value, o.keys);
+    } else if (a == "--seed") {
+      std::int32_t seed = 0;
+      if (std::from_chars(value.data(), value.data() + value.size(), seed).ec != std::errc{}) {
+        throw std::runtime_error("--seed needs a number");
+      }
+      o.seed = seed;
+    } else if (a == "--save-dir") {
+      o.save_dir = value;
     } else {
       throw usage_error();
     }

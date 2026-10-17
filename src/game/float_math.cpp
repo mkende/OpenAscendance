@@ -38,6 +38,13 @@ void normalize(Vec3& v) {
   }
 }
 
+void set_length(Vec3& v, float len) {
+  normalize(v);
+  v[0] = f32(static_cast<double>(v[0]) * len);
+  v[1] = f32(static_cast<double>(v[1]) * len);
+  v[2] = f32(static_cast<double>(len) * v[2]);
+}
+
 void rotate_y(Vec3& v, float degrees) {
   if (degrees == 0.0f) {
     return;

@@ -9,7 +9,9 @@ Status: milestone 1, the platform layer, the asset decoders, the logo, the
 opening menu and the intro with its subtitles and music, the window toolkit
 (buttons, toggles, list boxes, help, modal dialogs, help mode, exit corners,
 hotkeys, `ascend.cfg`) and the front-end screens (new game, species history,
-load/save lists) over a stand-in game core.
+load/save lists); milestone 2 (in progress), the game screens over the game
+core: the star map (its new-game, species and diplomacy variants), the saves
+with their window state, the planet and research screens.
 
 ## Layout
 
@@ -20,15 +22,20 @@ the functions they port with their `PATCH.EXE` address:
 - `src/assets`: the COB archives (`cfile`), shapes, palettes, haze tables,
   fonts, GIF, FLC, sounds and the text tables.
 - `src/game`: the headless game core (no SDL): the game tables, the state
-  (`Cosmos`, races, stars, lanes, planets, ships, research), the saves and
-  the galaxy generation.
+  (`Cosmos`, races, stars, lanes, planets, ships, research), the saves, the
+  galaxy generation and the day (`cosmos.h`: `cosmos_end_day` and the
+  contested-star walk; planets, research, ships and gizmos, diplomacy, the
+  battle rules and the System Display's turn loop `battle_control.h`), with
+  each variant's AI behind `ai.h` (Standard: `race_ai`, `battle`;
+  Antagonizer: `antag_*`).
 - `src/gfx`: the VFX blitters, the fonts, `GSystem` (screen, DAC, fades).
 - `src/audio`: the mixer and `SoundSystem` (music and effects).
 - `src/platform`: the SDL window, input, clock and sound output.
 - `src/ui`: `WinMgr`, `GWindow` and the toolkit's window classes, the FLIC
-  player and window, `GameSession` (the game core as the screens see it).
-- `src/screens`: the front-end screens (new game, species history, load/save
-  and tutorial lists).
+  player and window, `GameSession` (the game core as the screens see it)
+  and `GameCoreSession` (it over `src/game`: saves, new game, the day).
+- `src/screens`: the screens (new game, species history, load/save and
+  tutorial lists, the star map, planets, research).
 - `src/app`: `main`, the command line and the install setup.
 
 ## Build
@@ -50,8 +57,9 @@ packages, [RELEASING.md](RELEASING.md) the releases.
 
 Without `--data` the game asks once for the install folder and remembers it.
 Alt+Enter toggles fullscreen. `--screenshot <file.bmp> [--frames N]` with
-`--keys <k1,k2,...>` runs headless and saves a frame
-([`src/app/command_line.h`](src/app/command_line.h)).
+`--keys <k1,k2,...>` runs headless and saves a frame, `--save-dir <dir>`
+keeping its saves and Alt+G screenshots, and `--seed N` starts the galaxy of
+the oracle's runs ([`src/app/command_line.h`](src/app/command_line.h)).
 
 ## Tests
 
@@ -61,3 +69,6 @@ Alt+Enter toggles fullscreen. `--screenshot <file.bmp> [--frames N]` with
 Tests of the original files' content are skipped when `OA_DATA` is unset;
 the comparisons with the original's saves (`docs/12-oracle.md`) when
 `OA_ORACLE` does not name the `work/oracle` folder of the reference runs.
+The day tests (`tests/day_test.cpp`, tag `[day]`) replay every case of the
+corpus; with `OA_DUMP_DIR` set they write the remake's save of the first
+diverging day, to compare with `tools/savdiff.py`.

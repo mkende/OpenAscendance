@@ -17,8 +17,6 @@ class ListBox;
 
 class NewGameWnd final : public GWindow {
  public:
-  // The stars of each density (`0x86a00`).
-  static constexpr std::array<int, 5> kDensityStars{15, 25, 50, 75, 100};
   static constexpr int kSpecies = 21;
   static constexpr int kColors = 7;
   // The messages of the setting buttons (GALAXY_MORE, PLAYERS_MORE,

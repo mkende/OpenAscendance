@@ -33,6 +33,9 @@ class HelpWnd : public GWindow {
   void open_topic(std::string_view file, std::string_view topic);
   const std::string& topic() const { return topic_; }
   const HelpTopic& content() const { return content_; }
+  // The loaded topic, for the screens that fill its texts and pictures in
+  // (the colony and invasion reports, `PlanWnd_handle_event` 0x35e98).
+  HelpTopic& content() { return content_; }
   int page() const { return page_; }
 
   // `HelpWnd_handle_event` (0x2f488): a right click or help click closes it

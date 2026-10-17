@@ -21,51 +21,13 @@
 #include "game/session.h"
 #include "game/tables.h"
 #include "game_data.h"
+#include "game_oracle.h"
 
 namespace oa::game {
 namespace {
 
-// Returns the tables of the OA_DATA install, nothing when it is unset.
-const GameTables* install_tables() {
-  static const std::optional<GameTables> tables = []() -> std::optional<GameTables> {
-    const auto install = test::game_install();
-    if (!install) {
-      return std::nullopt;
-    }
-    return load_game_tables(GameFiles(*install));
-  }();
-  return tables ? &*tables : nullptr;
-}
-
-#define OA_REQUIRE_TABLES(tables)                        \
-  const GameTables* tables = install_tables();           \
-  if (tables == nullptr) {                               \
-    SKIP("OA_DATA is not set to an Ascendancy install"); \
-  }
-
-// Returns the file `relative` of the OA_ORACLE directory (`work/oracle`),
-// nothing when OA_ORACLE is unset or the file is missing.
-std::optional<std::vector<std::uint8_t>> oracle_file(const std::string& relative) {
-  const char* dir = std::getenv("OA_ORACLE");
-  if (dir == nullptr || *dir == '\0') {
-    return std::nullopt;
-  }
-  const std::filesystem::path path = std::filesystem::path(dir) / relative;
-  if (!std::filesystem::exists(path)) {
-    return std::nullopt;
-  }
-  return read_file(path);
-}
-
-// Returns the first offset where `a` and `b` differ, or -1.
-std::ptrdiff_t first_difference(const std::vector<std::uint8_t>& a, const std::vector<std::uint8_t>& b) {
-  for (std::size_t i = 0; i < std::min(a.size(), b.size()); ++i) {
-    if (a[i] != b[i]) {
-      return static_cast<std::ptrdiff_t>(i);
-    }
-  }
-  return a.size() == b.size() ? -1 : static_cast<std::ptrdiff_t>(std::min(a.size(), b.size()));
-}
+using oracle_test::first_difference;
+using oracle_test::oracle_file;
 
 TEST_CASE("snap_to_grid rounds to the nearest multiple, halves away from zero", "[game]") {
   Vec3 v = {47.9f, -16.0f, 15.9f};

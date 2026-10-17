@@ -4,7 +4,9 @@
 #include <cstring>
 #include <format>
 #include <string_view>
+#include <vector>
 
+#include "assets/static_strings.h"
 #include "assets/tokens.h"
 #include "core/error.h"
 #include "core/fixed_width.h"
@@ -257,6 +259,13 @@ GameTables load_game_tables(const GameFiles& files) {
   t.star_names = parse_star_names(files.load("names.txt"));
   for (std::size_t s = 0; s < t.dip.size(); ++s) {
     t.dip[s] = parse_dip_values(files.load(std::format("RACE{:02}.DIP", s)));
+  }
+  const std::vector<std::string> strings = parse_static_strings(files.load("static.txt"));
+  if (strings.size() < kHullNameString + kHullCount) {
+    throw DataError("static.txt: no hull names");
+  }
+  for (std::size_t h = 0; h < kHullCount; ++h) {
+    t.hull_names[h] = strings[kHullNameString + h];
   }
   return t;
 }

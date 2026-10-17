@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <bit>
 #include <cctype>
+#include <cmath>
 #include <cstring>
 #include <format>
 #include <fstream>
@@ -10,8 +11,12 @@
 #include "assets/gif.h"
 #include "assets/static_strings.h"
 #include "assets/tokens.h"
+#include "core/c_format.h"
 #include "core/error.h"
 #include "core/log.h"
+#include "game/session.h"
+#include "game/tables.h"
+#include "ui/button_group.h"
 #include "ui/edit_field.h"
 #include "ui/help_wnd.h"
 #include "ui/text_box.h"
@@ -32,6 +37,7 @@ constexpr std::uint16_t kScanM = 0x32;
 
 // The screens of the hotkeys and the screen-specific rules.
 constexpr int kScreenOpening = 0;
+constexpr int kScreenStarMap = 1;
 constexpr int kScreenSave = 2;
 constexpr int kScreenLoad = 4;
 constexpr int kScreenShipDesign = 8;
@@ -41,6 +47,109 @@ constexpr int kScreenPlanet = 17;
 constexpr int kThemes = 5;
 // The resumed theme's fade-in ends at this volume.
 constexpr int kResumeVolume = 100;
+
+// The window classes with a part in the saves' window state (`windows.txt`
+// TYPE) and their sizes.
+constexpr int kTypeStarMap = 2;
+constexpr int kTypeButtonGroup = 3;
+constexpr int kTypeStarSystem = 4;
+constexpr int kTypePlanet = 7;
+constexpr int kTypeResearch = 9;
+constexpr int kTypeToggle = 25;
+constexpr std::size_t kStarMapStateSize = 0xbe;
+constexpr std::size_t kToggleStateSize = 4;
+constexpr std::size_t kStarSystemStateSize = 0x1a08;
+constexpr std::size_t kPlanetStateSize = 1;
+constexpr std::size_t kCameraStateSize = 0x98;
+
+// The star system window's state (`BatModeWnd_serialize` 0x19e2c): the
+// 100 per-star "camera set" flags at +0x12c0 (cleared by Begin New Game).
+constexpr std::size_t kStarSystemFlagsOffset = 0x12c0;
+constexpr std::size_t kStarSystemFlagsSize = 100 * 4;
+// A camera's orientation basis (`Camera` +0x74), reset by Begin New Game in
+// the research window's camera.
+constexpr std::size_t kCameraOrientationOffset = 0x74;
+
+// Appends the little-endian bytes of `v`.
+void put_u32(std::vector<std::uint8_t>& out, std::uint32_t v) {
+  for (int shift = 0; shift < 32; shift += 8) {
+    out.push_back(static_cast<std::uint8_t>(v >> shift));
+  }
+}
+void put_f32(std::vector<std::uint8_t>& out, float v) { put_u32(out, std::bit_cast<std::uint32_t>(v)); }
+
+// The bytes of a camera (`Camera_ctor` 0x1b4f0: identity matrices, the rest
+// zero), with `fov`, `focal`, `near`, `far`, `position` and `scale` (all
+// zero for a camera only constructed).
+std::vector<std::uint8_t> camera_bytes(float fov, float focal, float near_clip, float far_clip,
+                                       std::array<float, 3> position, float scale) {
+  constexpr std::array<float, 9> kIdentity3 = {1, 0, 0, 0, 1, 0, 0, 0, 1};
+  constexpr std::array<float, 12> kIdentity34 = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0};
+  std::vector<std::uint8_t> out;
+  for (const float v : kIdentity3) {
+    put_f32(out, v);
+  }
+  for (const float v : {fov, focal, near_clip, far_clip}) {
+    put_f32(out, v);
+  }
+  for (const float v : position) {
+    put_f32(out, v);
+  }
+  for (const float v : kIdentity34) {
+    put_f32(out, v);
+  }
+  put_f32(out, scale);
+  for (const float v : kIdentity3) {
+    put_f32(out, v);
+  }
+  return out;
+}
+
+// The state of the windows that leave it to the window manager, as built:
+// the star system view's (`BatModeWnd` ctor and init: 100 object slots with
+// identity rotations, a constructed camera, the view basis, the screen
+// centre (229, 232) and the five toggles -1, 0, -1, -1, -1), the planet
+// window's display flags (5) and the research camera (`ResWnd_init`
+// 0x4250c: fov 30, focal 320 / tan 15 degrees, near 1, far 100000, at
+// (0, 0, -150), the view not built yet).
+std::vector<std::uint8_t> default_state(int type) {
+  std::vector<std::uint8_t> out;
+  switch (type) {
+    case kTypeStarSystem: {
+      out.assign(0x4b0, 0);
+      for (int slot = 0; slot < 100; ++slot) {
+        for (int k = 0; k < 9; ++k) {
+          put_f32(out, k % 4 == 0 ? 1.0F : 0.0F);
+        }
+      }
+      out.resize(0x190c, 0);
+      const std::vector<std::uint8_t> camera = camera_bytes(0, 0, 0, 0, {0, 0, 0}, 0);
+      out.insert(out.end(), camera.begin(), camera.end());
+      for (const float v :
+           {0.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F}) {
+        put_f32(out, v);
+      }
+      put_u32(out, 229U | (232U << 16));
+      put_u32(out, 0);
+      put_f32(out, 0);
+      for (const std::uint32_t v : {0xffffffffU, 0U, 0xffffffffU, 0xffffffffU, 0xffffffffU}) {
+        put_u32(out, v);
+      }
+      break;
+    }
+    case kTypePlanet:
+      out.push_back(5);
+      break;
+    case kTypeResearch: {
+      const double focal = 320.0 / std::tan(30.0 * static_cast<double>(0.017453292F) * 0.5);
+      out = camera_bytes(30, static_cast<float>(focal), 1, 100000, {0, 0, -150}, 1);
+      break;
+    }
+    default:
+      break;
+  }
+  return out;
+}
 
 // The click sound of the exit corners (`soundfx.txt` 0, `button`).
 constexpr int kExitSound = 0;
@@ -65,6 +174,9 @@ constexpr int kInputBoxX0 = 0xf2;
 constexpr int kInputBoxX1 = 0x18d;
 constexpr int kInputBoxFrame = 1;
 constexpr int kHelpShapes = 37;
+// `gwshare.txt`: the race slots' small ships and `planitem.shp`.
+constexpr int kShipShapes = 14;
+constexpr int kPlanItemShapes = 30;
 
 std::string upper(std::string_view s) {
   std::string out(s);
@@ -132,9 +244,144 @@ WinMgr::WinMgr(UiServices services, const WindowFactory& factory)
   load_windows(txt, factory);
   install_screen_handlers();
   load_config();
+  services_.game.attach_windows(this);
 }
 
-WinMgr::~WinMgr() = default;
+WinMgr::~WinMgr() { services_.game.attach_windows(nullptr); }
+
+std::size_t WinMgr::state_size(const GWindow& w) {
+  switch (w.type()) {
+    case kTypeStarMap:
+      return kStarMapStateSize;
+    case kTypeButtonGroup:
+      if (const auto* group = dynamic_cast<const ButtonGroup*>(&w)) {
+        return group->controls().size() * ButtonGroup::kControlRecordSize;
+      }
+      return 0;
+    case kTypeStarSystem:
+      return kStarSystemStateSize;
+    case kTypePlanet:
+      return kPlanetStateSize;
+    case kTypeResearch:
+      return kCameraStateSize;
+    case kTypeToggle:
+      return kToggleStateSize;
+    default:
+      return 0;
+  }
+}
+
+std::vector<std::uint8_t> WinMgr::initial_window_state() const {
+  std::vector<std::uint8_t> state;
+  for (const auto& w : windows_) {
+    const std::size_t size = w ? state_size(*w) : 0;
+    if (size == 0) {
+      continue;
+    }
+    std::vector<std::uint8_t> part(size, 0);
+    if (!w->save_state(part)) {
+      part = default_state(w->type());
+      part.resize(size, 0);
+    }
+    state.insert(state.end(), part.begin(), part.end());
+  }
+  return state;
+}
+
+void WinMgr::store_window_state() {
+  game::Session* core = services_.game.core();
+  if (core == nullptr) {
+    return;
+  }
+  std::vector<std::uint8_t> initial = initial_window_state();
+  if (core->window_state.size() != initial.size()) {
+    core->window_state = std::move(initial);
+    return;
+  }
+  std::size_t at = 0;
+  for (const auto& w : windows_) {
+    const std::size_t size = w ? state_size(*w) : 0;
+    if (size != 0) {
+      w->save_state(std::span(core->window_state).subspan(at, size));
+      at += size;
+    }
+  }
+}
+
+void WinMgr::restore_window_state() {
+  setup_race_shapes();
+  broadcast_event(kEventRefresh, 0, 0);
+  game::Session* core = services_.game.core();
+  if (core == nullptr) {
+    return;
+  }
+  std::size_t total = 0;
+  for (const auto& w : windows_) {
+    total += w ? state_size(*w) : 0;
+  }
+  if (core->window_state.size() != total) {
+    log_warning("window state of {} bytes, the windows have {}", core->window_state.size(), total);
+    return;
+  }
+  std::size_t at = 0;
+  for (const auto& w : windows_) {
+    const std::size_t size = w ? state_size(*w) : 0;
+    if (size != 0) {
+      w->load_state(std::span<const std::uint8_t>(core->window_state).subspan(at, size));
+      at += size;
+    }
+  }
+}
+
+void WinMgr::new_game_windows() {
+  game::Session* core = services_.game.core();
+  if (core != nullptr) {
+    store_window_state();
+  }
+  std::size_t at = 0;
+  for (const auto& w : windows_) {
+    if (!w) {
+      continue;
+    }
+    w->new_game();
+    const std::size_t size = state_size(*w);
+    if (size == 0) {
+      continue;
+    }
+    std::vector<std::uint8_t> scratch(size);
+    if (core != nullptr && !w->save_state(scratch)) {
+      // The parts kept here: the star system's flags, the research camera's
+      // orientation.
+      const std::span<std::uint8_t> part = std::span(core->window_state).subspan(at, size);
+      if (w->type() == kTypeStarSystem) {
+        std::fill_n(part.begin() + kStarSystemFlagsOffset, kStarSystemFlagsSize, 0);
+      } else if (w->type() == kTypeResearch) {
+        const std::vector<std::uint8_t> identity = camera_bytes(0, 0, 0, 0, {0, 0, 0}, 0);
+        std::copy(identity.begin() + kCameraOrientationOffset, identity.end(), part.begin() + kCameraOrientationOffset);
+      }
+    }
+    at += size;
+  }
+  setup_race_shapes();
+}
+
+void WinMgr::setup_race_shapes() {
+  const GameSession& game = services_.game;
+  for (int race = 0; race < game.race_count() && race < 7; ++race) {
+    const int species = game.race_species(race);
+    const auto slot = static_cast<std::size_t>(race);
+    shared_shape_files_.at(slot) = std::format("DATA\\SMRACE{:02d}.SHP", species);
+    shared_shape_files_.at(slot + 7) = std::format("DATA\\LGRACE{:02d}.SHP", species);
+    shared_shape_files_.at(slot + 14) = std::format("DATA\\SMSHIP{:02d}.SHP", species);
+    shared_shape_files_.at(slot + 21) = std::format("DATA\\DKSHIP{:02d}.SHP", species);
+  }
+}
+
+void WinMgr::reset_history_to_opening() {
+  history_[0] = kScreenOpening;
+  history_count_ = 1;
+  history_top_ = 1;
+}
 
 void WinMgr::load_windows(const WindowsTxt& txt, const WindowFactory& factory) {
   for (const WindowRecord& record : txt.windows) {
@@ -186,6 +433,12 @@ void WinMgr::install_screen_handlers() {
   for (const int s : {1, 2, 3, 4, 7, 8, 9, 10, 12, 13, 14, 15, 16, 18, 20}) {
     set_enter_handler(s, [this](int screen) { draw_background(screen); });
   }
+  // starmap_screen_leave 0x21b88: NEXTTURNCONT off (not redrawn).
+  set_leave_handler(kScreenStarMap, [this](int /*screen*/) {
+    if (auto* auto_turn = dynamic_cast<ToggleButton*>(find_window("NEXTTURNCONT"))) {
+      auto_turn->set_state(false);
+    }
+  });
 }
 
 void WinMgr::draw_background(int screen) {
@@ -412,6 +665,7 @@ void WinMgr::set_screen(int screen, bool push) {
     history_count_ = std::min(history_count_ + 1, kHistory);
   }
   current_ = screen;
+  services_.game.set_current_screen(screen);
   if (screen == kScreenOpening && first_opening_ && services_.game.resume_exists()) {
     services_.game.load_resume();
   }
@@ -646,7 +900,8 @@ void WinMgr::save_screenshot() {
     return;
   }
   const std::filesystem::path path = services_.user_dir / std::format("scr{:03d}.gif", screenshot_count_);
-  const std::vector<std::uint8_t> gif = encode_gif(screen(), services_.gsystem.dac());
+  const std::vector<std::uint8_t> gif =
+      encode_gif(services_.shown_frame ? services_.shown_frame() : screen(), services_.gsystem.dac());
   std::ofstream out(path, std::ios::binary | std::ios::trunc);
   out.write(reinterpret_cast<const char*>(gif.data()), static_cast<std::streamsize>(gif.size()));
   if (!out) {
@@ -664,10 +919,11 @@ void WinMgr::show_help(const Message& m) {
   }
   switch (m.p2) {
     case kHelpTopic:
-      if (m.text.empty()) {
-        return;
+      // Without a topic the window runs as it was prepared (the planet
+      // screen's colony and invasion reports).
+      if (!m.text.empty()) {
+        help->open_topic("help.txt", m.text);
       }
-      help->open_topic("help.txt", m.text);
       break;
     case kHelpNumbered:
       help->open_topic("help.txt", std::format("help{}", m.p1));
@@ -675,9 +931,32 @@ void WinMgr::show_help(const Message& m) {
     case kHelpNoIntro:
       help->open_topic("help.txt", "NOINTRO");
       break;
+    case kHelpPlanet: {
+      // A planet item (the planet screen's build list): its name in the
+      // text, its picture (a Ship: the player's small ship).
+      const game::Session* core = services_.game.core();
+      if (core == nullptr) {
+        return;
+      }
+      help->open_topic("planhelp.txt", std::format("plitem{:02d}", m.p1));
+      HelpTopic& topic = help->content();
+      if (topic.element_count < 2 || topic.elements[0].kind != HelpElement::Kind::kText ||
+          topic.elements[1].kind != HelpElement::Kind::kShape) {
+        throw DataError(std::format("planhelp.txt: plitem{:02d} is not a text and a picture", m.p1));
+      }
+      const std::string& name = core->tables->planitems.items.at(static_cast<std::size_t>(m.p1)).name;
+      topic.elements[0].text = c_format(topic.elements[0].text, name.c_str());
+      if (m.p1 == game::kItemShip) {
+        topic.elements[1].shape_index = kShipShapes + services_.game.player_race();
+        topic.elements[1].frame = 0;
+      } else {
+        topic.elements[1].shape_index = kPlanItemShapes;
+        topic.elements[1].frame = m.p1;
+      }
+      break;
+    }
     default:
-      // The special abilities, gizmo and planet help come with their
-      // screens.
+      // The special abilities and gizmo help come with their screens.
       log_debug("help kind {} not handled yet", m.p2);
       return;
   }
@@ -708,13 +987,35 @@ void WinMgr::dispatch_messages() {
       case kMessageEndModal:
         end_modal(m.p1);
         break;
+      case kMessageNextTurn:
+        next_turn();
+        break;
+      case kMessageAutoTurn:
+        if (services_.game.next_contested_star() < 0) {
+          auto_turn_ = !auto_turn_;
+        } else {
+          log_debug("contested star: the game event 19 comes with the game events");
+        }
+        break;
       default:
-        // 4 (trace replay) and 7, 8 (next turn) come with the tutorials and
-        // the simulation.
+        // 4 (trace replay) comes with the tutorials.
         log_debug("system message {} ({}, {}) not handled yet", m.id, m.p1, m.p2);
         break;
     }
   }
+}
+
+void WinMgr::next_turn() {
+  GameSession& game = services_.game;
+  if (game.next_contested_star() >= 0) {
+    // Game event 19 (a battle to fight or skip) comes with the game events.
+    log_debug("contested star: the game event 19 comes with the game events");
+    return;
+  }
+  game.end_day();
+  setup_race_shapes();
+  broadcast_event(kEventRefresh, 0, 0);
+  refresh_screen();
 }
 
 void WinMgr::end_modal(int result) {
@@ -934,6 +1235,11 @@ void WinMgr::process_input(const InputState& input) {
   }
   while (!messages_.empty()) {
     dispatch_messages();
+  }
+  // The game events of the star map (`WinMgr_show_game_events` 0x50f84)
+  // come with the game events; the auto next turn waits for them.
+  if (auto_turn_ && !services_.game.has_game_events() && !modal_) {
+    post_message(kMessageNextTurn, 0, 0);
   }
   pick_music(input);
   SoundSystem& sound = services_.sound;

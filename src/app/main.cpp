@@ -119,9 +119,17 @@ int main(int argc, char** argv) {
     if (!install) {
       return 0;
     }
-    oa::GameOptions game{.scaling = options.scaling, .keys = options.keys, .screenshot = {}, .frames = options.frames, .user_dir = {}};
+    oa::GameOptions game{.scaling = options.scaling,
+                         .keys = options.keys,
+                         .screenshot = {},
+                         .frames = options.frames,
+                         .user_dir = {},
+                         .seed = options.seed};
     if (options.screenshot) {
       game.screenshot = *options.screenshot;
+      if (options.save_dir) {
+        game.user_dir = *options.save_dir;
+      }
     } else {
       game.user_dir = oa::user_dir();
     }

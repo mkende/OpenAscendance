@@ -261,7 +261,12 @@ bool ListBox::handle_event(int type, int a, int b) {
       wm_.kill_timer(id_, -1);
       hover_ = -1;
       arrow_ = 0;
-      draw(kDrawNormal);
+      // The original draws a hidden list too (the planet window's leave
+      // broadcast before it opens its build list), with the SHAPEFRAME
+      // arrows not set yet; its activation draws over it at once.
+      if (shown_) {
+        draw(kDrawNormal);
+      }
       return true;
     case kEventMouseEnter:
       wm_.request_notify(id_, WinMgr::kNotifyMove, kEventMouseMove, 0, 0);

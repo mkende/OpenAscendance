@@ -35,13 +35,13 @@ WindowFactory WindowFactory::standard() {
   f.add(25, creator<ToggleButton>());
   f.add(26, creator<TextBox>());
   f.add(31, creator<RaceColorButton>());
-  // The screens' classes (star map, battle, planet, ship design, research,
-  // load/save, intelligence, planet square, status, fleet, new game, battle
-  // control, diplomacy, special abilities, game events, end of game, start
-  // of game, battle items) draw nothing until they are written; 5, 6 and 29
-  // (buttons with their own look) stay plain buttons.
-  f.add(2, creator<CosWndPlaceholder>());
-  for (const int type : {4, 7, 8, 9, 11, 12, 13, 14, 16, 17, 18, 19, 21, 22, 23, 24, 30, 32}) {
+  // The screens' classes (`screens/screens.h`: the star map, battle,
+  // planet, ship design, research, load/save, intelligence, planet square,
+  // status, fleet, new game, battle control, diplomacy, special abilities,
+  // game events, end of game, start of game, battle items) draw nothing
+  // until they are added; 5, 6 and 29 (buttons with their own look) are
+  // plain buttons until then.
+  for (const int type : {2, 4, 7, 8, 9, 11, 12, 13, 14, 16, 17, 18, 19, 21, 22, 23, 24, 30, 32}) {
     f.add(type, creator<PlaceholderWnd>());
   }
   return f;

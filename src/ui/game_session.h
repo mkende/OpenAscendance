@@ -1,8 +1,9 @@
 // The game core as the user interface sees it: the narrow interface the
 // window manager and the front-end screens call for the game state (the
 // `Cosmos` global, `Game_save` 0x4f458 / `Game_load` 0x4f3c0, the new-game
-// galaxy set-up), implemented by `src/game`. `StubGameSession` stands in for
-// it until then: no game, no saves.
+// galaxy set-up, the day), implemented over `src/game` by `GameCoreSession`
+// (`ui/game_core_session.h`). `StubGameSession` is the tests' stand-in: no
+// game, no saves.
 #pragma once
 
 #include <array>
@@ -10,6 +11,10 @@
 #include <optional>
 #include <string>
 #include <vector>
+
+namespace oa::game {
+struct Session;
+}  // namespace oa::game
 
 namespace oa {
 
@@ -48,11 +53,31 @@ struct NewGameSettings {
   int atmosphere = 1;     // 0 peaceful, 1 neutral, 2 hostile
 };
 
+// The window manager's part of the saves (`WinMgr_serialize_windows`
+// 0x556a4): the window state that `Game_save` writes after the game and
+// `Game_load` reads back, kept in the core's `game::Session::window_state`.
+class WindowStateIo {
+ public:
+  virtual ~WindowStateIo() = default;
+  // Before a save: the windows' state into the core's window state.
+  virtual void store_window_state() = 0;
+  // After a game was loaded (`Game_load`): the race slots' shapes, the
+  // refresh (event 0xd) to the current screen, then the windows' state read
+  // back from the core's window state.
+  virtual void restore_window_state() = 0;
+};
+
 class GameSession {
  public:
   static constexpr int kSaveSlots = 20;
+  // The stars of each density (`0x86a00`).
+  static constexpr std::array<int, 5> kDensityStars{15, 25, 50, 75, 100};
 
   virtual ~GameSession() = default;
+
+  // The window manager saving and restoring its state with the games (null
+  // for none).
+  void attach_windows(WindowStateIo* windows) { windows_ = windows; }
 
   // Returns whether a game is loaded (a new one begun, a save or
   // `resume.gam` loaded).
@@ -80,7 +105,15 @@ class GameSession {
 
   // The new-game screen (`NewGameWnd_handle_event` 0x4dd5c) calls these in
   // the original's order, each one a step of the galaxy set-up:
-  // `Cosmos_generate` (on entry and on a star density change): a new
+  // Entry (event 1): the atmosphere byte back to Neutral, `Cosmos_generate`
+  // for the settings (`settings` are the defaults), the player in slot 0
+  // with species 0, `Cosmos_assign_colors`.
+  virtual void open_new_game(const NewGameSettings& settings) {
+    generate_galaxy(kDensityStars.at(static_cast<std::size_t>(settings.star_density)), settings.species_count,
+                    settings.species);
+    assign_colors(settings.color);
+  }
+  // `Cosmos_generate` (on a star density change): a new
   // galaxy of `stars` stars and `races` races, the player's (race 0) of
   // `species`;
   virtual void generate_galaxy(int stars, int races, int species) = 0;
@@ -97,9 +130,30 @@ class GameSession {
   // The atmosphere byte (`0x93bac`: 0 peaceful, 1 neutral, 2 hostile), set
   // by "Begin" (the species history picks its paragraph by it).
   virtual int atmosphere() const = 0;
+
+  // The game core's state (`src/game`: the cosmos, the research, the
+  // session globals) that the game screens read and act on through the
+  // core's functions; null when there is no game core.
+  virtual game::Session* core() { return nullptr; }
+
+  // The next-day commands (messages 7 and 8, `WinMgr_dispatch_messages`
+  // 0x51290): the next star of the day where the player has to fight
+  // (`Cosmos_next_contested_star` 0x20260), -1 for none, and the end of the
+  // day (`Cosmos_end_day` 0x203b4).
+  virtual int next_contested_star() { return -1; }
+  virtual void end_day() {}
+  // Whether game events wait to be shown (the window manager's queue,
+  // `+0x475a`): the auto next turn waits for them.
+  virtual bool has_game_events() const { return false; }
+  // The current screen, which some day code tests (`0xfe56c`).
+  virtual void set_current_screen(int /*screen*/) {}
+
+ protected:
+  WindowStateIo* windows_ = nullptr;
 };
 
-// The stand-in game core: no game, every save slot empty, nothing written.
+// The tests' stand-in game core: no game, every save slot empty, nothing
+// written.
 class StubGameSession : public GameSession {
  public:
   bool has_game() const override { return game_; }

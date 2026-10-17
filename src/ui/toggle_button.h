@@ -26,6 +26,9 @@ class ToggleButton final : public GWindow {
   // `ToggleButton_draw` (0x2cc48) / `ToggleButton_draw_hilite` (0x2cebc).
   void draw(int mode) override;
   void draw_hilite(int mode) override;
+  // `ToggleButton_serialize` (0x2d0bc): the state as an i32 (0 / -1).
+  bool save_state(std::span<std::uint8_t> out) const override;
+  void load_state(std::span<const std::uint8_t> in) override;
 
  private:
   void draw_shape(std::uint8_t on_color, bool remap);

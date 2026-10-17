@@ -10,6 +10,7 @@ namespace oa {
 
 GWindow::GWindow(WinMgr& wm, const WindowRecord& record, const ShapeTable* shapes)
     : wm_(wm),
+      type_(record.type),
       pane_{record.x0, record.y0, record.x1, record.y1},
       shapes_(shapes),
       frame_(record.shape_frame),

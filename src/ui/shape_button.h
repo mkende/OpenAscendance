@@ -30,16 +30,4 @@ class PlaceholderWnd final : public GWindow {
   void draw_hilite(int /*mode*/) override {}
 };
 
-// The star map's stand-in (TYPE 2, COSMOSWnd, until `CosWnd` is written):
-// on the new-game screen it activates none of its children, as the star map
-// does (`docs/11-screens.md`, "Per-screen setups").
-class CosWndPlaceholder final : public GWindow {
- public:
-  using GWindow::GWindow;
-
-  bool handle_event(int type, int a, int b) override;
-  void draw(int /*mode*/) override {}
-  void draw_hilite(int /*mode*/) override {}
-};
-
 }  // namespace oa

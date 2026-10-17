@@ -24,10 +24,18 @@ add_executable(oa_tests
   load_test.cpp
   # The new-game and species history screens.
   newgame_test.cpp
+  # The star map and the game session over the game core.
+  star_map_test.cpp
+  # The planet screen and its square dialog.
+  planet_screen_test.cpp
+  # The research screen.
+  research_screen_test.cpp
+  # The planet status list.
+  status_screen_test.cpp
   # The command line and the install choice.
   app_test.cpp
 )
-target_link_libraries(oa_tests PRIVATE oa_core oa_assets oa_gfx oa_audio oa_platform oa_ui oa_screens oa_app
+target_link_libraries(oa_tests PRIVATE oa_core oa_assets oa_gfx oa_audio oa_platform oa_ui oa_screens oa_game oa_app
   Catch2::Catch2WithMain SDL3::Headers)
 include(Catch)
 catch_discover_tests(oa_tests)
@@ -38,6 +46,8 @@ catch_discover_tests(oa_tests)
 add_executable(oa_game_tests
   # Tables, saves and galaxy generation.
   game_test.cpp
+  # The day against the oracle corpus.
+  day_test.cpp
 )
 target_link_libraries(oa_game_tests PRIVATE oa_game Catch2::Catch2WithMain)
 catch_discover_tests(oa_game_tests)

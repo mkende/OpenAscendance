@@ -6,8 +6,8 @@
 // manager").
 //
 // Not here yet: the game events of the star map (`WinMgr_show_game_events`
-// 0x50f84) and the next-turn messages 7 and 8 (the simulation's), the
-// developer keys and the event recording and replay (tutorials).
+// 0x50f84), the developer keys and the event recording and replay
+// (tutorials).
 #pragma once
 
 #include <array>
@@ -16,6 +16,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -41,8 +42,8 @@ enum SystemMessage : int {
   kMessageReplay = 4,    // replay WINEVENT.BIN (developer)
   kMessageHelp = 5,      // text topic, p2 a `HelpKind`
   kMessageEndModal = 6,  // p1 the modal result
-  kMessageNextTurn = 7,
-  kMessageAutoTurn = 8,
+  kMessageNextTurn = 7,  // the next day (NEXTTURN)
+  kMessageAutoTurn = 8,  // next days until an event (NEXTTURNCONT)
 };
 
 // The kinds of help of message 5 (its p2).
@@ -82,6 +83,10 @@ struct UiServices {
   // Shows the frame at the end of a pass (the dirty panes' copy to video
   // memory).
   std::function<void()> present;
+  // The picture on the screen: the last frame shown, with the mouse pointer
+  // (what the VFX driver reads back for the Alt+G screenshots); none: the
+  // off-screen buffer.
+  std::function<const Image8&()> shown_frame = {};
 };
 
 // Builds the window of a `windows.txt` record by its TYPE
@@ -109,7 +114,7 @@ class WindowFactory {
   std::map<int, WindowCreator> creators_;
 };
 
-class WinMgr {
+class WinMgr final : public WindowStateIo {
  public:
   static constexpr int kScreens = 32;
   static constexpr int kScreenWindows = 32;
@@ -136,6 +141,33 @@ class WinMgr {
   ~WinMgr();
   WinMgr(const WinMgr&) = delete;
   WinMgr& operator=(const WinMgr&) = delete;
+
+  // The bytes of window `w`'s part of the saves' window state, by its class
+  // (`windows.txt` TYPE: the classes overriding `GWindow_serialize`): the
+  // star map 0xbe, a toggle 4, a button group 14 per control, the star
+  // system 0x1a08, the planet 1, the research camera 0x98, others none.
+  static std::size_t state_size(const GWindow& w);
+  // The window state of the windows as built (`WinMgr_load_windows`): what
+  // a new game saves for the windows that leave their part to the window
+  // manager (the star system, planet and research windows until written).
+  std::vector<std::uint8_t> initial_window_state() const;
+  // `WindowStateIo`: the windows' parts into / from the core's window state
+  // (`game::Session::window_state`), in window-table order. A window whose
+  // `save_state` returns false keeps the bytes already there.
+  void store_window_state() override;
+  void restore_window_state() override;
+  // "Begin New Game" (`NewGameWnd_handle_event` 0x4dd5c): each window's
+  // `new_game` reset (the star map camera, the race controls' frames, the
+  // star-system views and the research camera orientation), then the race
+  // slots' shapes.
+  void new_game_windows();
+  // `Cosmos_setup_race_palettes` (0x1e818): the shared shapes of race slot
+  // `i` (`gwshare.txt` 0..27: small and large portraits, ship sprites) become
+  // the files of race `i`'s species, for the races of the game.
+  void setup_race_shapes();
+  // After a game is loaded from the load list: Esc goes back to the opening
+  // menu (the history set to screen 0, `LoadWnd_handle_event` 0x30988).
+  void reset_history_to_opening();
 
   UiServices& services() { return services_; }
   ShapeCache& shapes() { return shapes_; }
@@ -168,6 +200,16 @@ class WinMgr {
   bool in_modal() const { return modal_; }
   // The exit corner under the pointer (`+0x24da8`): 0..3, -1 for none.
   int exit_corner() const { return exit_corner_; }
+  // The auto next turn (`+0x24d9c`, NEXTTURNCONT, message 8): a next day is
+  // asked at each pass without game events.
+  bool auto_turn() const { return auto_turn_; }
+  void set_auto_turn(bool on) { auto_turn_ = on; }
+  // The species the player deals with (`0x8675d`: the diplomacy and
+  // intelligence screens' race slot).
+  int target_race() const { return target_race_; }
+  void set_target_race(int race) { target_race_ = race; }
+  // `WinMgr_set_pointer` (0x55680): the pointer frame, kept in help mode.
+  void set_pointer(int frame);
   // The rotation speed factor (`+0x24dac`, saved in `ascend.cfg`).
   float rotation_speed() const { return rotation_speed_; }
   void set_rotation_speed(float speed) { rotation_speed_ = speed; }
@@ -318,8 +360,11 @@ class WinMgr {
   void dispatch_messages();
   void show_help(const Message& m);
   void pick_music(const InputState& input);
-  void set_pointer(int frame);
-  // Alt+G (`screenshot_save_gif` 0x31338): `scr%03d.gif` in the user folder.
+  // Message 7: the next contested star's event, else the end of the day.
+  void next_turn();
+  // Alt+G (`screenshot_save_gif` 0x31338): `scr%03d.gif` in the user folder,
+  // of the picture on the screen (the frame of the previous pass, with the
+  // pointer).
   void save_screenshot();
 
   UiServices services_;
@@ -348,6 +393,7 @@ class WinMgr {
   bool help_mode_ = false;  // +0x24da4
   int exit_corner_ = -1;    // +0x24da8
   bool auto_turn_ = false;  // +0x24d9c (NEXTTURNCONT)
+  int target_race_ = 0;     // 0x8675d
   // Whether `do_modal` saves and restores the screen under the dialog
   // (`0x86a44`; the input box does its own).
   bool save_under_ = true;

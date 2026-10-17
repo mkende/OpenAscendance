@@ -2,7 +2,7 @@
 // SilentHeritage's:
 //
 //   open_ascendance [--data <install dir> | --setup] [--sharp] [--keys <k1,k2,...>]
-//                   [--screenshot <file.bmp> [--frames N]]
+//                   [--screenshot <file.bmp> [--frames N] [--save-dir <dir>]] [--seed N]
 //
 // Without `--data` (or when it is not an install) the game files are those
 // remembered by the install setup (app/install_setup.h), which runs when
@@ -22,9 +22,15 @@
 // `--screenshot` runs headless (SDL's dummy video and audio drivers, a
 // virtual clock) until N frames have been shown (default 2; a frame is shown
 // at each main-loop pass and at each vertical blank a fade waits for), saves
-// the last one as an 8-bit BMP and exits.
+// the last one as an 8-bit BMP and exits; it reads no save of the install
+// and writes nothing, unless `--save-dir` names the folder of the saves,
+// `ascend.cfg` and the Alt+G screenshots.
+// `--seed` starts as with a `cosmos.txt` of 50 stars, 7 races and that seed
+// (the original's developer file, read from the user folder otherwise): the
+// galaxies of the oracle's runs (`docs/12-oracle.md`).
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <span>
 #include <string>
@@ -38,7 +44,8 @@ namespace oa {
 
 // The usage line's options, after the program's name.
 inline constexpr std::string_view kUsageOptions =
-    "[--data <install dir> | --setup] [--sharp] [--keys <k1,k2,...>] [--screenshot <file.bmp> [--frames N]]";
+    "[--data <install dir> | --setup] [--sharp] [--keys <k1,k2,...>] [--screenshot <file.bmp> [--frames N] "
+    "[--save-dir <dir>]] [--seed N]";
 
 struct CommandLine {
   std::optional<std::string> data_dir;
@@ -47,6 +54,8 @@ struct CommandLine {
   std::vector<InputEvent> keys;
   std::optional<std::string> screenshot;
   int frames = 2;
+  std::optional<std::string> save_dir;
+  std::optional<std::int32_t> seed;
 };
 
 // Parses the arguments after the program name. Throws `std::runtime_error`

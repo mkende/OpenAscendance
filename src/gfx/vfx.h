@@ -29,9 +29,19 @@ struct Pane {
 // `vfx_pane_wipe` (0x59de0): fills the visible part of `pane` with `color`.
 void vfx_pane_wipe(Image8& window, const Pane& pane, std::uint8_t color);
 
-// `vfx_line_draw` (0x57411): draws the line (x0, y0)-(x1, y1), pane-relative
-// and inclusive, in `color`.
+// `vfx_line_draw` (0x57411, mode 0): draws the line (x0, y0)-(x1, y1),
+// pane-relative and inclusive, in `color`, from the first point: the minor
+// coordinate follows a 32.32 accumulator starting at one half, the ends are
+// clipped to the pane first (Cohen-Sutherland, the original's roundings).
 void vfx_line_draw(Image8& window, const Pane& pane, int x0, int y0, int x1, int y1, std::uint8_t color);
+
+// `vfx_pixel_write` (0x57260): sets the pixel (x, y) of `pane` when inside.
+void vfx_pixel_write(Image8& window, const Pane& pane, int x, int y, std::uint8_t color);
+
+// `vfx_ellipse_draw` (0x5a458): the outline of the ellipse of radii `rx`,
+// `ry` centred on (x, y) of `pane` (midpoint algorithm, clipped per pixel);
+// a zero radius draws the line (x - rx, y - ry)-(x + rx, y + ry).
+void vfx_ellipse_draw(Image8& window, const Pane& pane, int x, int y, int rx, int ry, std::uint8_t color);
 
 // `vfx_shape_draw` (0x57f4c): draws `shape` with its hotspot at (x, y) of
 // `pane`; transparent pixels leave the window as it is. Throws `DataError`

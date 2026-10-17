@@ -13,14 +13,4 @@ void RaceColorButton::draw(int mode) {
   }
 }
 
-bool CosWndPlaceholder::handle_event(int type, int a, int b) {
-  constexpr int kNewGameScreen = 3;
-  if (type == kEventActivate && wm_.current_screen() == kNewGameScreen) {
-    active_ = true;
-    shown_ = true;
-    return false;
-  }
-  return GWindow::handle_event(type, a, b);
-}
-
 }  // namespace oa

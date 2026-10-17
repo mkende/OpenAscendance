@@ -129,6 +129,11 @@ struct DipValues {
 using StarName = std::string;
 inline constexpr std::size_t kStarNameCount = 100;
 
+// The hull names (`static.txt` strings 131..134, copied to 0xf846c by the
+// first `Ship_init` 0x4470c): Small, Medium, Large, Enormous.
+inline constexpr std::size_t kHullCount = 4;
+inline constexpr std::size_t kHullNameString = 131;
+
 // Every table the game state needs.
 struct GameTables {
   PlanItemTable planitems;
@@ -136,6 +141,7 @@ struct GameTables {
   ResearchTree research;
   std::array<StarName, kStarNameCount> star_names;
   std::array<DipValues, kSpeciesCount> dip;  // by species
+  std::array<std::string, kHullCount> hull_names;
 };
 
 // The parsers take the whole file; each throws `DataError` on a malformed
@@ -154,7 +160,8 @@ std::array<StarName, kStarNameCount> parse_star_names(std::span<const std::uint8
 // thresholds must increase.
 DipValues parse_dip_values(std::span<const std::uint8_t> data);
 
-// Reads every table from the install (`RACE00.DIP`..`RACE20.DIP` by species).
+// Reads every table from the install (`RACE00.DIP`..`RACE20.DIP` by species,
+// the hull names from `static.txt`).
 GameTables load_game_tables(const GameFiles& files);
 
 }  // namespace oa::game

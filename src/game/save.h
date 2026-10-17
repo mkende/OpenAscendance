@@ -18,6 +18,7 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <utility>
 #include <vector>
@@ -68,8 +69,11 @@ struct SaveImage {
 // Parses a save file. Throws `DataError` on a record-size mismatch, a count
 // or index out of range, a raw pointer that is not an element of its array,
 // a truncated file or bytes after the window state that are not a variant
-// trailer.
-SaveImage parse_save(std::span<const std::uint8_t> data);
+// trailer. Pointers that are not records of the writer's cosmos are
+// resolved against `foreign_cosmos` when given: a build saving a game loaded
+// from another build's file writes that file's stale pointers back (the
+// ANTAG saves of a PATCH game); such a file then does not round-trip.
+SaveImage parse_save(std::span<const std::uint8_t> data, std::optional<RawAddress> foreign_cosmos = std::nullopt);
 
 // Returns the bytes of `image`. Throws `std::logic_error` for a state the
 // original cannot write (a used ship in no location, a battle-only order).

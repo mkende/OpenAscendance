@@ -2,6 +2,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
+#include <string>
 #include <vector>
 
 #include "assets/fnt.h"
@@ -165,6 +167,57 @@ TEST_CASE("fade_window_colors reaches the target of the colours in use only", "[
   CHECK(gs.dac().dac[6 * 3] == 0);
   // 30 steps over 25 vertical blanks.
   CHECK(vblanks == 25);
+}
+
+TEST_CASE("vfx_line_draw steps the minor axis on the carries of a 32.32 accumulator", "[gfx]") {
+  // (0, 0)-(10, 3): slope floor(3 * 2^32 / 10), the accumulator from one
+  // half; at x = 5 the exact 1.5 stays 1 (the slope is rounded down).
+  Image8 img(16, 8);
+  vfx_line_draw(img, Pane{0, 0, 15, 7}, 0, 0, 10, 3, 1);
+  const std::vector<int> ys = {0, 0, 1, 1, 1, 1, 2, 2, 2, 3, 3};
+  for (int x = 0; x <= 10; ++x) {
+    INFO(x);
+    for (int y = 0; y < 8; ++y) {
+      CHECK(img.at(x, y) == (y == ys[static_cast<std::size_t>(x)] ? 1 : 0));
+    }
+  }
+  // Drawn from the first end: the reversed line rounds the other way.
+  Image8 back(16, 8);
+  vfx_line_draw(back, Pane{0, 0, 15, 7}, 10, 3, 0, 0, 1);
+  CHECK(back.at(5, 2) == 1);
+  CHECK(back.at(5, 1) == 0);
+}
+
+TEST_CASE("vfx_line_draw clips the ends to the pane, keeping the unclipped steps", "[gfx]") {
+  // A long shallow line and a steep one, from outside the pane through it,
+  // against the same lines drawn whole in a larger picture.
+  for (const auto& [x0, y0, x1, y1] : {std::array{-20, -6, 29, 13}, std::array{-3, -25, 9, 40}}) {
+    Image8 clipped(32, 16);
+    vfx_line_draw(clipped, Pane{0, 0, 31, 15}, x0, y0, x1, y1, 1);
+    Image8 whole(128, 128);
+    vfx_line_draw(whole, Pane{0, 0, 127, 127}, x0 + 50, y0 + 50, x1 + 50, y1 + 50, 1);
+    for (int y = 0; y < 16; ++y) {
+      for (int x = 0; x < 32; ++x) {
+        INFO(x << "," << y);
+        CHECK(clipped.at(x, y) == whole.at(x + 50, y + 50));
+      }
+    }
+  }
+}
+
+TEST_CASE("vfx_ellipse_draw: the midpoint outline of a radius-4 circle", "[gfx]") {
+  Image8 img(16, 16);
+  vfx_ellipse_draw(img, Pane{0, 0, 15, 15}, 8, 8, 4, 4, 1);
+  std::vector<std::string> rows;
+  for (int y = 4; y <= 12; ++y) {
+    std::string row;
+    for (int x = 4; x <= 12; ++x) {
+      row += img.at(x, y) != 0 ? '#' : '.';
+    }
+    rows.push_back(row);
+  }
+  CHECK(rows == std::vector<std::string>{"...###...", ".##...##.", ".#.....#.", "#.......#", "#.......#", "#.......#",
+                                         ".#.....#.", ".##...##.", "...###..."});
 }
 
 }  // namespace

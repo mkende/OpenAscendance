@@ -5,6 +5,7 @@
 #pragma once
 
 #include <cstdint>
+#include <span>
 #include <vector>
 
 #include "ui/gwindow.h"
@@ -41,7 +42,7 @@ class ButtonGroup final : public GWindow {
 
   void move(int dx, int dy) override;
   // `ButtonGroup_handle_event` (0x2d588): 1 sets the frames from the races'
-  // species, 4/5 toggle the control hit and send SENDMESSAGE (control id) to
+  // colours, 4/5 toggle the control hit and send SENDMESSAGE (control id) to
   // the parent, 7/6 start and stop the mouse-move notifications, 8 tracks
   // the hovered control, 9 sets the flags of control `a` (-1: all) to `b`.
   bool handle_event(int type, int a, int b) override;
@@ -50,8 +51,20 @@ class ButtonGroup final : public GWindow {
   // on and hovered +3).
   void draw(int mode) override;
   void draw_hilite(int mode) override { draw(mode); }
+  // `ButtonGroup_serialize` (0x2d8d4): the controls' 14-byte records (id,
+  // x0, x1, y0, y1, flags, frame as i16).
+  bool save_state(std::span<std::uint8_t> out) const override;
+  void load_state(std::span<const std::uint8_t> in) override;
+  // `ButtonGroup_update_race_frames` (0x2d490) at "Begin New Game".
+  void new_game() override { update_race_frames(); }
+
+  // The size of a control's record in the saves.
+  static constexpr std::size_t kControlRecordSize = 14;
 
  private:
+  // `ButtonGroup_update_race_frames` (0x2d490): each race's control in its
+  // colour (frames `colour * 5 + 20` ..).
+  void update_race_frames();
   // `ButtonGroup_set_control` (0x2d1e8): the flags of the control `id`.
   void set_flags(int id, int flags);
   // `ButtonGroup_hit_test` (0x2d304): the control under (x, y), -1 for none.

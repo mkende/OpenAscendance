@@ -35,6 +35,14 @@ TEST_CASE("command line: data folder, screenshots and scripted input", "[app]") 
   CHECK_THROWS(parse({"--bogus", "1"}));
 }
 
+TEST_CASE("command line: the oracle's seed and a save folder for headless runs", "[app]") {
+  const CommandLine o = parse({"--seed", "-1234", "--save-dir", "/tmp/s"});
+  CHECK(o.seed == -1234);
+  CHECK(o.save_dir == "/tmp/s");
+  CHECK_FALSE(parse({}).seed.has_value());
+  CHECK_THROWS(parse({"--seed", "x"}));
+}
+
 TEST_CASE("command line: a help-mode click holds Shift around the click", "[app]") {
   const CommandLine o = parse({"--keys", "shiftclick:300:295"});
   REQUIRE(o.keys.size() == 5);

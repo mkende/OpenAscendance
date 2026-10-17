@@ -1,8 +1,19 @@
 #include "ui/toggle_button.h"
 
+#include <algorithm>
+
 #include "ui/winmgr.h"
 
 namespace oa {
+
+bool ToggleButton::save_state(std::span<std::uint8_t> out) const {
+  std::fill(out.begin(), out.end(), on_ ? 0xff : 0);
+  return true;
+}
+
+void ToggleButton::load_state(std::span<const std::uint8_t> in) {
+  on_ = std::any_of(in.begin(), in.end(), [](std::uint8_t b) { return b != 0; });
+}
 
 bool ToggleButton::handle_event(int type, int a, int b) {
   if ((type == kEventLeftClick || type == kEventRightClick) && contains(a, b)) {

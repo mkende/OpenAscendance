@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstdint>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -80,7 +81,20 @@ class GWindow {
   virtual void draw(int mode);
   // vtable slot 4, `GWindow_draw_hilite` (0x2c648): the hot look.
   virtual void draw_hilite(int mode);
+  // vtable slot 5, `GWindow_serialize` (0x2cb80, nothing for the base): the
+  // window's part of the saves' window state, `WinMgr::state_size` bytes
+  // (`WinMgr_serialize_windows` 0x556a4). `save_state` fills `out` and
+  // returns true, or returns false when the class leaves its part to the
+  // window manager (the bytes saved before are kept); `load_state` reads it
+  // back after a load.
+  virtual bool save_state(std::span<std::uint8_t> /*out*/) const { return false; }
+  virtual void load_state(std::span<const std::uint8_t> /*in*/) {}
+  // The reset of the window's state by "Begin New Game"
+  // (`NewGameWnd_handle_event` 0x4dd5c): nothing for most windows.
+  virtual void new_game() {}
 
+  // The `windows.txt` TYPE (-1 for a window made by the code).
+  int type() const { return type_; }
   int id() const { return id_; }
   void set_id(int id) { id_ = id; }
   const std::string& name() const { return name_; }
@@ -141,6 +155,7 @@ class GWindow {
   const Shape* shape(int frame) const;
 
   WinMgr& wm_;
+  int type_ = -1;
   Pane pane_;
   const ShapeTable* shapes_;
   int frame_ = -1;

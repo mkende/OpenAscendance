@@ -6,6 +6,8 @@
 
 #include "assets/text_lines.h"
 #include "core/error.h"
+#include "game/session.h"
+#include "screens/cos_wnd.h"
 #include "ui/list_box.h"
 
 namespace oa {
@@ -108,9 +110,7 @@ bool NewGameWnd::handle_event(int type, int a, int b) {
       set_button_frame(0, settings_.star_density, false);
       set_button_frame(1, settings_.species_count + kCountFrame, false);
       set_button_frame(2, settings_.atmosphere + kAtmosphereFrame, false);
-      game.generate_galaxy(kDensityStars[static_cast<std::size_t>(settings_.star_density)], settings_.species_count,
-                           settings_.species);
-      game.assign_colors(settings_.color);
+      game.open_new_game(settings_);
       vfx_pane_wipe(wm_.screen(), kColorBar, kBackColor);
       // NewGame_load_blurbs 0x4d584: 21 lines of newgame.txt (fgets, 199).
       const std::vector<std::uint8_t> data = wm_.services().files.load("newgame.txt");
@@ -135,6 +135,7 @@ bool NewGameWnd::handle_event(int type, int a, int b) {
       }
       wm_.services().sound.play_sfx(kClickSound);
       game.begin_game(settings_);
+      wm_.new_game_windows();
       wm_.set_reload_resume(false);
       wm_.post_message(kMessageChangeScreen, kScreenStartGame, 0);
       return true;
@@ -152,8 +153,8 @@ bool NewGameWnd::handle_event(int type, int a, int b) {
       if (++settings_.star_density == 5) {
         settings_.star_density = 0;
       }
-      game.generate_galaxy(kDensityStars[static_cast<std::size_t>(settings_.star_density)], settings_.species_count,
-                           settings_.species);
+      game.generate_galaxy(GameSession::kDensityStars[static_cast<std::size_t>(settings_.star_density)],
+                           settings_.species_count, settings_.species);
       draw(kDrawNormal);
       set_button_frame(0, settings_.star_density, true);
       return true;
@@ -197,9 +198,21 @@ void NewGameWnd::draw_begin_box() {
   Image8& screen = wm_.screen();
   const InputState& in = wm_.input();
   vfx_pane_wipe(screen, kBeginBox, in_begin_box(in.x, in.y) ? kHotBackColor : kBackColor);
-  // Gap: the preview's stars are the star map window's (COSMOSWnd) display
-  // items on screen 3, each drawn at (x / 5 + 5, y / 5 + 5) with the star
-  // shape of its depth; they come with the star map (milestone 2).
+  // The star map's stars, a fifth of their size, in its drawing order.
+  if (const auto* map = dynamic_cast<const CosWnd*>(wm_.find_window("COSMOSWnd"))) {
+    const game::Session* core = wm_.services().game.core();
+    for (const std::int32_t k : map->draw_list()) {
+      const CosWnd::Item& it = map->items()[static_cast<std::size_t>(k)];
+      if (it.kind != CosWnd::ItemKind::kStar || core == nullptr) {
+        continue;
+      }
+      const std::int32_t d = game::chop(static_cast<double>(it.depth) + static_cast<double>(-CosWnd::kDistance));
+      const int shade = d > 220 ? 0 : d > 0 ? 1 : d > -220 ? 2 : 3;
+      const int type = core->game->cosmos.stars[static_cast<std::size_t>(it.index)].type;
+      vfx_shape_draw(screen, kBeginBox, map->star_shapes().at(static_cast<std::size_t>(type * 4 + shade)), it.x / 5 + 5,
+                     it.y / 5 + 5);
+    }
+  }
   vfx_shape_draw_half(screen, kBeginBox, wm_.shared_shapes(kSmallRaces).at(static_cast<std::size_t>(settings_.species)),
                       0x62, 0x24);
   const GameSession& game = wm_.services().game;
