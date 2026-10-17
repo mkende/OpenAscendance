@@ -21,6 +21,8 @@ CosmosTxt parse_cosmos_txt(std::span<const std::uint8_t> data) {
 }
 
 void program_start(Session& session, std::uint32_t time_seed, const CosmosTxt* cosmos_txt, bool resume_exists) {
+  session.scratch = session.tables->logo_gif;
+  session.scratch.resize(Session::kScratchSize);
   session.rng.srand(time_seed);
   session.set_player_race(0);
   if (cosmos_txt == nullptr) {

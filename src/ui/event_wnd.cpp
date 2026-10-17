@@ -165,8 +165,8 @@ void EventWnd::set_event(const game::GameEvent& event) {
       const game::Planet& p = planet(event.a);
       text.text = c_format(format, name_of(p.name).c_str(), species(p.owner).c_str());
       // The original stores the shape cache handle of `planets.shp` as the
-      // picture's `gwshare.txt` index (drawing whatever table that index
-      // holds); here the planets table it means.
+      // picture's `gwshare.txt` index: the same number, the gwshare files
+      // taking the cache slots 0..44 in order at start-up.
       set_picture(picture, kPlanetShapes, planet_frame(p));
       break;
     }

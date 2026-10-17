@@ -305,7 +305,7 @@ bool PlanWnd::handle_event(int type, int a, int b) {
     case kEventListPick:
       pick_build_item(a);
       return false;
-    case kEventListPick + 1:
+    case kEventListHelp:
       // A help-mode click on the list: the item's help.
       if (a >= 0 && a < static_cast<int>(build_items_.size())) {
         wm_.post_message(kMessageHelp, build_items_[static_cast<std::size_t>(a)], kHelpPlanet);

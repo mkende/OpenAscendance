@@ -16,6 +16,7 @@
 #include <deque>
 #include <filesystem>
 #include <format>
+#include <fstream>
 #include <optional>
 #include <random>
 #include <string>
@@ -27,6 +28,7 @@
 #include "audio/sound_system.h"
 #include "core/install.h"
 #include "game/address.h"
+#include "game/cosmos.h"
 #include "game/new_game.h"
 #include "game/save.h"
 #include "game_data.h"
@@ -71,19 +73,22 @@ std::optional<std::filesystem::path> oracle_path(const std::string& relative) {
 }
 
 // The program as `main` runs it (`app/corn.cpp`), headless on a virtual
-// clock: the start-up galaxy of `cosmos.txt` (50 stars, 7 races, `seed`),
+// clock, as `PATCH.EXE` (`variant` Standard) or `ANTAG.EXE` (Antagonizer,
+// the variant of its new games): the start-up galaxy of `cosmos.txt` (50
+// stars, 7 races, `seed`),
 // the windows, the opening menu, the pointer drawn into the shown frame
 // (the Alt+G screenshots show it) and moved by the replay.
 struct Program {
   // `install_saves`: the install's `01.SAV` and `RESUME.GAM` are seen (the
   // oracle's `--keep-saves`).
-  Program(const GameFiles& f, std::int32_t seed, const std::filesystem::path& dir, bool install_saves)
+  Program(const GameFiles& f, game::Variant variant, std::int32_t seed, const std::filesystem::path& dir,
+          bool install_saves)
       : files(f),
         gs([this] { clock.wait_vblank(); }),
         sound(f, &mixer),
         session(f, dir, install_saves),
         pointer_shapes(f.load("DATA\\MOUSE.SHP"), "DATA\\MOUSE.SHP"),
-        wm((start(seed),
+        wm((start(variant, seed),
             UiServices{.files = f,
                        .gsystem = gs,
                        .sound = sound,
@@ -106,7 +111,8 @@ struct Program {
     wm.set_screen(0, false);
   }
 
-  void start(std::int32_t seed) {
+  void start(game::Variant variant, std::int32_t seed) {
+    session.set_new_game_variant(variant);
     const game::CosmosTxt txt{.stars = 50, .races = 7, .seed = seed, .species = {}};
     session.start(0, &txt);
   }
@@ -212,10 +218,6 @@ std::vector<std::uint8_t> without_stale_header(std::vector<std::uint8_t> save) {
     }
   }
   std::fill_n(save.begin() + 0x6c, 8, 0);
-  // The star map's window state ends with 4 stale stack bytes of
-  // `CosWnd_serialize`: 0 in the saves of games up to 50 stars, other
-  // values in larger ones (a star index left on the stack).
-  std::fill_n(save.end() - static_cast<std::ptrdiff_t>(game::kWindowStateSize) + 0xba, 4, 0);
   return save;
 }
 
@@ -223,8 +225,11 @@ std::vector<std::uint8_t> without_stale_header(std::vector<std::uint8_t> save) {
 // and planet lists and the races' AI targets past their counts (the
 // tutorials' games hold their author's process's pointers there, which the
 // original writes back as they were), and the header's stale bytes.
-std::vector<std::uint8_t> without_stale_slots(const std::vector<std::uint8_t>& save) {
-  game::SaveImage image = game::parse_save(save);
+// `foreign_cosmos`: the cosmos address of the stale pointers of another
+// process (`game::parse_save`).
+std::vector<std::uint8_t> without_stale_slots(const std::vector<std::uint8_t>& save,
+                                              std::optional<game::RawAddress> foreign_cosmos = std::nullopt) {
+  game::SaveImage image = game::parse_save(save, foreign_cosmos);
   for (game::Star& star : image.stars) {
     for (std::size_t i = static_cast<std::size_t>(star.lane_count); i < star.lanes.size(); ++i) {
       star.lanes[i] = game::kNone;
@@ -241,26 +246,61 @@ std::vector<std::uint8_t> without_stale_slots(const std::vector<std::uint8_t>& s
   return without_stale_header(game::serialize_save(image));
 }
 
-// A run of the corpus (`tests/oracle/corpus/cases.txt`, PATCH).
+// A run of the corpus (`tests/oracle/corpus/cases.txt`).
 struct CorpusRun {
   std::string run;
+  // The original's executable: `PATCH.EXE` or `ANTAG.EXE`.
+  game::Variant variant = game::Variant::kStandard;
   std::int32_t seed = 1;
   bool keep_saves = false;
+  // A save under OA_ORACLE installed as `RESUME.GAM` (the oracle's
+  // `--resume`), none when empty.
+  std::string resume{};
   // A tutorial run: its help boxes closed and the game quit at its end.
   bool tutorial = false;
+  // The run quits on the new-game screen, whose galaxy turns at every pass:
+  // the oracle's Alt+X comes after a wall-clock wait (`quitafter`), so the
+  // star map's camera is not compared.
+  bool turning_view = false;
 };
+
+// Clears the star map's camera in a save's window state (`CosWnd_serialize`
+// +0x1e, 0x98 bytes).
+std::vector<std::uint8_t> without_camera(std::vector<std::uint8_t> save) {
+  const auto state = save.end() - static_cast<std::ptrdiff_t>(game::kWindowStateSize);
+  std::fill(state + 0x1e, state + 0xb6, 0);
+  return save;
+}
 
 // Replays the corpus run `c` and compares every file the original wrote.
 // Returns false when the run is missing.
 bool replay_run(const GameFiles& files, const CorpusRun& c, int max_passes) {
   const auto trace = oracle_path(c.run + "/trace.bin");
   const auto out = oracle_path(c.run + "/out");
-  if (!trace || !out) {
+  const auto resume = c.resume.empty() ? std::nullopt : oracle_path(c.resume);
+  if (!trace || !out || (!c.resume.empty() && !resume)) {
     return false;
   }
   INFO(c.run);
   TempDir dir;
-  Program program(files, c.seed, dir.path, c.keep_saves);
+  if (resume) {
+    std::filesystem::copy_file(*resume, dir.path / "RESUME.GAM");
+  }
+  // `ANTAG.EXE` plays the shipped (PATCH) saves under its own rules, and
+  // its saves of that game keep their stale PATCH pointers: the remake gets
+  // them with the variant's trailer, and the saves are compared without
+  // their stale list slots.
+  const bool foreign = c.keep_saves && c.variant != game::Variant::kStandard;
+  if (foreign) {
+    for (const char* name : {"01.SAV", "RESUME.GAM"}) {
+      game::SaveImage image = game::parse_save(read_file(*files.install().find(name)));
+      image.variant = c.variant;
+      const std::vector<std::uint8_t> bytes = game::serialize_save(image);
+      std::ofstream(dir.path / name, std::ios::binary)
+          .write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    }
+  }
+  Program program(files, c.variant, c.seed, dir.path, c.keep_saves && !foreign);
   program.auto_continue = c.tutorial;
   CHECK(program.replay(read_file(*trace), max_passes));
   if (const char* dump = std::getenv("OA_DUMP_DIR"); dump != nullptr && *dump != '\0') {
@@ -275,13 +315,28 @@ bool replay_run(const GameFiles& files, const CorpusRun& c, int max_passes) {
     if (name.ends_with(".SAV") || name == "RESUME.GAM") {
       INFO(name);
       REQUIRE(std::filesystem::exists(ours));
-      if (c.tutorial) {
-        CHECK(first_difference(without_stale_slots(read_file(ours)), without_stale_slots(read_file(entry.path()))) ==
-              -1);
-      } else {
-        CHECK(first_difference(without_stale_header(read_file(ours)), without_stale_header(read_file(entry.path()))) ==
-              -1);
+      std::vector<std::uint8_t> mine = read_file(ours);
+      std::vector<std::uint8_t> theirs = read_file(entry.path());
+      if (c.variant != game::Variant::kStandard) {
+        // The remake's variant trailer (`game/save.h`), absent from the original's file.
+        REQUIRE(mine.size() == theirs.size() + 8);
+        mine.resize(theirs.size());
       }
+      if (foreign) {
+        mine = without_stale_slots(mine, game::kPatchCosmosAddress);
+        theirs = without_stale_slots(theirs, game::kPatchCosmosAddress);
+      } else if (c.tutorial) {
+        mine = without_stale_slots(mine);
+        theirs = without_stale_slots(theirs);
+        if (c.turning_view) {
+          mine = without_camera(std::move(mine));
+          theirs = without_camera(std::move(theirs));
+        }
+      } else {
+        mine = without_stale_header(std::move(mine));
+        theirs = without_stale_header(std::move(theirs));
+      }
+      CHECK(first_difference(mine, theirs) == -1);
     } else if (name.ends_with(".GIF")) {
       INFO(name);
       // The remake writes the screenshots in lower case.
@@ -485,14 +540,57 @@ TEST_CASE("the end of the game: screen 9, the game events dropped", "[screens][c
   CHECK(g.rig.wm.current_screen() == 9);
 }
 
+TEST_CASE("an ANTAG.EXE save loaded with the Standard option continues as an Antagonizer game",
+          "[screens][content][oracle]") {
+  OA_REQUIRE_GAME_FILES(files);
+  const auto day0 = oracle_path("corpus/idle_neutral_antag_s1/out/02.SAV");
+  const auto day2 = oracle_path("corpus/idle_neutral_antag_s1/out/04.SAV");
+  if (!day0 || !day2) {
+    SKIP("OA_ORACLE is not set to work/oracle with the corpus");
+  }
+  TempDir dir;
+  GameCoreSession session(files, dir.path, false);
+  REQUIRE(session.new_game_variant() == game::Variant::kStandard);
+  std::filesystem::copy_file(*day0, dir.path / "03.SAV");
+  REQUIRE(session.load(3));
+  CHECK(session.variant() == game::Variant::kAntagonizer);
+  // Two idle days under the Antagonizer's rules and AI: its day-2 save, and
+  // the remake's trailer after it.
+  for (int day = 0; day < 2; ++day) {
+    game::cosmos_next_turn(*session.core());
+    session.core()->events.take();
+  }
+  REQUIRE(session.save(5));
+  std::vector<std::uint8_t> ours = read_file(dir.path / "05.SAV");
+  const std::vector<std::uint8_t> theirs = read_file(*day2);
+  REQUIRE(ours.size() == theirs.size() + 8);
+  CHECK(game::parse_save(ours).variant == game::Variant::kAntagonizer);
+  ours.resize(theirs.size());
+  // Without windows the window state is the loaded one, and `Cosmos_load`
+  // keeps the process's clusters (none here, the original's new game's).
+  const auto game_part = [](const std::vector<std::uint8_t>& save) {
+    game::SaveImage image = game::parse_save(save);
+    std::fill(image.clusters.begin(), image.clusters.end(), game::Cluster{});
+    std::fill(image.window_state.begin(), image.window_state.end(), 0);
+    return without_stale_header(game::serialize_save(image));
+  };
+  CHECK(first_difference(game_part(ours), game_part(theirs)) == -1);
+  // A PATCH.EXE save stays Standard.
+  std::filesystem::copy_file(*oracle_path("corpus/idle_neutral_patch_s1/out/02.SAV"), dir.path / "06.SAV");
+  REQUIRE(session.load(6));
+  CHECK(session.variant() == game::Variant::kStandard);
+}
+
 TEST_CASE("tutorials replayed to their end leave the original's game", "[screens][content][oracle]") {
   OA_REQUIRE_GAME_FILES(files);
   int found = 0;
-  // Not yet: "battle" (one ship's System Display move ends elsewhere than
-  // the original's, `work/oracle/tutorials/battle`), "species" (the oracle
-  // run does not end cleanly), "tutintro" (no oracle run).
-  for (const std::string name : {"beginnew", "galactic", "planet", "ship"}) {
-    found += replay_run(files, {.run = "tutorials/" + name, .tutorial = true}, 400000) ? 1 : 0;
+  const char* only = std::getenv("OA_DAY_UI_RUN");
+  for (const std::string name : {"tutintro", "beginnew", "galactic", "battle", "planet", "ship", "species"}) {
+    if (only != nullptr && name.find(only) == std::string::npos) {
+      continue;
+    }
+    const CorpusRun run{.run = "tutorials/" + name, .tutorial = true, .turning_view = name == "species"};
+    found += replay_run(files, run, 400000) ? 1 : 0;
   }
   if (found == 0) {
     SKIP("OA_ORACLE is not set to work/oracle with the tutorial runs");
@@ -501,6 +599,7 @@ TEST_CASE("tutorials replayed to their end leave the original's game", "[screens
 
 TEST_CASE("days played through the user interface end in the original's saves", "[day][screens][content][oracle]") {
   OA_REQUIRE_GAME_FILES(files);
+  constexpr game::Variant kAntag = game::Variant::kAntagonizer;
   int found = 0;
   const char* only = std::getenv("OA_DAY_UI_RUN");
   for (const CorpusRun& c : std::vector<CorpusRun>{
@@ -527,6 +626,28 @@ TEST_CASE("days played through the user interface end in the original's saves", 
            // `tests/oracle/event_boxes_*.txt`: screenshots of the boxes.
            {.run = "events/boxes_820_patch", .keep_saves = true},
            {.run = "events/boxes_new_patch_s1"},
+           // `tests/oracle/event13_820.txt`: a colony invaded (event 13).
+           {.run = "events/event13_820", .resume = "exp/event13.GAM"},
+           // `ANTAG.EXE`'s new games.
+           {.run = "corpus/day0_antag_s1", .variant = kAntag},
+           {.run = "corpus/day0_antag_s2", .variant = kAntag, .seed = 2},
+           {.run = "corpus/day0_antag_s3", .variant = kAntag, .seed = 3},
+           {.run = "corpus/day0_antag_s12345", .variant = kAntag, .seed = 12345},
+           {.run = "corpus/idle_neutral_antag_s1", .variant = kAntag},
+           {.run = "corpus/idle_hostile_antag_s1", .variant = kAntag},
+           {.run = "corpus/idle_peaceful_antag_s1", .variant = kAntag},
+           {.run = "corpus/idle_neutral_antag_s12345", .variant = kAntag, .seed = 12345},
+           {.run = "corpus/selfmanaged_neutral_antag_s1", .variant = kAntag},
+           {.run = "corpus/selfmanaged_hostile_antag_s1", .variant = kAntag},
+           {.run = "corpus/selfmanaged_peaceful_antag_s1", .variant = kAntag},
+           {.run = "corpus/small15_7species_antag_s1", .variant = kAntag},
+           {.run = "corpus/large100_4species_antag_s1", .variant = kAntag},
+           {.run = "corpus/actions_antag_s1", .variant = kAntag},
+           // `ANTAG.EXE` on the shipped day-820 game.
+           {.run = "corpus/resume820_antag", .variant = kAntag, .keep_saves = true},
+           {.run = "corpus/resume820_daily_antag", .variant = kAntag, .keep_saves = true},
+           {.run = "corpus/resume820_selfmanaged_antag", .variant = kAntag, .keep_saves = true},
+           {.run = "corpus/resume820_battle_antag", .variant = kAntag, .keep_saves = true},
        }) {
     if (only != nullptr && c.run.find(only) == std::string::npos) {
       continue;

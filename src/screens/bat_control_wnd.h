@@ -94,6 +94,11 @@ class BatControlWnd final : public GWindow {
   static StaleBlock stale_from_view_point(int y) { return {0, static_cast<game::RawAddress>(y + 8) << 16}; }
   static constexpr StaleBlock kStaleFromViewItem{0x08000000, std::nullopt};
   static constexpr StaleBlock kStaleFromRepeat{0x10000000, 0xfd8c0000};
+  // The target an untargeted gizmo's action block (message 0x1c01) takes
+  // from the stack: 0x01db0000 in every oracle run (`tests/oracle/m5fx`),
+  // whatever the row, the click's position or the view (475, the list's
+  // left edge + 1, in the high half).
+  static constexpr game::RawAddress kStaleUntargeted = 0x01db0000;
 
   // Message 0x326: the move or the checked action on `object` of `kind`
   // (the view's move point, or `point` when given, for `kObjectPoint`),
@@ -128,6 +133,9 @@ class BatControlWnd final : public GWindow {
   void draw_object_item(const Pane& row, int object, bool planet, bool hilite);
   void draw_gizmo_item(const Pane& row, int slot, int status, bool hilite);
   void draw_orbital_item(const Pane& row, int square, int status, bool hilite);
+  // A list row clicked in help mode (0x1c02): message 5 with the gizmo's
+  // (kind 4) or the orbital item's (kind 5) help.
+  void list_help(int row);
   // A list row picked (`a` the row, `b` the button).
   void list_pick(int row, int button);
   void activate(int a, int b);

@@ -210,9 +210,10 @@ TEST_CASE("the windows' state of the saves round-trips through the windows", "[s
     std::vector<std::uint8_t> b(saved.begin() + static_cast<std::ptrdiff_t>(original.size()) -
                                     static_cast<std::ptrdiff_t>(game::kWindowStateSize),
                                 saved.begin() + static_cast<std::ptrdiff_t>(original.size()));
-    // The star map's 4 stale stack bytes (`CosWnd::save_state`) are not
-    // kept.
+    // The star map's 4 stale stack bytes (`CosWnd::save_state`) come from
+    // the process's clusters, not from the loaded file.
     std::fill_n(a.begin() + 0xba, 4, 0);
+    std::fill_n(b.begin() + 0xba, 4, 0);
     CHECK(a == b);
   }
 }

@@ -1,11 +1,13 @@
 #include "game/planet.h"
 
 #include <cmath>
+#include <cstddef>
 #include <optional>
 #include <utility>
 #include <vector>
 
 #include "core/fixed_width.h"
+#include "game/address.h"
 #include "game/cosmos.h"
 #include "game/float_math.h"
 #include "game/race.h"
@@ -518,6 +520,36 @@ std::uint16_t planet_auto_place_item(Session& session, Planet& planet, std::uint
   return square;
 }
 
+namespace {
+
+// The cosmos offset of the shared work buffer (`Session::scratch`).
+constexpr std::size_t kScratchCosmosOffset = 0x35e34;
+
+// A completed planet-wide project (Lush Growth Bomb) handles `squares[0xffff]`
+// like a built square (0x343f8): 0x3fffc bytes past the planet's squares,
+// inside the shared work buffer for most planets (`logo.gif` there in a game
+// without modal windows). A "ruins" byte there is cleared, the item byte set
+// to empty and a random technology granted; else the flags word gets "built".
+// Past the buffer (planets whose squares start beyond index 24923) the
+// memory is not modelled.
+void planet_wide_project_square(Session& session, const Planet& planet) {
+  const std::size_t at = kSquaresOffset + static_cast<std::size_t>(planet.first_square) * kSquareSize +
+                         0xffffu * kSquareSize - kScratchCosmosOffset;
+  if (at + kSquareSize > session.scratch.size()) {
+    return;
+  }
+  std::uint8_t* sq = &session.scratch[at];
+  if ((sq[0] & kSquareRuins) != 0) {
+    sq[0] = static_cast<std::uint8_t>(sq[0] & ~kSquareRuins);
+    sq[1] = kNoItem;
+    research_grant_random(session, planet.owner, planet);
+  } else {
+    sq[2] = static_cast<std::uint8_t>(sq[2] | kSquareBuilt);
+  }
+}
+
+}  // namespace
+
 void planet_daily_update(Session& session, Planet& planet) {
   const GameTables& tables = *session.tables;
   Cosmos& cosmos = session.game->cosmos;
@@ -561,9 +593,9 @@ void planet_daily_update(Session& session, Planet& planet) {
           completed = true;
           session.post_event(EventCode::kBuildingComplete, index, item);
         }
-        // A planet-wide project (Lush Growth Bomb) writes out of bounds at
-        // `squares[0xffff]` in the original; modelled as no effect.
-        if (planet.project_square != kNoSquare) {
+        if (planet.project_square == kNoSquare) {
+          planet_wide_project_square(session, planet);
+        } else {
           Square& sq = squares[planet.project_square];
           if (sq.color & kSquareRuins) {
             sq.color = static_cast<std::uint8_t>(sq.color & ~kSquareRuins);

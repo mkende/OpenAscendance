@@ -85,19 +85,6 @@ constexpr int kSpeciesTunes = 8;
 // The toggle `(v == -1) - 1`: -1 becomes 0, anything else -1.
 std::int32_t flip(std::int32_t v) { return v == -1 ? 0 : -1; }
 
-// `vec3_transform_mat34` (0x4e794): `((m1 p1 + m0 p0) + m2 p2) + m3` per row,
-// in doubles, stored as floats.
-Vec3 transform(const std::array<float, 12>& m, const Vec3& p) {
-  Vec3 out{};
-  for (std::size_t i = 0; i < 3; ++i) {
-    const float* r = &m[4 * i];
-    const double sum =
-        (static_cast<double>(r[1]) * p[1] + static_cast<double>(r[0]) * p[0]) + static_cast<double>(r[2]) * p[2];
-    out[i] = f32(sum + r[3]);
-  }
-  return out;
-}
-
 // `a x b`, each component stored as a float.
 Vec3 cross(const float* a, const float* b) {
   return {f32(static_cast<double>(a[1]) * b[2] - static_cast<double>(a[2]) * b[1]),
@@ -300,7 +287,7 @@ void CosWnd::project_items() {
     switch (it.kind) {
       case ItemKind::kStar: {
         last_star = &c.stars[static_cast<std::size_t>(it.index)];
-        const Vec3 p = transform(camera_.view, last_star->position);
+        const Vec3 p = transform_mat34(camera_.view, last_star->position);
         it.clipped = true;
         if (visible(p[2])) {
           const ScreenPoint sp = project_point(p, camera_.focal, cx_, cy_);
@@ -314,8 +301,8 @@ void CosWnd::project_items() {
       }
       case ItemKind::kLane: {
         const game::Lane& lane = c.lanes[static_cast<std::size_t>(it.index)];
-        const Vec3 a = transform(camera_.view, c.stars[static_cast<std::size_t>(lane.star_a)].position);
-        const Vec3 b = transform(camera_.view, c.stars[static_cast<std::size_t>(lane.star_b)].position);
+        const Vec3 a = transform_mat34(camera_.view, c.stars[static_cast<std::size_t>(lane.star_a)].position);
+        const Vec3 b = transform_mat34(camera_.view, c.stars[static_cast<std::size_t>(lane.star_b)].position);
         it.clipped = true;
         if (visible(a[2]) && visible(b[2])) {
           const ScreenPoint pa = project_point(a, camera_.focal, cx_, cy_);
@@ -346,7 +333,7 @@ void CosWnd::project_items() {
             const float scaled = f32(static_cast<double>(d[i]) * distance);
             pos[i] = f32(static_cast<double>(start[i]) + f32(static_cast<double>(scaled) * inv));
           }
-          const Vec3 p = transform(camera_.view, pos);
+          const Vec3 p = transform_mat34(camera_.view, pos);
           it.clipped = true;
           if (visible(p[2])) {
             const ScreenPoint sp = project_point(p, camera_.focal, cx_, cy_);
@@ -923,6 +910,25 @@ bool CosWnd::handle_event(int type, int a, int b) {
   }
 }
 
+std::uint32_t CosWnd::stale_cluster_bytes() const {
+  // `Game_save` 0x4f458 calls `Cosmos_save` 0x20a94 then the windows'
+  // serialization at the same stack depth: the record's last 4 bytes
+  // (never written by `CosWnd_serialize`) lie over entries 82 (high half)
+  // and 83 (low half) of `Cosmos_save`'s cluster buffer, which holds the
+  // last cluster's star indices (0 past its count: the clusters are
+  // cleared when built).
+  const game::Session* core = wm_.services().game.core();
+  if (core == nullptr || core->game->cosmos.cluster_count <= 0) {
+    return 0;
+  }
+  const game::Cosmos& cosmos = core->game->cosmos;
+  const game::Cluster& last = cosmos.clusters.at(static_cast<std::size_t>(cosmos.cluster_count - 1));
+  const auto entry = [&](std::size_t k) -> std::uint32_t {
+    return k < static_cast<std::size_t>(last.star_count) ? static_cast<std::uint32_t>(last.stars[k]) : 0;
+  };
+  return (entry(82) >> 16) | (entry(83) << 16);
+}
+
 bool CosWnd::save_state(std::span<std::uint8_t> out) const {
   if (out.size() < kStateSize) {
     return false;
@@ -939,11 +945,7 @@ bool CosWnd::save_state(std::span<std::uint8_t> out) const {
   const std::array<std::uint8_t, Camera3d::kSize> camera = camera_.serialize();
   std::copy(camera.begin(), camera.end(), out.begin() + kStateCamera);
   put_i32(out, kStateFov, static_cast<std::uint32_t>(game::chop(fov_)));
-  // The record's last 4 bytes are stale stack bytes of `CosWnd_serialize`:
-  // 0 in the original's saves of galaxies up to 50 stars, also after loading
-  // a game holding others (the tutorial `galactic.tsv`); in larger galaxies
-  // the third byte holds what looks like a star index (not reproduced).
-  put_i32(out, kStateFov + 4, 0);
+  put_i32(out, kStateFov + 4, stale_cluster_bytes());
   return true;
 }
 

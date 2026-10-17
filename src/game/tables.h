@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <span>
 #include <string>
+#include <vector>
 
 #include "assets/cfile.h"
 #include "game/state.h"
@@ -142,6 +143,9 @@ struct GameTables {
   std::array<StarName, kStarNameCount> star_names;
   std::array<DipValues, kSpeciesCount> dip;  // by species
   std::array<std::string, kHullCount> hull_names;
+  // `data\logo.gif`, which `main` 0x1c424 loads into the shared work buffer
+  // at startup (`Session::scratch`).
+  std::vector<std::uint8_t> logo_gif;
 };
 
 // The parsers take the whole file; each throws `DataError` on a malformed

@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <format>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -70,6 +71,25 @@ TEST_CASE("a battle of the original played through the System Display", "[star_s
                       {.run = "m5/move_lane", .keep_saves = true, .shots = {}},
                       {.run = "m5/repeat_pass", .keep_saves = true, .shots = {}},
                       {.run = "m5/abandon_skip", .keep_saves = true, .shots = {}}});
+}
+
+TEST_CASE("the original's battle effects played frame by frame", "[star_system][screens][content][oracle]") {
+  OA_REQUIRE_GAME_FILES(files);
+  // `tests/oracle/m5fx`: the day-820 battle at Feculon with Frigate 1
+  // given one gizmo (`fx_save.py`), used on a Capelon Medium, the lane end
+  // or itself; screenshots every 4 passes through each of the effects 3..15,
+  // and the save after the Capelons' turn (the action block of the use).
+  std::vector<test::ReplayRun> runs;
+  for (const int g : {52, 55, 32, 56, 74, 58, 46, 60, 59, 68, 45, 39, 40, 36, 72, 38}) {
+    runs.push_back(
+        {.run = std::format("m5fx/fx_{:02d}", g), .resume = std::format("m5fx/fx_{:02d}.GAM", g), .shots = {}});
+  }
+  // The stale target of an untargeted gizmo's action block: another row,
+  // another view.
+  for (const char* run : {"m5fx/fx_stale_a", "m5fx/fx_stale_b"}) {
+    runs.push_back({.run = run, .resume = "m5fx/fx_stale.GAM", .shots = {}});
+  }
+  replay_runs(files, runs);
 }
 
 namespace {
@@ -318,8 +338,9 @@ TEST_CASE("Pass gives the turn to the other races", "[star_system]") {
 }
 
 // Development aid (hidden): replays OA_DEV_TRACE (seed OA_DEV_SEED, the
-// install's saves with OA_DEV_KEEP) for OA_DEV_PASSES passes and prints the
-// star-system view's items and the panel's list.
+// install's saves with OA_DEV_KEEP, OA_DEV_RESUME as `RESUME.GAM`) for
+// OA_DEV_PASSES passes and prints the star-system view's items and the
+// panel's list.
 TEST_CASE("star-system dev dump", "[.dev]") {
   OA_REQUIRE_GAME_FILES(files);
   const char* trace = std::getenv("OA_DEV_TRACE");
@@ -327,6 +348,9 @@ TEST_CASE("star-system dev dump", "[.dev]") {
     SKIP("no OA_DEV_TRACE");
   }
   test::ReplayDir dir;
+  if (const char* resume = std::getenv("OA_DEV_RESUME"); resume != nullptr) {
+    std::filesystem::copy_file(resume, dir.path / "RESUME.GAM");
+  }
   const char* seed = std::getenv("OA_DEV_SEED");
   test::ReplayProgram program(files, seed != nullptr ? std::atoi(seed) : 1, dir.path,
                               std::getenv("OA_DEV_KEEP") != nullptr);

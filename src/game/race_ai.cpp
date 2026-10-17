@@ -106,7 +106,13 @@ void race_ai_turn(Session& session, Race& race) {
   if (ai) {
     race_use_special_ability(session, race, true);
   }
-  for (const ShipIndex i : race_list_ships(cosmos, race)) {
+  const std::vector<ShipIndex> ships = race_list_ships(cosmos, race);
+  // `Race_list_ships` 0x3c338 calls `qsort`, whose first push (esi, the
+  // count of ship records seen) lands on `Session::stale_dip_arg`; the ship
+  // orders' calls that reach it push the race's ship count (both small: only
+  // the high word, zero, stays visible under the next attitude drift).
+  session.stale_dip_arg = static_cast<std::uint32_t>(cosmos.ship_count);
+  for (const ShipIndex i : ships) {
     if (ai) {
       race_ai_ship_orders(session, race, cosmos.ships[static_cast<std::size_t>(i)]);
     }
@@ -215,6 +221,10 @@ void race_bio_rhythm(Session& session, Race& race) {
   }
   const double t1 = std::sin(static_cast<double>(t)) * static_cast<double>(race.bio_sin_x);
   const double t2 = std::sin(static_cast<double>(t) * 0.5) * static_cast<double>(race.bio_sin_half_x) + t1;
+  // The partial sum is stored as a double at esp+8 (0x3a447), whose high
+  // dword lies where `Race_diplomacy_turn` reads its argument local next
+  // (`Session::stale_dip_arg`, overwriting the attitude drift's counter).
+  session.stale_dip_arg = static_cast<std::uint32_t>(std::bit_cast<std::uint64_t>(t2) >> 32);
   float m = f32(std::sin(static_cast<double>(t) * 2.0) * static_cast<double>(race.bio_sin_twice_x) + t2);
   m = f32(static_cast<double>(m) + (0.0f > m ? -0.5 : 0.5));
   const float max_positive = static_cast<float>(race.bio_max_positive);

@@ -788,7 +788,11 @@ void load_game(Session& session, const SaveImage& image) {
   cosmos.backdrop_count = static_cast<std::int16_t>(image.backdrops.size());
   std::copy(image.backdrops.begin(), image.backdrops.end(), cosmos.backdrops.begin());
 
-  game.variant = image.variant;
+  // An original file has no variant trailer: `ANTAG.EXE`'s saves are known
+  // by its cosmos address and continue as Antagonizer games.
+  game.variant = image.variant == Variant::kStandard && image.cosmos_address == kAntagCosmosAddress
+                     ? Variant::kAntagonizer
+                     : image.variant;
   session.stale_header = image.header;
   session.window_state = image.window_state;
 }

@@ -267,6 +267,7 @@ GameTables load_game_tables(const GameFiles& files) {
   for (std::size_t h = 0; h < kHullCount; ++h) {
     t.hull_names[h] = strings[kHullNameString + h];
   }
+  t.logo_gif = files.load("data\\logo.gif");
   return t;
 }
 

@@ -14,7 +14,9 @@
 //
 // The variant is an extension: a trailer after the window state (`OAvt`,
 // `u32` variant), written only for a non-Standard game, so a Standard save is
-// exactly the original format and an original file loads as Standard.
+// exactly the original format. `load_game` loads an original file (no
+// trailer) as Antagonizer when its cosmos address is `ANTAG.EXE`'s, else as
+// Standard.
 #pragma once
 
 #include <array>
@@ -64,7 +66,7 @@ struct SaveImage {
   std::vector<Cluster> clusters;
   std::vector<Backdrop> backdrops;
   std::vector<std::uint8_t> window_state;  // kWindowStateSize bytes
-  Variant variant = Variant::kStandard;
+  Variant variant = Variant::kStandard;    // the trailer's, Standard without
 };
 
 // Parses a save file. Throws `DataError` on a record-size mismatch, a count
@@ -89,9 +91,10 @@ std::vector<std::uint8_t> serialize_save(const SaveImage& image);
 // from the game, the stale header bytes and the window state of the session).
 SaveImage save_game(const Session& session);
 
-// Loads `image` into the session's game (`Game_load`): the variant, the
-// window state and the stale header bytes go to the session too; the player's
-// race is not read (the header is ignored).
+// Loads `image` into the session's game (`Game_load`): the variant (that of
+// `ANTAG.EXE` for its trailer-less files, see above), the window state and
+// the stale header bytes go to the session too; the player's race is not
+// read (the header is ignored).
 void load_game(Session& session, const SaveImage& image);
 
 }  // namespace oa::game

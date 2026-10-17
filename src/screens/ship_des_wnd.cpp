@@ -234,9 +234,9 @@ bool ShipDesWnd::handle_event(int type, int a, int b) {
       }
       return false;
     }
-    case kEventListPick + 1:
-      // The list's help message (never sent, `docs/07-ui-framework.md`):
-      // the component's `gizhelp.txt` topic.
+    case kEventListHelp:
+      // The list's help message (a row clicked in help mode): the
+      // component's `gizhelp.txt` topic.
       wm_.post_message(kMessageHelp, list_->item(a).data, kHelpGizmo);
       return true;
     default:

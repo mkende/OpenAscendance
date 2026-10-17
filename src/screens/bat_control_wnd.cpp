@@ -642,25 +642,30 @@ void BatControlWnd::draw(int mode) {
                      kTitleWidth);
 }
 
+void BatControlWnd::list_help(int row) {
+  const game::Session* s = core();
+  const ListBox* rows = list();
+  if (s == nullptr || rows == nullptr || row < 0 || row >= rows->count()) {
+    return;
+  }
+  // Any state, even during an effect: the gizmo's or the planet item's help.
+  const ListBox::Item& item = rows->item(row);
+  if (list_mode_ == kListGizmos && selection_.kind == kObjectShip) {
+    const game::Ship& ship = s->game->cosmos.ships[static_cast<std::size_t>(selection_.object)];
+    wm_.post_message(kMessageHelp, ship.slots[static_cast<std::size_t>(item.object)].gizmo, kHelpGizmo);
+  } else if (list_mode_ == kListOrbital && selection_.kind == kObjectPlanet) {
+    const game::Cosmos& c = s->game->cosmos;
+    const game::Planet& planet = c.planets[static_cast<std::size_t>(selection_.object)];
+    wm_.post_message(kMessageHelp, c.squares[static_cast<std::size_t>(planet.first_square + item.object)].item,
+                     kHelpPlanet);
+  }
+}
+
 void BatControlWnd::list_pick(int row, int button) {
   game::Session* s = core();
   BatModeWnd* view = mode_wnd();
   ListBox* rows = list();
   if (s == nullptr || view == nullptr || rows == nullptr || row < 0 || row >= rows->count()) {
-    return;
-  }
-  if (button == kEventHelpClick) {
-    // Message 0x1c02: the gizmo's or the planet item's help.
-    const ListBox::Item& item = rows->item(row);
-    if (list_mode_ == kListGizmos && selection_.kind == kObjectShip) {
-      const game::Ship& ship = s->game->cosmos.ships[static_cast<std::size_t>(selection_.object)];
-      wm_.post_message(kMessageHelp, ship.slots[static_cast<std::size_t>(item.object)].gizmo, kHelpGizmo);
-    } else if (list_mode_ == kListOrbital && selection_.kind == kObjectPlanet) {
-      const game::Cosmos& c = s->game->cosmos;
-      const game::Planet& planet = c.planets[static_cast<std::size_t>(selection_.object)];
-      wm_.post_message(kMessageHelp, c.squares[static_cast<std::size_t>(planet.first_square + item.object)].item,
-                       kHelpPlanet);
-    }
     return;
   }
   if (view->state() == BatModeWnd::State::kAnimating) {
@@ -712,6 +717,7 @@ void BatControlWnd::list_pick(int row, int button) {
           ship.action = 1;
           ship.action_slot = game::gizmo_slot_address(*s, static_cast<game::ShipIndex>(selection_.object), item.object);
           ship.target_kind = game::kTargetNone;
+          ship.target = kStaleUntargeted;
           ship.target_point = {};
           ship.action_point = {};
           action_ = kActionMove;
@@ -808,6 +814,9 @@ bool BatControlWnd::handle_event(int type, int a, int b) {
     }
     case kEventListPick:
       list_pick(a, b);
+      return true;
+    case kEventListHelp:
+      list_help(a);
       return true;
     default:
       return GWindow::handle_event(type, a, b);

@@ -86,12 +86,7 @@ void Camera3d::rotate_forward_y(float degrees) {
   orthonormalize_keep_up(orientation);
 }
 
-Vec3 Camera3d::transform(const Vec3& p) const {
-  const std::array<float, 12>& m = view;
-  return {f32(((d(m[2]) * p[2] + d(m[0]) * p[0]) + d(m[1]) * p[1]) + m[3]),
-          f32(((d(m[6]) * p[2] + d(m[4]) * p[0]) + d(m[5]) * p[1]) + m[7]),
-          f32(((d(m[10]) * p[2] + d(m[8]) * p[0]) + d(m[9]) * p[1]) + m[11])};
-}
+Vec3 Camera3d::transform(const Vec3& p) const { return transform_mat34(view, p); }
 
 Vec3 transform_mat34(const std::array<float, 12>& m, const Vec3& p) {
   Vec3 out{};

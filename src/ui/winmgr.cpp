@@ -188,8 +188,9 @@ constexpr int kInputBoxX0 = 0xf2;
 constexpr int kInputBoxX1 = 0x18d;
 constexpr int kInputBoxFrame = 1;
 constexpr int kHelpShapes = 37;
-// `gwshare.txt`: the race slots' small ships and `planitem.shp`.
+// `gwshare.txt`: the race slots' small ships, the gizmos and `planitem.shp`.
 constexpr int kShipShapes = 14;
+constexpr int kGizmoShapes = 28;
 constexpr int kPlanItemShapes = 30;
 
 std::string upper(std::string_view s) {
@@ -988,9 +989,27 @@ void WinMgr::show_help(const Message& m) {
       }
       break;
     }
+    case kHelpGizmo: {
+      // A ship component (a help click on the System Display's gizmo list
+      // or the ship design's list): its name in the text, its picture.
+      const game::Session* core = services_.game.core();
+      if (core == nullptr) {
+        return;
+      }
+      help->open_topic("gizhelp.txt", std::format("gizmo{:02d}", m.p1));
+      HelpTopic& topic = help->content();
+      if (topic.element_count < 2 || topic.elements[0].kind != HelpElement::Kind::kText ||
+          topic.elements[1].kind != HelpElement::Kind::kShape) {
+        throw DataError(std::format("gizhelp.txt: gizmo{:02d} is not a text and a picture", m.p1));
+      }
+      const std::string& name = core->tables->gizmos.at(static_cast<std::size_t>(m.p1)).name;
+      topic.elements[0].text = c_format(topic.elements[0].text, name.c_str());
+      topic.elements[1].shape_index = kGizmoShapes;
+      topic.elements[1].frame = m.p1;
+      break;
+    }
     default:
-      // The gizmo help comes with its screen.
-      log_debug("help kind {} not handled yet", m.p2);
+      log_debug("help kind {} not handled", m.p2);
       return;
   }
   if (!modal_) {

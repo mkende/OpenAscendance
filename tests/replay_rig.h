@@ -184,6 +184,9 @@ struct ReplayRun {
   std::string run;  // under OA_ORACLE
   std::int32_t seed = 1;
   bool keep_saves = false;
+  // A save under OA_ORACLE installed as `RESUME.GAM` (the oracle's
+  // `--resume`), none when empty.
+  std::string resume{};
   // The screenshots compared (`SCRnnn.GIF`), all when empty.
   std::vector<std::string> shots;
 };
@@ -194,11 +197,15 @@ struct ReplayRun {
 inline bool replay_oracle_run(const GameFiles& files, const ReplayRun& c, int max_passes = 400000) {
   const auto trace = oracle_run_path(c.run + "/trace.bin");
   const auto out = oracle_run_path(c.run + "/out");
-  if (!trace || !out) {
+  const auto resume = c.resume.empty() ? std::nullopt : oracle_run_path(c.resume);
+  if (!trace || !out || (!c.resume.empty() && !resume)) {
     return false;
   }
   INFO(c.run);
   ReplayDir dir;
+  if (resume) {
+    std::filesystem::copy_file(*resume, dir.path / "RESUME.GAM");
+  }
   ReplayProgram program(files, c.seed, dir.path, c.keep_saves);
   CHECK(program.replay(read_file(*trace), max_passes));
   if (const char* dump = std::getenv("OA_DUMP_DIR"); dump != nullptr && *dump != '\0') {

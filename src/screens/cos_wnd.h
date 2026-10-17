@@ -97,8 +97,8 @@ class CosWnd final : public GWindow {
   // star's label.
   void draw(int mode) override;
   // `CosWnd_serialize` (0x246ec): the actions, toggles, masks, camera and
-  // field of view (0xbe bytes; the last four, stack bytes in the original,
-  // are kept as they are).
+  // field of view (0xbe bytes; the last four, stale stack bytes in the
+  // original, as `stale_cluster_bytes`).
   bool save_state(std::span<std::uint8_t> out) const override;
   void load_state(std::span<const std::uint8_t> in) override;
   // Begin New Game: `CosWnd_reset_camera`.
@@ -119,6 +119,9 @@ class CosWnd final : public GWindow {
   const std::array<ScreenPoint, 7>& circle() const { return circle_; }
 
  private:
+  // The stale last 4 bytes of the saved record: what `Cosmos_save` left on
+  // the stack (the last cluster's star indices 82 and 83, halves).
+  std::uint32_t stale_cluster_bytes() const;
   // The window rectangle and the projection centre (`+0x576`, `+0x578`).
   void set_rect(int x0, int y0, int x1, int y1);
   // `Camera_set_projection` with the window's field of view.

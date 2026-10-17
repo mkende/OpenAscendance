@@ -38,7 +38,8 @@ struct CosmosTxt {
 // first six tokens are malformed.
 CosmosTxt parse_cosmos_txt(std::span<const std::uint8_t> data);
 
-// Runs `main`'s set-up of the start-up galaxy: `srand(time_seed)`, the
+// Runs `main`'s set-up of the start-up galaxy (after `logo.gif` loaded into
+// `Session::scratch`): `srand(time_seed)`, the
 // player in slot 0, then with `cosmos_txt` `srand(seed)` (unless -1) and its
 // counts and species, else 50 stars and 7 races; the planets, the colours,
 // and the hops when no `resume.gam` exists.
