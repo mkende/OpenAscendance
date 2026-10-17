@@ -23,8 +23,8 @@
 #include <vector>
 
 #include "assets/cfile.h"
-#include "assets/winevent.h"
 #include "assets/windows_txt.h"
+#include "assets/winevent.h"
 #include "audio/sound_system.h"
 #include "game/events.h"
 #include "gfx/font.h"
@@ -204,6 +204,10 @@ class WinMgr final : public WindowStateIo {
   // The input of the current pass (the pointer position, `0xc84d4`).
   const InputState& input() const { return last_input_; }
   bool in_modal() const { return modal_; }
+  // The id of the top shown window of the current screen taking a view
+  // gesture at (x, y) (`GWindow::takes_view_gesture`), 0 for none or in a
+  // modal loop or help mode.
+  int view_window_at(int x, int y, bool mouse) const;
   // The exit corner under the pointer (`+0x24da8`): 0..3, -1 for none.
   int exit_corner() const { return exit_corner_; }
   // The auto next turn (`+0x24d9c`, NEXTTURNCONT, message 8): a next day is
@@ -410,6 +414,10 @@ class WinMgr final : public WindowStateIo {
   // takes it gets its drags and pinches (none in a modal loop or help
   // mode).
   void route_view_gesture(const ViewGesture& gesture);
+  // The remake's mouse wheel: its notches to the window that would take a
+  // finger's gesture at (x, y), on the same conditions.
+  void route_wheel(int x, int y, int notches);
+
   // `WinMgr_show_game_events` (0x50f84): the next queued game event in
   // `EVENTWIN`, run modally, then the screen its answer leads to.
   void show_game_events();

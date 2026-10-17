@@ -405,7 +405,7 @@ void CosWnd::zoom_step(int dir) {
   drawn_count_ = 0;
 }
 
-bool CosWnd::takes_view_gesture(int x, int y) const {
+bool CosWnd::takes_view_gesture(int x, int y, bool /*mouse*/) const {
   return x > pane_.x0 && x < pane_.x1 && y > pane_.y0 && y < pane_.y1;
 }
 
@@ -430,6 +430,8 @@ void CosWnd::view_pinch(float ratio) {
   project_items();
   draw(kDrawNormal);
 }
+
+void CosWnd::view_wheel(int notches) { view_pinch(std::pow(kWheelZoom, static_cast<float>(notches))); }
 
 void CosWnd::draw_label(int background) {
   if (hovered_ < 0 || items_[static_cast<std::size_t>(hovered_)].kind != ItemKind::kStar) {

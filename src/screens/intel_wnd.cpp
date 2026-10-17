@@ -91,6 +91,8 @@ bool IntelWnd::handle_event(int type, int a, int b) {
       throw DataError("windows.txt: no INTELLIST list box");
     }
     list_->set_line_height(kRowHeight);
+    // The rows' press picks nothing here: the mouse may drag the list.
+    list_->set_mouse_drag(true);
     list_->set_draw_item([this](const Pane& row, const ListBox::Item& item, bool /*hilite*/) {
       draw_row(row, static_cast<game::RaceIndex>(item.text.at(0)));
     });

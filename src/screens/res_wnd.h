@@ -41,6 +41,10 @@ class ResWnd final : public GWindow {
   // The window-relative centre of the projection.
   static constexpr std::int32_t kCenterX = 235;
   static constexpr std::int32_t kCenterY = 240;
+  // The remake's drag turn, in degrees per pixel (the star map's), and the
+  // camera height of a wheel notch (half the rings' spacing).
+  static constexpr double kDragDegrees = 0.5;
+  static constexpr double kWheelStep = 15.0;
 
   // `ResWnd_ctor` 0x443a0 / `ResWnd_init` 0x4250c: the camera (30 degree
   // field of view, at (0, 0, -150)); the tree is laid out at the first use
@@ -58,6 +62,17 @@ class ResWnd final : public GWindow {
   void load_state(std::span<const std::uint8_t> in) override;
   // "Begin New Game": the camera's orientation back to the identity.
   void new_game() override;
+
+  // The remake's gestures on the tree (inside the window): a horizontal
+  // drag turns it as the rotation buttons do (`kDragDegrees` per pixel), a
+  // vertical one moves the camera up or down as the move buttons do, the
+  // tree following the finger; each wheel notch moves it `kWheelStep` (away
+  // from the player: up, towards Home / PgUp). The heights stay within the
+  // visible tree (the draw's clamp). The mouse drags only from a point with
+  // no item (a press on an item picks it).
+  bool takes_view_gesture(int x, int y, bool mouse) const override;
+  void view_drag(int dx, int dy) override;
+  void view_wheel(int notches) override;
 
   // The tree layout of `ResWnd_init` without `reswin.txt`: the level of an
   // item is 0 without prerequisites, else 1 + the highest level of its
@@ -83,6 +98,8 @@ class ResWnd final : public GWindow {
   // `ResWnd_update_hover` 0x428e8: the front-most visible item within 24
   // pixels of the pointer on both axes.
   void update_hover();
+  // The item `update_hover` finds at screen point (x, y), `kNone` for none.
+  std::uint16_t item_at(int screen_x, int screen_y) const;
   // `ResWnd_compare_depth` 0x432c4 + the projection loop of the draw.
   void project_items();
   void draw_tree();

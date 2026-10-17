@@ -397,7 +397,7 @@ void BatModeWnd::orbit(float angle) {
   orient_rotate_y(camera_.rotation, angle);
 }
 
-bool BatModeWnd::takes_view_gesture(int x, int y) const {
+bool BatModeWnd::takes_view_gesture(int x, int y, bool /*mouse*/) const {
   return state_ != State::kAnimating && x >= pane_.x0 && x <= pane_.x1 && y >= pane_.y0 && y <= pane_.y1;
 }
 
@@ -416,6 +416,8 @@ void BatModeWnd::view_pinch(float ratio) {
   set_distance(distance_ / ratio);
   refresh();
 }
+
+void BatModeWnd::view_wheel(int notches) { view_pinch(std::pow(kWheelZoom, static_cast<float>(notches))); }
 
 void BatModeWnd::center_on_item(int i) {
   const game::Session* s = core();

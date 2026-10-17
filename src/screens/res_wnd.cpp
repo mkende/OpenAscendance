@@ -257,26 +257,29 @@ void ResWnd::sync_with_game() {
   }
 }
 
-void ResWnd::update_hover() {
-  game::Session* session = core();
-  std::uint16_t found = kNone;
-  if (session != nullptr) {
-    const game::Research& research = session->game->research;
-    const int x = wm_.input().x - pane_.x0;
-    const int y = wm_.input().y - pane_.y0;
-    for (int k = static_cast<int>(research.count) - 1; k >= 0; --k) {
-      const std::uint16_t item = order_[static_cast<std::size_t>(k)];
-      if (!game::research_can_research(research, session->player_race, item)) {
-        continue;
-      }
-      const ScreenPoint p = screen_[item];
-      if (p.x - kHoverDistance < x && x < p.x + kHoverDistance && p.y - kHoverDistance < y &&
-          y < p.y + kHoverDistance) {
-        found = item;
-        break;
-      }
+std::uint16_t ResWnd::item_at(int screen_x, int screen_y) const {
+  const game::Session* session = core();
+  if (session == nullptr) {
+    return kNone;
+  }
+  const game::Research& research = session->game->research;
+  const int x = screen_x - pane_.x0;
+  const int y = screen_y - pane_.y0;
+  for (int k = static_cast<int>(research.count) - 1; k >= 0; --k) {
+    const std::uint16_t item = order_[static_cast<std::size_t>(k)];
+    if (!game::research_can_research(research, session->player_race, item)) {
+      continue;
+    }
+    const ScreenPoint p = screen_[item];
+    if (p.x - kHoverDistance < x && x < p.x + kHoverDistance && p.y - kHoverDistance < y && y < p.y + kHoverDistance) {
+      return item;
     }
   }
+  return kNone;
+}
+
+void ResWnd::update_hover() {
+  const std::uint16_t found = item_at(wm_.input().x, wm_.input().y);
   if (found != hovered_) {
     hovered_ = found;
     redraw_info_ = true;
@@ -440,6 +443,27 @@ bool ResWnd::handle_event(int type, int a, int b) {
     default:
       return GWindow::handle_event(type, a, b);
   }
+}
+
+bool ResWnd::takes_view_gesture(int x, int y, bool mouse) const {
+  return core() != nullptr && contains(x, y) && (!mouse || item_at(x, y) == kNone);
+}
+
+void ResWnd::view_drag(int dx, int dy) {
+  if (dx != 0) {
+    camera_.rotate_forward_y(game::f32(static_cast<double>(-dx) * kDragDegrees));
+  }
+  if (dy != 0) {
+    // The tree follows the finger at the depth of its axis.
+    const double per_pixel = -static_cast<double>(camera_.position[2]) / camera_.focal;
+    camera_.position[1] = game::f32(static_cast<double>(camera_.position[1]) - dy * per_pixel);
+  }
+  redraw_tree_ = true;
+}
+
+void ResWnd::view_wheel(int notches) {
+  camera_.position[1] = game::f32(static_cast<double>(camera_.position[1]) - notches * kWheelStep);
+  redraw_tree_ = true;
 }
 
 void ResWnd::project_items() {

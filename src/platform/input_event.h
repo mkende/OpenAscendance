@@ -13,6 +13,10 @@ enum class EventType : std::uint8_t {
   kMouseMove,
   kMouseDown,
   kMouseUp,
+  // The mouse wheel turned `wheel` notches (positive away from the player)
+  // with the pointer at `x`, `y` (a remake addition: the original reads no
+  // wheel).
+  kMouseWheel,
   // A character of the system's text input: its printable ASCII code in
   // `character` (and `key`).
   kText,
@@ -53,6 +57,8 @@ struct InputEvent {
   int x = 0;
   int y = 0;
   MouseButton button = MouseButton::kNone;
+  // The notches of a `kMouseWheel`.
+  int wheel = 0;
   // A mouse event made from a finger (`TouchMapper`), not by a mouse.
   bool touch = false;
   // A finger's id, and the time of a finger event in milliseconds.

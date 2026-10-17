@@ -56,6 +56,11 @@ class ListBox final : public GWindow {
   void set_grow(bool grow) { grow_ = grow; }
   // `+0xbb`: the hovered row is redrawn at each mouse move inside it.
   void set_redraw_hover(bool redraw) { redraw_hover_ = redraw; }
+  // The remake's mouse drag (off by default): a drag of the mouse scrolls the
+  // list as a finger's does. Only for lists whose rows' press does nothing
+  // in the original, so that the drag cannot be mistaken for a pick.
+  void set_mouse_drag(bool on) { mouse_drag_ = on; }
+  bool mouse_drag() const { return mouse_drag_; }
   void set_draw_item(DrawItem draw) { draw_item_ = std::move(draw); }
   void set_item_height(ItemHeight height) { item_height_ = std::move(height); }
 
@@ -91,6 +96,19 @@ class ListBox final : public GWindow {
   void draw(int mode) override;
   void draw_hilite(int mode) override { draw(mode); }
 
+  // The remake's scrolling (not in the original), each step one of the
+  // arrows' (`kEventScrollUp` / `kEventScrollDown`, one row, within the
+  // arrows' limits), with the hovered row dropped as a press on an arrow
+  // does: a drag starting on the list moves its rows with the finger (one
+  // step each time the finger has moved the height of the row coming in or
+  // going out, no inertia), and each wheel notch is one arrow click (away
+  // from the player: up). The hover follows the pointer again after the
+  // wheel and at the drag's end.
+  bool takes_view_gesture(int x, int y, bool mouse) const override;
+  void view_drag(int dx, int dy) override;
+  void view_wheel(int notches) override;
+  void view_end() override;
+
   // `ListBox_draw_text_item` (0x2d928): the default row drawer.
   void draw_text_item(const Pane& row, const Item& item, bool hilite);
 
@@ -105,6 +123,12 @@ class ListBox final : public GWindow {
   void click(int x, int y, int button);
   // Shortens the auto-repeat period of `msg` and scrolls one row.
   void repeat_scroll(int msg);
+  // An arrow's step (`msg`: `kEventScrollUp` or `kEventScrollDown`), drawn;
+  // returns whether the list moved.
+  bool scroll_step(int msg);
+  // Drops the hovered row (drawn without its highlight) before a remake
+  // scroll, as the arrows' press does.
+  void drop_hover();
   void draw_row(int index, bool hilite);
 
   std::vector<Item> items_;
@@ -125,6 +149,10 @@ class ListBox final : public GWindow {
   int hover_ = -1;          // +0x8cf
   Pane row_;                // +0x8d1: the hovered row
   int arrow_ = 0;           // +0x8e5
+  // The remake's: the mouse drags it, and the drag not yet turned into
+  // steps (screen pixels, positive down).
+  bool mouse_drag_ = false;
+  int drag_ = 0;
 };
 
 }  // namespace oa

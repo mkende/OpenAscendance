@@ -1,6 +1,7 @@
 // The remake's controls for touch screens and Android (not in the
 // original): the touch screen as the mouse (`platform/touch.h`), the view
-// drags and pinches of the star map and the System Display, the system's
+// drags and pinches of the star map and the System Display, the lists' and
+// the research tree's drags and wheel, the system's
 // Back (`WinMgr::system_back`), and the game kept in `resume.gam` when the
 // system sends the program to the background (`app/corn.h`), resumed from
 // there by the next start (OA_DATA install for the screens and the app).
@@ -27,8 +28,10 @@
 #include "platform/touch.h"
 #include "screens/bat_mode_wnd.h"
 #include "screens/cos_wnd.h"
+#include "screens/new_game_wnd.h"
 #include "test_dirs.h"
 #include "ui/game_core_session.h"
+#include "ui/list_box.h"
 #include "ui_rig.h"
 
 namespace oa {
@@ -141,6 +144,25 @@ TEST_CASE("mouse: the left button moved past a few pixels drags the view; the pr
   input.poll();
   CHECK(!s.gesture.active);
   CHECK(!s.left_down);
+}
+
+TEST_CASE("mouse: the wheel's notches add up until the poll, the pointer where the wheel turned", "[platform]") {
+  Input input;
+  input.feed(InputEvent{.type = EventType::kMouseWheel, .x = 70, .y = 80, .wheel = 1});
+  input.feed(InputEvent{.type = EventType::kMouseWheel, .x = 70, .y = 80, .wheel = 2});
+  const InputState& s = input.poll();
+  CHECK(s.wheel == 3);
+  CHECK(s.x == 70);
+  CHECK(s.y == 80);
+  CHECK(!s.left_changed);
+  input.poll();
+  CHECK(s.wheel == 0);
+  // A mouse drag is marked as such (a finger's is not).
+  input.feed(InputEvent{.type = EventType::kMouseDown, .x = 50, .y = 60, .button = MouseButton::kLeft});
+  input.feed(InputEvent{.type = EventType::kMouseMove, .x = 50, .y = 70});
+  input.poll();
+  CHECK(s.gesture.started);
+  CHECK(s.gesture.mouse);
 }
 
 TEST_CASE("the 4:3 letterbox: centred, clear of the display cutout", "[platform]") {
@@ -383,6 +405,157 @@ TEST_CASE("the System Display orbits with a horizontal drag and zooms with a pin
   r.pinch(cx, cy, 400, 20);
   r.pinch(cx, cy, 400, 20);
   CHECK(view.distance() >= distance);  // the default distance, the farthest
+}
+
+// The new-game screen (screen 3) and its species list RACELIST (21 rows of
+// 109 pixels in a window 327 pixels high), driven by a finger, the mouse and its
+// wheel.
+struct SpeciesListRig {
+  explicit SpeciesListRig(const GameFiles& files) : rig(files), touch(rig.input) {
+    rig.click(318, 295);  // FRESHGAME
+    REQUIRE(rig.wm.current_screen() == 3);
+    REQUIRE(list().scroll_bar());
+  }
+
+  ListBox& list() { return dynamic_cast<ListBox&>(*rig.wm.find_window("RACELIST")); }
+  int species() { return dynamic_cast<NewGameWnd&>(*rig.wm.find_window("NEWGAMEWND")).settings().species; }
+  // A finger dragged from (x, y0) by `dy` in `steps` moves, a pass each.
+  void finger_drag(int x, int y0, int dy, int steps) {
+    touch.feed(finger(EventType::kFingerDown, 1, x, y0, 0));
+    rig.pass();
+    for (int i = 1; i <= steps; ++i) {
+      touch.feed(finger(EventType::kFingerMove, 1, x, y0 + dy * i / steps, 10));
+      rig.pass();
+    }
+    touch.feed(finger(EventType::kFingerUp, 1, x, y0 + dy, 20));
+    rig.pass();
+    rig.pass();
+  }
+  void tap(int x, int y) {
+    touch.feed(finger(EventType::kFingerDown, 1, x, y, 0));
+    rig.pass();
+    touch.feed(finger(EventType::kFingerUp, 1, x, y, 50));
+    rig.pass();
+    rig.pass();
+    rig.pass();
+  }
+  // Clicks the up or down arrow `n` times; returns the top row after.
+  int arrow_clicks(bool down, int n) {
+    for (int i = 0; i < n; ++i) {
+      rig.click(628, down ? 368 : 50);
+    }
+    rig.move(560, 200);
+    return list().top();
+  }
+  void wheel(int notches) {
+    rig.pass(InputEvent{.type = EventType::kMouseWheel, .x = 560, .y = 200, .wheel = notches});
+  }
+
+  test::UiRig rig;
+  TouchMapper touch;
+};
+
+TEST_CASE("a finger drag scrolls a list as its arrows do, row by row with the finger, and never picks",
+          "[screens][content]") {
+  OA_REQUIRE_GAME_FILES(files);
+  SpeciesListRig r(files);
+  constexpr int kRow = 109;
+  REQUIRE(r.list().line_height() == kRow);
+  // Up by two rows and a half: two steps, the species kept.
+  r.finger_drag(560, 300, -(2 * kRow + kRow / 2), 6);
+  CHECK(r.list().top() == 2);
+  CHECK(r.species() == 0);
+  CHECK(r.list().hover_row() == 2 + (300 - 46) / kRow);  // the hover back at the drag's end
+  // Down again by one row less a pixel: none.
+  r.finger_drag(560, 100, kRow - 1, 3);
+  CHECK(r.list().top() == 2);
+  // The same top row as two clicks on the down arrow from the top.
+  r.finger_drag(560, 100, 3 * kRow, 3);
+  CHECK(r.list().top() == 0);
+  CHECK(r.arrow_clicks(true, 2) == 2);
+  // A long drag stops where the arrows do.
+  for (int i = 0; i < 10; ++i) {
+    r.finger_drag(560, 370, -320, 8);
+  }
+  const int bottom = r.list().top();
+  CHECK(bottom == NewGameWnd::kSpecies - (372 - 45) / kRow);  // the arrows' limit
+  CHECK(r.arrow_clicks(true, 1) == bottom);
+  CHECK(r.arrow_clicks(false, 3) == bottom - 3);
+  CHECK(r.species() == 0);
+
+  // A tap still picks the row under the finger, as a click does.
+  r.tap(560, 46 + kRow / 2);
+  CHECK(r.species() == bottom - 3);
+}
+
+TEST_CASE("the wheel scrolls a list by one arrow click per notch; the mouse does not drag RACELIST",
+          "[screens][content]") {
+  OA_REQUIRE_GAME_FILES(files);
+  SpeciesListRig r(files);
+  r.wheel(-1);
+  CHECK(r.list().top() == 1);
+  r.wheel(-3);
+  CHECK(r.list().top() == 4);
+  CHECK(r.list().hover_row() == 4 + (200 - 46) / r.list().line_height());
+  r.wheel(10);
+  CHECK(r.list().top() == 0);
+  CHECK(r.arrow_clicks(true, 1) == 1);
+  CHECK(r.species() == 0);
+
+  // A row's press picks it in the original: a mouse drag keeps that press
+  // and does not scroll.
+  CHECK(!r.list().mouse_drag());
+  CHECK(r.rig.wm.view_window_at(560, 300, true) == 0);
+  CHECK(r.rig.wm.view_window_at(560, 300, false) == r.list().id());
+  r.rig.move(560, 300);
+  r.rig.pass(InputEvent{.type = EventType::kMouseDown, .x = 560, .y = 300, .button = MouseButton::kLeft});
+  for (int y = 280; y >= 60; y -= 20) {
+    r.rig.move(560, y);
+  }
+  r.rig.pass(InputEvent{.type = EventType::kMouseUp, .x = 560, .y = 60, .button = MouseButton::kLeft});
+  CHECK(r.list().top() == 1);
+  CHECK(r.species() == 1 + (300 - 46) / r.list().line_height());
+}
+
+TEST_CASE("the intelligence list takes mouse drags (its rows' press picks nothing), the others do not",
+          "[screens][content]") {
+  OA_REQUIRE_GAME_FILES(files);
+  test::TempDir dir("oa_touch");
+  GameRig r(files, dir.path);
+  r.rig.wm.set_screen(14, true);
+  r.wait(3);
+  auto& list = dynamic_cast<ListBox&>(*r.rig.wm.find_window("INTELLIST"));
+  CHECK(list.mouse_drag());
+  const Pane p = list.pane();
+  CHECK(list.takes_view_gesture(p.x0 + 10, p.y0 + 10, true));
+  CHECK(r.rig.wm.view_window_at(p.x0 + 10, p.y0 + 10, true) == list.id());
+  CHECK(!dynamic_cast<ListBox&>(*r.rig.wm.find_window("STATPLANLST")).mouse_drag());
+}
+
+TEST_CASE("the wheel zooms the star map and the System Display as a pinch, within their limits", "[screens][content]") {
+  OA_REQUIRE_GAME_FILES(files);
+  test::TempDir dir("oa_touch");
+  GameRig r(files, dir.path);
+  const float fov = r.map().fov();
+  r.rig.pass(InputEvent{.type = EventType::kMouseWheel, .x = 240, .y = 240, .wheel = 1});
+  CHECK(r.map().fov() == fov / GWindow::kWheelZoom);
+  r.rig.pass(InputEvent{.type = EventType::kMouseWheel, .x = 240, .y = 240, .wheel = 40});
+  CHECK(r.map().fov() == CosWnd::kMinFov);
+  r.rig.pass(InputEvent{.type = EventType::kMouseWheel, .x = 240, .y = 240, .wheel = -40});
+  CHECK(r.map().fov() == CosWnd::kMaxFov);
+  CHECK(r.rig.wm.current_screen() == 1);
+
+  const game::Session& s = *r.session.core();
+  const CosWnd::Item& home = r.star_item(s.game->cosmos.races[s.player_race].home);
+  r.click(r.map().pane().x0 + home.x, r.map().pane().y0 + home.y);
+  r.wait(10);
+  REQUIRE(r.rig.wm.current_screen() == 16);
+  auto& view = dynamic_cast<BatModeWnd&>(*r.rig.wm.find_window("BatModeWnd"));
+  const float distance = view.distance();
+  r.rig.pass(InputEvent{.type = EventType::kMouseWheel, .x = 240, .y = 240, .wheel = 2});
+  CHECK(view.distance() < distance);
+  r.rig.pass(InputEvent{.type = EventType::kMouseWheel, .x = 240, .y = 240, .wheel = 100});
+  CHECK(view.distance() == view.camera().focal);
 }
 
 TEST_CASE("Back: an exit corner's action, Exit to DOS on the opening menu", "[screens][content]") {

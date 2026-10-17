@@ -141,10 +141,12 @@ class BatModeWnd final : public GWindow {
   // animation plays): a horizontal drag orbits the camera as the rotation
   // buttons do, `kDragDegrees` per pixel (the system follows the finger;
   // the original has no other rotation); a pinch zooms within the
-  // original's limits.
-  bool takes_view_gesture(int x, int y) const override;
+  // original's limits, the wheel as a pinch of `kWheelZoom` per notch (away
+  // from the player: closer). The mouse drags too.
+  bool takes_view_gesture(int x, int y, bool mouse) const override;
   void view_drag(int dx, int dy) override;
   void view_pinch(float ratio) override;
+  void view_wheel(int notches) override;
 
   // `BatModeWnd_build_scene` (0x187ec).
   void build_scene();

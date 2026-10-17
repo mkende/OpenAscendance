@@ -94,14 +94,22 @@ class GWindow {
   // (`NewGameWnd_handle_event` 0x4dd5c): nothing for most windows.
   virtual void new_game() {}
 
-  // The remake's view gestures (`ViewGesture`, not in the original): whether
-  // a drag or pinch starting at screen point (x, y) turns or zooms this
-  // window's 3D view (none for most windows), then the drags (in screen
-  // pixels) and pinches (the ratio of the fingers' distances, above 1
-  // apart) of that gesture.
-  virtual bool takes_view_gesture(int /*x*/, int /*y*/) const { return false; }
+  // The remake's view gestures (`ViewGesture`) and mouse wheel, not in the
+  // original: whether a drag or pinch starting at screen point (x, y) turns,
+  // zooms or scrolls this window's view (none for most windows; `mouse`: a
+  // drag of the mouse, whose press already was the original's click), then
+  // the drags (in screen pixels) and pinches (the ratio of the fingers'
+  // distances, above 1 apart) of that gesture. The wheel's notches (positive
+  // away from the player) go to the window that would take a finger's
+  // gesture at the pointer.
+  virtual bool takes_view_gesture(int /*x*/, int /*y*/, bool /*mouse*/) const { return false; }
   virtual void view_drag(int /*dx*/, int /*dy*/) {}
   virtual void view_pinch(float /*ratio*/) {}
+  virtual void view_wheel(int /*notches*/) {}
+  // The end of the gesture this window took.
+  virtual void view_end() {}
+  // The zoom of one wheel notch on the 3D views, as a pinch's ratio.
+  static constexpr float kWheelZoom = 1.1F;
 
   // The `windows.txt` TYPE (-1 for a window made by the code).
   int type() const { return type_; }

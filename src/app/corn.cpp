@@ -193,6 +193,7 @@ class Host final : public DisplayControl {
       case EventType::kMouseMove:
       case EventType::kMouseDown:
       case EventType::kMouseUp:
+      case EventType::kMouseWheel:
         touch_pointer_ = false;
         input_.feed(e);
         break;

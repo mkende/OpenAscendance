@@ -39,6 +39,11 @@ void Input::feed(const InputEvent& event) {
       }
       break;
     }
+    case EventType::kMouseWheel:
+      mouse_x_ = std::clamp(event.x, 0, kScreenWidth - 1);
+      mouse_y_ = std::clamp(event.y, 0, kScreenHeight - 1);
+      wheel_ += event.wheel;
+      break;
     case EventType::kBack:
       back_ = true;
       break;
@@ -68,13 +73,15 @@ void Input::track_mouse_drag(const InputEvent& event, int from_x, int from_y) {
       drag_gesture(mouse_x_ - from_x, mouse_y_ - from_y);
     } else if (std::abs(mouse_x_ - press_x_) > kMouseDragSlop || std::abs(mouse_y_ - press_y_) > kMouseDragSlop) {
       mouse_dragging_ = true;
-      begin_gesture(press_x_, press_y_);
+      begin_gesture(press_x_, press_y_, true);
       drag_gesture(mouse_x_ - press_x_, mouse_y_ - press_y_);
     }
   }
 }
 
-void Input::begin_gesture(int x, int y) { gesture_ = ViewGesture{.started = true, .active = true, .x = x, .y = y}; }
+void Input::begin_gesture(int x, int y, bool mouse) {
+  gesture_ = ViewGesture{.started = true, .active = true, .mouse = mouse, .x = x, .y = y};
+}
 
 void Input::drag_gesture(int dx, int dy) {
   gesture_.dx += dx;
@@ -142,6 +149,8 @@ const InputState& Input::poll() {
   gesture_.dx = 0;
   gesture_.dy = 0;
   gesture_.zoom = 1.0F;
+  s.wheel = wheel_;
+  wheel_ = 0;
   return s;
 }
 

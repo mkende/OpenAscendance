@@ -314,6 +314,18 @@ std::optional<InputEvent> Display::poll() {
         impl_->window_to_screen(e.button.x, e.button.y, out.x, out.y);
         out.button = to_button(e.button.button);
         return out;
+      case SDL_EVENT_MOUSE_WHEEL: {
+        // Whole notches (SDL accumulates a smooth wheel's fractions), in the
+        // system's direction (its "natural scrolling" kept).
+        const int notches = e.wheel.integer_y;
+        if (e.wheel.which == SDL_TOUCH_MOUSEID || notches == 0) {
+          break;
+        }
+        out.type = EventType::kMouseWheel;
+        impl_->window_to_screen(e.wheel.mouse_x, e.wheel.mouse_y, out.x, out.y);
+        out.wheel = notches;
+        return out;
+      }
       case SDL_EVENT_FINGER_DOWN:
       case SDL_EVENT_FINGER_MOTION:
       case SDL_EVENT_FINGER_UP:

@@ -37,8 +37,8 @@ saves are compatible with the original's.
 
 3. **Start it.** The first time you launch the game, it asks for the folder
    where Ascendancy is installed and remembers it. On Android, the folder's
-   files are copied into the app (the folder may then be removed). Open
-   Ascendance never writes into the original install: your saves and options
+   files are copied into the app (the folder may then be removed).
+   OpenAscendance never writes into the original install: your saves and options
    go to an OpenAscendance folder in your home folder.
 
 ## Classic and Extended
@@ -65,19 +65,29 @@ your finger:
   tap the button again to stop it).
 - **Drag** on the galaxy map or a star system: turns the view.
 - **Pinch** on them: zooms in or out.
+- **Drag** on a list (species, buildings, ship components, planets, ships,
+  saved games, diplomacy options...): scrolls it row by row, as its arrows
+  do; dragging never picks a row. On the research tree, an up or down drag
+  moves along the tree and a sideways drag turns it.
 - **Back** (button or gesture): closes the current dialog or goes back to
   the previous screen, like the original's exit corners; on the opening
   menu, it quits.
 
 The game in progress is saved when the app goes to the background, so that
 "Return to Current Game" goes on from there even if Android closed the app
-meanwhile. With a mouse, dragging on the galaxy map or a star system turns
-it too.
+meanwhile.
+
+With a mouse, dragging on the galaxy map or a star system turns it too, and
+the wheel zooms it. The wheel scrolls the lists by one row per notch (one
+click on their arrows) and moves along the research tree. Since pressing on
+a list's row picks it, dragging the mouse scrolls only the lists where a
+press does nothing (the intelligence report), and the research tree when
+the press is not on an item.
 
 ## Building and contributing
 
-See [BUILD.md](BUILD.md) to learn how to build, run and test Open
-Ascendance, and how its sources are organised, and
+See [BUILD.md](BUILD.md) to learn how to build, run and test
+OpenAscendance, and how its sources are organised, and
 [RELEASING.md](RELEASING.md) for how its releases are made.
 
 The remake is built from a reverse engineering of the original game, kept

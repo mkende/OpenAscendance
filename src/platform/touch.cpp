@@ -59,7 +59,7 @@ void TouchMapper::feed(const InputEvent& event) {
         finish(false);
         second_ = finger;
         phase_ = Phase::kPinch;
-        input_.begin_gesture((first_.x + second_->x) / 2, (first_.y + second_->y) / 2);
+        input_.begin_gesture((first_.x + second_->x) / 2, (first_.y + second_->y) / 2, false);
       }
       return;
     case EventType::kFingerMove: {
@@ -80,7 +80,7 @@ void TouchMapper::feed(const InputEvent& event) {
       if (phase_ == Phase::kPending &&
           (std::abs(finger.x - start_x_) > kSlop || std::abs(finger.y - start_y_) > kSlop)) {
         phase_ = Phase::kDrag;
-        input_.begin_gesture(start_x_, start_y_);
+        input_.begin_gesture(start_x_, start_y_, false);
         input_.drag_gesture(finger.x - start_x_, finger.y - start_y_);
       } else if (phase_ == Phase::kDrag) {
         input_.drag_gesture(finger.x - first_.x, finger.y - first_.y);

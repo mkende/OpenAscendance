@@ -13,13 +13,14 @@
 
 namespace oa {
 
-// A gesture turning a 3D view (a remake addition, not in the original's
-// globals): a drag with the left button or one finger past a few pixels, a
-// pinch of two fingers. `WinMgr` hands it to the window whose view it
-// started on.
+// A gesture turning a 3D view or scrolling a list (a remake addition, not in
+// the original's globals): a drag with the left button or one finger past a
+// few pixels, a pinch of two fingers. `WinMgr` hands it to the window whose
+// view it started on.
 struct ViewGesture {
   bool started = false;  // a gesture started since the last poll, at (x, y)
   bool active = false;   // the gesture goes on after this poll
+  bool mouse = false;    // a drag of the mouse (its press was a click)
   int x = 0;
   int y = 0;
   // The drag since the last poll, in screen pixels.
@@ -48,10 +49,12 @@ struct InputState {
   bool moved = false;             // 0xc84d0
   int x = 0;                      // 0xc84d4
   int y = 0;                      // 0xc84d8
-  // The remake's additions: the system's Back this pass, and the view
-  // gesture.
+  // The remake's additions: the system's Back this pass, the view gesture,
+  // and the mouse wheel's notches since the last poll (positive away from
+  // the player).
   bool back = false;
   ViewGesture gesture;
+  int wheel = 0;
 };
 
 // Turns the platform's input events into the original's polled state.
@@ -68,12 +71,14 @@ class Input {
   // updates the pointer and queues its button changes, Back is reported by
   // the next poll. A mouse (not a finger) moved past `kMouseDragSlop` with
   // the left button held drags a view, until the button is released (the
-  // press itself stays a click). Finger events go through `TouchMapper`.
+  // press itself stays a click). The wheel's notches add up until the next
+  // poll. Finger events go through `TouchMapper`.
   void feed(const InputEvent& event);
 
   // The view gestures (`ViewGesture`), reported by the next poll: one
-  // starting at (x, y), its drags and pinches, its end.
-  void begin_gesture(int x, int y);
+  // starting at (x, y) (`mouse`: a drag of the mouse), its drags and
+  // pinches, its end.
+  void begin_gesture(int x, int y, bool mouse);
   void drag_gesture(int dx, int dy);
   void zoom_gesture(float ratio);
   void end_gesture();
@@ -112,6 +117,7 @@ class Input {
   std::uint16_t mods_ = 0;
   bool back_ = false;
   ViewGesture gesture_;
+  int wheel_ = 0;
   // The mouse's left button as fed (not as polled), where it was pressed,
   // and whether its moves drag a view.
   bool mouse_left_ = false;

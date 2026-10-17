@@ -109,10 +109,13 @@ class CosWnd final : public GWindow {
   // drag turns the galaxy as the rotation buttons do, about the vertical
   // axis for a horizontal drag and the horizontal axis for a vertical one,
   // `kDragDegrees` per pixel (the galaxy follows the finger); a pinch
-  // zooms within the field of view's limits.
-  bool takes_view_gesture(int x, int y) const override;
+  // zooms within the field of view's limits, the wheel as a pinch of
+  // `kWheelZoom` per notch (away from the player: closer). The mouse drags
+  // too.
+  bool takes_view_gesture(int x, int y, bool mouse) const override;
   void view_drag(int dx, int dy) override;
   void view_pinch(float ratio) override;
+  void view_wheel(int notches) override;
 
   const Camera3d& camera() const { return camera_; }
   float fov() const { return fov_; }

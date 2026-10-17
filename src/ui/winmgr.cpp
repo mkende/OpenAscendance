@@ -1267,6 +1267,7 @@ const InputState& WinMgr::replay_input() {
   replay_state_.right_changed = false;
   replay_state_.moved = false;
   replay_state_.key_event = false;
+  replay_state_.wheel = 0;
   while (replaying_) {
     const TraceRecord& r = trace_.records[replay_next_];
     if (replay_pass_ < r.time) {
@@ -1364,6 +1365,7 @@ void WinMgr::check_replay_abort() {
     replay_state_.moved = false;
     replay_state_.back = false;
     replay_state_.gesture = {};
+    replay_state_.wheel = 0;
     replay_state_.x = x;
     replay_state_.y = y;
   }
@@ -1625,6 +1627,9 @@ void WinMgr::process_input(const InputState& input) {
     system_back();
   }
   route_view_gesture(in.gesture);
+  if (in.wheel != 0) {
+    route_wheel(in.x, in.y, in.wheel);
+  }
   while (!messages_.empty()) {
     dispatch_messages();
   }
@@ -1663,19 +1668,29 @@ void WinMgr::system_back() {
   }
 }
 
+int WinMgr::view_window_at(int x, int y, bool mouse) const {
+  if (modal_ || help_mode_ || current_ < 0) {
+    return 0;
+  }
+  const Screen& s = screens_.at(static_cast<std::size_t>(current_));
+  for (auto it = s.slots.rbegin(); it != s.slots.rend(); ++it) {
+    const GWindow* w = window(*it);
+    if (w != nullptr && w->shown() && w->takes_view_gesture(x, y, mouse)) {
+      return *it;
+    }
+  }
+  return 0;
+}
+
+void WinMgr::route_wheel(int x, int y, int notches) {
+  if (GWindow* w = window(view_window_at(x, y, false))) {
+    w->view_wheel(notches);
+  }
+}
+
 void WinMgr::route_view_gesture(const ViewGesture& gesture) {
   if (gesture.started) {
-    gesture_window_ = 0;
-    if (!modal_ && !help_mode_ && current_ >= 0) {
-      const Screen& s = screen_record(current_);
-      for (auto it = s.slots.rbegin(); it != s.slots.rend(); ++it) {
-        const GWindow* w = window(*it);
-        if (w != nullptr && w->shown() && w->takes_view_gesture(gesture.x, gesture.y)) {
-          gesture_window_ = *it;
-          break;
-        }
-      }
-    }
+    gesture_window_ = view_window_at(gesture.x, gesture.y, gesture.mouse);
   }
   if (GWindow* w = gesture_window_ != 0 && !modal_ ? window(gesture_window_) : nullptr) {
     if (gesture.dx != 0 || gesture.dy != 0) {
@@ -1686,6 +1701,9 @@ void WinMgr::route_view_gesture(const ViewGesture& gesture) {
     }
   }
   if (!gesture.active) {
+    if (GWindow* w = window(gesture_window_)) {
+      w->view_end();
+    }
     gesture_window_ = 0;
   }
 }

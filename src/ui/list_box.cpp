@@ -1,5 +1,6 @@
 #include "ui/list_box.h"
 
+#include <cstdlib>
 #include <format>
 
 #include "core/error.h"
@@ -241,14 +242,71 @@ void ListBox::repeat_scroll(int msg) {
   if (period != -1) {
     wm_.set_timer_period(id_, msg, static_cast<std::uint32_t>(std::max(period * 2 / 3 - 1, 0)));
   }
+  scroll_step(msg);
+}
+
+bool ListBox::scroll_step(int msg) {
   if (msg == kEventScrollUp) {
-    if (top_ != 0) {
-      --top_;
-      draw(kDrawNormal);
+    if (top_ == 0) {
+      return false;
     }
+    --top_;
   } else if (top_ < count() - (pane_.y1 - pane_.y0) / line_height_) {
     ++top_;
-    draw(kDrawNormal);
+  } else {
+    return false;
+  }
+  draw(kDrawNormal);
+  return true;
+}
+
+void ListBox::drop_hover() {
+  if (hover_ != -1) {
+    draw_row(hover_, false);
+    hover_ = -1;
+  }
+}
+
+bool ListBox::takes_view_gesture(int x, int y, bool mouse) const { return (!mouse || mouse_drag_) && contains(x, y); }
+
+void ListBox::view_drag(int /*dx*/, int dy) {
+  drop_hover();
+  drag_ += dy;
+  // The finger up: the next rows come in from the bottom; down: the
+  // previous ones from the top.
+  while (top_ < count() && drag_ <= -height_of(items_[static_cast<std::size_t>(top_)])) {
+    const int height = height_of(items_[static_cast<std::size_t>(top_)]);
+    if (!scroll_step(kEventScrollDown)) {
+      drag_ = 0;
+      return;
+    }
+    drag_ += height;
+  }
+  while (top_ > 0 && drag_ >= height_of(items_[static_cast<std::size_t>(top_ - 1)])) {
+    drag_ -= height_of(items_[static_cast<std::size_t>(top_ - 1)]);
+    scroll_step(kEventScrollUp);
+  }
+  if (top_ == 0 && drag_ > 0) {
+    drag_ = 0;
+  }
+}
+
+void ListBox::view_wheel(int notches) {
+  drop_hover();
+  const int msg = notches > 0 ? kEventScrollUp : kEventScrollDown;
+  for (int i = 0; i < std::abs(notches); ++i) {
+    if (!scroll_step(msg)) {
+      break;
+    }
+  }
+  track_mouse(wm_.input().x, wm_.input().y);
+}
+
+void ListBox::view_end() {
+  drag_ = 0;
+  const InputState& in = wm_.input();
+  if (shown_ && !wm_.in_modal() && contains(in.x, in.y)) {
+    track_mouse(in.x, in.y);
   }
 }
 

@@ -7,10 +7,13 @@
 
 #include <SDL3/SDL_keycode.h>
 
+#include <optional>
+
 #include "core_session.h"
 #include "game/research.h"
 #include "game/session.h"
 #include "game_data.h"
+#include "platform/touch.h"
 #include "screen_shots.h"
 #include "screens/res_wnd.h"
 #include "ui_rig.h"
@@ -173,6 +176,86 @@ TEST_CASE("research: hover, click to choose a project, M, PgDn, rotation and lea
   research.items[0].unseen_mask = 1;
   r.rig.wm.set_screen(0, true);
   CHECK(research.items[0].unseen_mask == 0);
+}
+
+TEST_CASE("research: a finger drag moves and turns the tree, the wheel moves it, within PgUp / PgDn's ends",
+          "[research][content]") {
+  OA_REQUIRE_GAME_FILES(files);
+  ResearchRig r(files);
+  ResWnd& w = r.window();
+  game::Research& research = r.research();
+  TouchMapper touch(r.rig.input);
+  const std::int16_t project = research.project[0];
+  const auto drag = [&](int x, int y, int dx, int dy) {
+    touch.feed(InputEvent{.type = EventType::kFingerDown, .x = x, .y = y, .finger = 1});
+    r.rig.pass();
+    for (int i = 1; i <= 4; ++i) {
+      touch.feed(InputEvent{.type = EventType::kFingerMove, .x = x + dx * i / 4, .y = y + dy * i / 4, .finger = 1});
+      r.rig.pass();
+    }
+    touch.feed(InputEvent{.type = EventType::kFingerUp, .x = x + dx, .y = y + dy, .finger = 1});
+    r.rig.pass();
+    r.rig.pass();
+  };
+  float bottom = 0;
+  for (std::size_t i = 0; i < research.count; ++i) {
+    if (game::research_can_research(research, 0, static_cast<std::uint16_t>(i))) {
+      bottom = std::max(bottom, w.positions()[i][1]);
+    }
+  }
+  REQUIRE(w.camera().position[1] == 150.0F);
+
+  // Down: the tree follows the finger (the camera goes up), from the
+  // current project's ring, which is not picked again.
+  const auto item = static_cast<std::size_t>(project);
+  const ScreenPoint before = w.screen_position(item);
+  drag(before.x + 7, before.y + 46, 0, 80);
+  CHECK(research.project[0] == project);
+  CHECK(w.camera().position[1] < 150.0F);
+  // About 80 pixels at the axis (the ring is a little nearer).
+  CHECK(w.screen_position(item).y - before.y > 70);
+  CHECK(w.screen_position(item).y - before.y < 100);
+  CHECK(w.screen_position(item).x == before.x);
+  // The wheel: away from the player up by `kWheelStep`, towards down.
+  const float y = w.camera().position[1];
+  r.rig.pass(InputEvent{.type = EventType::kMouseWheel, .x = 240, .y = 240, .wheel = 1});
+  r.rig.pass();
+  CHECK(w.camera().position[1] == y - static_cast<float>(ResWnd::kWheelStep));
+  r.rig.pass(InputEvent{.type = EventType::kMouseWheel, .x = 240, .y = 240, .wheel = -1});
+  r.rig.pass();
+  CHECK(w.camera().position[1] == y);
+  // Far up and far down: Home's and PgDn's ends.
+  for (int i = 0; i < 4; ++i) {
+    drag(240, 100, 0, 360);
+  }
+  CHECK(w.camera().position[1] == 0.0F);
+  r.rig.pass(InputEvent{.type = EventType::kMouseWheel, .x = 240, .y = 240, .wheel = -100});
+  r.rig.pass();
+  CHECK(w.camera().position[1] == bottom);
+
+  // Sideways: the near side of the tree follows the finger.
+  const std::size_t nearest = w.draw_order()[research.count - 1];
+  const std::int16_t near_x = w.screen_position(nearest).x;
+  drag(240, 300, 30, 0);
+  CHECK(w.camera().orientation[6] != 0.0F);
+  CHECK(w.screen_position(nearest).x > near_x);
+  CHECK(research.project[0] == project);
+
+  // The mouse drags only from where its press picks nothing.
+  std::optional<ScreenPoint> shown;
+  for (std::size_t i = 0; i < research.count && !shown; ++i) {
+    const ScreenPoint q = w.screen_position(i);
+    if (game::research_can_research(research, 0, static_cast<std::uint16_t>(i)) && q.x > 30 && q.x < 440 && q.y > 30 &&
+        q.y < 400) {
+      shown = q;
+    }
+  }
+  REQUIRE(shown);
+  const ScreenPoint p = *shown;
+  CHECK(!w.takes_view_gesture(p.x + 7, p.y + 46, true));
+  CHECK(w.takes_view_gesture(p.x + 7, p.y + 46, false));
+  CHECK(w.takes_view_gesture(10, 470, true));
+  CHECK(!w.takes_view_gesture(550, 230, false));
 }
 
 TEST_CASE("research: the oracle's views of the day-820 game", "[research][content][.shots]") {
