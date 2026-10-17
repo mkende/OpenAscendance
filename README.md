@@ -14,7 +14,9 @@ core: the star map (its new-game, species and diplomacy variants), the saves
 with their window state, the planet and research screens; the diplomacy
 (milestone 6): species selection, negotiation, intelligence and the special
 abilities window; the System Display (milestone 5): the 3D star-system view
-and the battles played in it.
+and the battles played in it; the days played from the star map (Next Day,
+the auto next turn, the game-event boxes and the screens they lead to, the
+end of the game) and the tutorials (replays of their recorded input).
 
 ## Layout
 
@@ -34,12 +36,13 @@ the functions they port with their `PATCH.EXE` address:
 - `src/gfx`: the VFX blitters, the fonts, `GSystem` (screen, DAC, fades).
 - `src/audio`: the mixer and `SoundSystem` (music and effects).
 - `src/platform`: the SDL window, input, clock and sound output.
-- `src/ui`: `WinMgr`, `GWindow` and the toolkit's window classes, the FLIC
-  player and window, `GameSession` (the game core as the screens see it)
+- `src/ui`: `WinMgr` (with the game events and the trace replay), `GWindow`
+  and the toolkit's window classes, the game-event box, the FLIC player and
+  window, `GameSession` (the game core as the screens see it)
   and `GameCoreSession` (it over `src/game`: saves, new game, the day).
 - `src/screens`: the screens (new game, species history, load/save and
   tutorial lists, the star map, the System Display, planets, research,
-  negotiation, intelligence).
+  negotiation, intelligence, end of game).
 - `src/app`: `main`, the command line and the install setup.
 
 ## Build
@@ -64,7 +67,9 @@ Without `--data` the game asks once for the install folder and remembers it.
 Alt+Enter toggles fullscreen. `--screenshot <file.bmp> [--frames N]` with
 `--keys <k1,k2,...>` runs headless and saves a frame, `--save-dir <dir>`
 keeping its saves and Alt+G screenshots, and `--seed N` starts the galaxy of
-the oracle's runs ([`src/app/command_line.h`](src/app/command_line.h)).
+the oracle's runs; `--trace <file.bin>` replays a window-event trace (an
+oracle run's `trace.bin`) from the opening menu
+([`src/app/command_line.h`](src/app/command_line.h)).
 
 ## Options
 
@@ -95,4 +100,8 @@ the comparisons with the original's saves (`docs/12-oracle.md`) when
 `OA_ORACLE` does not name the `work/oracle` folder of the reference runs.
 The day tests (`tests/day_test.cpp`, tag `[day]`) replay every case of the
 corpus; with `OA_DUMP_DIR` set they write the remake's save of the first
-diverging day, to compare with `tools/savdiff.py`.
+diverging day, to compare with `tools/savdiff.py`. `tests/day_ui_test.cpp`
+plays the oracle's runs through the user interface from their own traces
+(new games, days with their game-event boxes, the tutorials) and compares
+the saves and Alt+G screenshots (`OA_DAY_UI_RUN` picks runs by name,
+`OA_DUMP_DIR` keeps the remake's files).
