@@ -1,4 +1,4 @@
-// Open Ascendance: entry point. The command line is described in
+// OpenAscendance: entry point. The command line is described in
 // app/command_line.h.
 
 #include <SDL3/SDL_init.h>

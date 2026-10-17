@@ -18,7 +18,7 @@ option(OA_SANITIZE "Use ASan/UBSan in debug builds (Linux only)" ON)
 # (SDL's, the Android package, the macOS bundle, the Linux .desktop file) and
 # SDL per-user folder, in the generated header core/edition.h and, for the
 # packaging scripts, edition.sh in the build directory.
-set(OA_NAME "Open Ascendance")
+set(OA_NAME "OpenAscendance")
 set(OA_EXECUTABLE open_ascendance)
 set(OA_APP_ID io.github.mkende.openascendance)
 # Empty: the per-user folder is just "<app>" (SDL_GetPrefPath skips an empty org).

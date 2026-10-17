@@ -1,6 +1,6 @@
-# Open Ascendance
+# OpenAscendance
 
-Open Ascendance is an open-source remake of *Ascendancy*, the space
+OpenAscendance is an open-source remake of *Ascendancy*, the space
 strategy game published by The Logic Factory in 1995. It runs on Windows,
 macOS, Linux and Android, and plays both the standard game (version 1.6.5)
 and the Antagonizer edition.
@@ -13,7 +13,7 @@ saves are compatible with the original's.
 
 ## Playing
 
-1. **Get the original game.** Open Ascendance is only an engine: it plays
+1. **Get the original game.** OpenAscendance is only an engine: it plays
    your own copy of Ascendancy and does not include any of its files. It
    needs an installed version of the original game (the folder holding
    `COB.CFG` and the `ASCEND00..02.COB` archives) to read them from.
@@ -39,7 +39,7 @@ saves are compatible with the original's.
    where Ascendancy is installed and remembers it. On Android, the folder's
    files are copied into the app (the folder may then be removed). Open
    Ascendance never writes into the original install: your saves and options
-   go to an Open Ascendance folder in your home folder.
+   go to an OpenAscendance folder in your home folder.
 
 ## Classic and Extended
 
@@ -98,7 +98,7 @@ this software is compatible with.
 
 ## License
 
-Open Ascendance is released under the MIT license; see [LICENSE](LICENSE).
+OpenAscendance is released under the MIT license; see [LICENSE](LICENSE).
 SDL3 (zlib license) and Catch2 (Boost Software License) are downloaded at
 build time and are not part of this repository. The files of the original
 game are, of course, neither included nor covered by this license.

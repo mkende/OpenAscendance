@@ -51,7 +51,7 @@ constexpr int kClickSound = 0;
 constexpr std::uint16_t kEnterKey = '\r';
 
 // The remake's help topics, in the format of `help.txt`.
-constexpr std::string_view kHelpFile = "Open Ascendance help";
+constexpr std::string_view kHelpFile = "OpenAscendance help";
 constexpr std::string_view kHelpText = R"(// The help topics of the remake's options.
 
 help oa_options

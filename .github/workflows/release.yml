@@ -150,7 +150,7 @@ jobs:
             ' CHANGELOG.md > notes.md
           fi
           printf '\n---\nAndroid version code: %s\n' "${VERSION_CODE}" >> notes.md
-          flags=(--draft --verify-tag --title "Open Ascendance ${VERSION}" --notes-file notes.md)
+          flags=(--draft --verify-tag --title "OpenAscendance ${VERSION}" --notes-file notes.md)
           if [[ "${PRERELEASE}" == true ]]; then
             flags+=(--prerelease)
           fi

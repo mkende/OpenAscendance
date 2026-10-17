@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds the Android package of Open Ascendance without Gradle (adapted from
+# Builds the Android package of OpenAscendance without Gradle (adapted from
 # SilentHeritage's): CMake for the native library, javac, d8, aapt2,
 # zipalign, apksigner. The package holds the native library of every ABI
 # (arm64-v8a for phones and tablets, x86_64 for Chromebooks and emulators)

@@ -1,6 +1,6 @@
 # Releasing
 
-How the packages of Open Ascendance are built, signed and published, the
+How the packages of OpenAscendance are built, signed and published, the
 one-time setup it relies on, and the steps of each release (adapted from
 SilentHeritage's).
 
@@ -94,7 +94,7 @@ needed for packages installed outside Google Play on certified devices.
 2. Commit and push to `main`; wait for `ci` to pass.
 3. Tag and push the tag:
 
-       git tag -a v1.0.0 -m "Open Ascendance 1.0.0"
+       git tag -a v1.0.0 -m "OpenAscendance 1.0.0"
        git push origin v1.0.0
 
 4. Follow the `release` run in the Actions tab.

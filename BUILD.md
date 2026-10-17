@@ -1,6 +1,6 @@
-# Building Open Ascendance
+# Building OpenAscendance
 
-How to build, run and test Open Ascendance on each platform and make its
+How to build, run and test OpenAscendance on each platform and make its
 packages (adapted from SilentHeritage's), and how its sources are organised;
 [RELEASING.md](RELEASING.md) describes how the release packages are made and
 published.
