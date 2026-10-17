@@ -2,6 +2,7 @@
 // app/command_line.h.
 
 #include <SDL3/SDL_init.h>
+#include <SDL3/SDL_log.h>
 #include <SDL3/SDL_main.h>
 #include <SDL3/SDL_messagebox.h>
 
@@ -21,6 +22,14 @@
 #include "core/edition.h"
 #include "core/error.h"
 #include "core/log.h"
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
 
 namespace {
 
@@ -60,9 +69,48 @@ std::optional<oa::Install> desktop_install(const oa::CommandLine& options) {
   return oa::run_install_setup(start.problems, config);
 }
 
+// Windows: the executable is a windowed program (no console window of its
+// own); started from a console, its output and messages go to that console.
+void attach_parent_console() {
+#ifdef _WIN32
+  if (AttachConsole(ATTACH_PARENT_PROCESS)) {
+    std::FILE* ignored = nullptr;
+    freopen_s(&ignored, "CONOUT$", "w", stdout);
+    freopen_s(&ignored, "CONOUT$", "w", stderr);
+  }
+#endif
+}
+
+// Android: standard error goes nowhere; the messages go to the system log
+// (logcat) through SDL's.
+void route_log_to_sdl() {
+#ifdef SDL_PLATFORM_ANDROID
+  oa::set_log_sink([](oa::LogLevel level, std::string_view message) {
+    SDL_LogPriority priority = SDL_LOG_PRIORITY_INFO;
+    switch (level) {
+      case oa::LogLevel::kDebug:
+        priority = SDL_LOG_PRIORITY_DEBUG;
+        break;
+      case oa::LogLevel::kInfo:
+        priority = SDL_LOG_PRIORITY_INFO;
+        break;
+      case oa::LogLevel::kWarning:
+        priority = SDL_LOG_PRIORITY_WARN;
+        break;
+      case oa::LogLevel::kError:
+        priority = SDL_LOG_PRIORITY_ERROR;
+        break;
+    }
+    SDL_LogMessage(SDL_LOG_CATEGORY_APPLICATION, priority, "%.*s", static_cast<int>(message.size()), message.data());
+  });
+#endif
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
+  attach_parent_console();
+  route_log_to_sdl();
   SDL_SetAppMetadata(oa::edition::kName, oa::edition::kVersion, oa::edition::kAppId);
   try {
     const std::vector<std::string_view> args(argv + 1, argv + argc);
@@ -71,13 +119,19 @@ int main(int argc, char** argv) {
     if (!install) {
       return 0;
     }
-    oa::GameOptions game{.scaling = options.scaling, .keys = options.keys, .screenshot = {}, .frames = options.frames};
+    oa::GameOptions game{.scaling = options.scaling, .keys = options.keys, .screenshot = {}, .frames = options.frames, .user_dir = {}};
     if (options.screenshot) {
       game.screenshot = *options.screenshot;
+    } else {
+      game.user_dir = oa::user_dir();
     }
     return oa::run_game(game, *install);
   } catch (const std::exception& e) {
     oa::log_error("{}", e.what());
+#if defined(_WIN32) || defined(SDL_PLATFORM_ANDROID)
+    // Started from the Explorer or the launcher, there is no console to tell it.
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, oa::edition::kName, e.what(), nullptr);
+#endif
     return 1;
   }
 }

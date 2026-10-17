@@ -21,6 +21,8 @@
 #include "platform/clock.h"
 #include "platform/input.h"
 #include "platform/screenshot.h"
+#include "screens/screens.h"
+#include "ui/game_session.h"
 #include "ui/winmgr.h"
 
 namespace oa {
@@ -70,6 +72,8 @@ class Host {
   Mixer* mixer() { return headless_ || audio_ ? &mixer_ : nullptr; }
   bool quit_requested() const { return quit_; }
   void set_pointer_shown(bool shown) { pointer_shown_ = shown; }
+  // `GSystem_set_pointer`: the `MOUSE.SHP` frame drawn.
+  void set_pointer_frame(int frame) { pointer_frame_ = frame; }
 
   // Reads the system's input events, and the next scripted step when
   // `scripted` (one per main-loop pass).
@@ -93,7 +97,7 @@ class Host {
     frame_ = gs.screen();
     if (pointer_shown_) {
       const InputState& s = input_.state();
-      vfx_shape_draw(frame_, GSystem::kScreenPane, pointer_->at(0), s.x, s.y);
+      vfx_shape_draw(frame_, GSystem::kScreenPane, pointer_->at(static_cast<std::size_t>(pointer_frame_)), s.x, s.y);
     }
     const Palette palette = Palette::from_vga(gs.dac());
     display_.present(frame_, palette);
@@ -117,6 +121,7 @@ class Host {
   Image8 frame_;
   int frames_ = 0;
   bool pointer_shown_ = false;
+  int pointer_frame_ = 0;
   bool quit_ = false;
 };
 
@@ -147,13 +152,31 @@ void run(const GameOptions& options, const GameFiles& files) {
   SoundSystem sound(files, host.mixer());
   WatcomRandom random;
   random.srand(static_cast<std::uint32_t>(std::time(nullptr)));
-  WinMgr wm(UiServices{.files = files,
-                       .gsystem = gs,
-                       .sound = sound,
-                       .now_us = [&] { return host.clock().micros(); },
-                       .ticks = [&] { return host.clock().ticks(); },
-                       .idle = [&] { host.clock().idle(); },
-                       .show_pointer = [&](bool shown) { host.set_pointer_shown(shown); }});
+  StubGameSession game;
+  std::unique_ptr<WinMgr> wm_holder;
+  WindowFactory factory = WindowFactory::standard();
+  add_screen_windows(factory);
+  wm_holder =
+      std::make_unique<WinMgr>(UiServices{.files = files,
+                                          .gsystem = gs,
+                                          .sound = sound,
+                                          .game = game,
+                                          .user_dir = options.user_dir,
+                                          .now_us = [&] { return host.clock().micros(); },
+                                          .ticks = [&] { return host.clock().ticks(); },
+                                          .idle = [&] { host.clock().idle(); },
+                                          .show_pointer = [&](bool shown) { host.set_pointer_shown(shown); },
+                                          .set_pointer_frame = [&](int frame) { host.set_pointer_frame(frame); },
+                                          .poll_input = [&]() -> const InputState& {
+                                            host.pump(true);
+                                            if (host.quit_requested()) {
+                                              wm_holder->post_message(kMessageQuit, 0, 0);
+                                            }
+                                            return host.input().poll();
+                                          },
+                                          .present = [&] { host.present(gs); }},
+                               factory);
+  WinMgr& wm = *wm_holder;
 
   gs.fade_window_colors(VgaPalette{}, kLogoFadeOut);
   wm.start_pending_fade();
@@ -164,14 +187,10 @@ void run(const GameOptions& options, const GameFiles& files) {
   host.set_pointer_shown(true);
 
   while (wm.running()) {
-    host.pump(true);
-    if (host.quit_requested()) {
-      wm.post_message(kMessageQuit, 0, 0);
-    }
-    wm.process_input(host.input().poll());
-    wm.refresh_screen();
-    host.present(gs);
+    wm.run_pass();
   }
+  wm.save_config();
+  game.save_resume();
 }
 
 }  // namespace

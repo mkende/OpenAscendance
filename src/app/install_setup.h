@@ -1,8 +1,9 @@
 // The install setup: when the game files are not available, native dialogs
 // (the game's own fonts and art being part of what is missing) ask the player
 // for the folder of the original install, check it and remember it
-// (app/install_source.h). Adapted from SilentHeritage's app/install_setup.h
-// (desktop only for now).
+// (app/install_source.h). Adapted from SilentHeritage's app/install_setup.h.
+// On Android, the folder chosen is copied into the app's storage
+// (app/android_documents.h) and the copy is the install remembered.
 #pragma once
 
 #include <filesystem>

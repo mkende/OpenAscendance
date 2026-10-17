@@ -13,10 +13,12 @@
 // down, left, right, pgup, pgdn, home, end, enter, esc, tab, space,
 // backspace, comma, minus, period, kpplus, kpminus, f1..f12 or a single
 // character (an upper-case letter adds Shift), optionally prefixed by
-// "shift+" or "alt+"; "-" waits one pass and "-N" N passes; "click:X:Y"
+// "shift+" or "alt+" (the modifier released on the next pass); "-" waits
+// one pass and "-N" N passes; "click:X:Y"
 // clicks the left button at (X, Y) (press and release on two passes),
-// "rclick:X:Y" the right one, "drag:X1:Y1:X2:Y2" drags with the left button,
-// "move:X:Y" moves the mouse.
+// "rclick:X:Y" the right one, "shiftclick:X:Y" a left click with Shift held
+// (help mode: Shift down, move, press, release, Shift up),
+// "drag:X1:Y1:X2:Y2" drags with the left button, "move:X:Y" moves the mouse.
 // `--screenshot` runs headless (SDL's dummy video and audio drivers, a
 // virtual clock) until N frames have been shown (default 2; a frame is shown
 // at each main-loop pass and at each vertical blank a fade waits for), saves

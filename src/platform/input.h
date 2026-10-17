@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <deque>
 
+#include "core/image.h"
 #include "platform/input_event.h"
 
 namespace oa {
@@ -61,8 +62,9 @@ class Input {
   std::deque<std::uint16_t> keys_;
   std::deque<ButtonChange> buttons_;
   std::uint16_t mods_ = 0;
-  int mouse_x_ = 0;
-  int mouse_y_ = 0;
+  // `MOUSE_init` (0x612b4) puts the pointer at the screen's centre.
+  int mouse_x_ = kScreenWidth / 2;
+  int mouse_y_ = kScreenHeight / 2;
 };
 
 }  // namespace oa

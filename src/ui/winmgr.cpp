@@ -1,13 +1,21 @@
 #include "ui/winmgr.h"
 
 #include <algorithm>
+#include <bit>
 #include <cctype>
+#include <cstring>
 #include <format>
+#include <fstream>
 
 #include "assets/gif.h"
+#include "assets/static_strings.h"
+#include "assets/tokens.h"
 #include "core/error.h"
 #include "core/log.h"
-#include "ui/flicwnd.h"
+#include "ui/edit_field.h"
+#include "ui/help_wnd.h"
+#include "ui/text_box.h"
+#include "ui/toggle_button.h"
 
 namespace oa {
 
@@ -15,14 +23,48 @@ namespace {
 
 // BIOS scan codes of the hotkeys (`WinMgr_handle_hotkey` 0x50174).
 constexpr std::uint16_t kScanEsc = 0x01;
+constexpr std::uint16_t kScanS = 0x1f;
+constexpr std::uint16_t kScanG = 0x22;
+constexpr std::uint16_t kScanL = 0x26;
 constexpr std::uint16_t kScanX = 0x2d;
 constexpr std::uint16_t kScanN = 0x31;
 constexpr std::uint16_t kScanM = 0x32;
+
+// The screens of the hotkeys and the screen-specific rules.
+constexpr int kScreenOpening = 0;
+constexpr int kScreenSave = 2;
+constexpr int kScreenLoad = 4;
+constexpr int kScreenShipDesign = 8;
+constexpr int kScreenPlanet = 17;
 
 // The themes the music picker chooses from (tunes 0..4).
 constexpr int kThemes = 5;
 // The resumed theme's fade-in ends at this volume.
 constexpr int kResumeVolume = 100;
+
+// The click sound of the exit corners (`soundfx.txt` 0, `button`).
+constexpr int kExitSound = 0;
+
+// `ascend.cfg`: the SFX and music mute flags (i32, 0 / -1) and the rotation
+// speed (float).
+constexpr std::string_view kConfigFile = "ascend.cfg";
+constexpr std::size_t kConfigSize = 12;
+
+// The number of `gwshare.txt` names (`GWindow_load_shared_shapes`).
+constexpr int kSharedShapes = 45;
+
+// The static strings of the dialogs.
+constexpr int kOkString = 0x1e;  // "OK"
+
+// The message box (`WinMgr_message_box` 0x50adc): the box and its button.
+constexpr Pane kMessageBoxPane{50, 50, 300, 300};
+constexpr Pane kMessageButtonPane{260, 260, 290, 290};
+// The input box (`WinMgr_input_box` 0x50be4): its x range, and the frame of
+// `help.shp` drawn under it.
+constexpr int kInputBoxX0 = 0xf2;
+constexpr int kInputBoxX1 = 0x18d;
+constexpr int kInputBoxFrame = 1;
+constexpr int kHelpShapes = 37;
 
 std::string upper(std::string_view s) {
   std::string out(s);
@@ -32,9 +74,34 @@ std::string upper(std::string_view s) {
   return out;
 }
 
+// Copies the pixels of `pane` of `screen` (`save_screen_under` 0x4f618).
+Image8 save_under(const Image8& screen, const Pane& pane) {
+  Image8 out(pane.x1 - pane.x0 + 1, pane.y1 - pane.y0 + 1);
+  for (int y = pane.y0; y <= pane.y1; ++y) {
+    for (int x = pane.x0; x <= pane.x1; ++x) {
+      if (screen.contains(x, y)) {
+        out.set(x - pane.x0, y - pane.y0, screen.at(x, y));
+      }
+    }
+  }
+  return out;
+}
+
+// `restore_screen_under` (0x4f6c0).
+void restore_under(Image8& screen, const Pane& pane, const Image8& saved) {
+  for (int y = pane.y0; y <= pane.y1; ++y) {
+    for (int x = pane.x0; x <= pane.x1; ++x) {
+      if (screen.contains(x, y)) {
+        screen.set(x, y, saved.at(x - pane.x0, y - pane.y0));
+      }
+    }
+  }
+}
+
 }  // namespace
 
-WinMgr::WinMgr(UiServices services) : services_(std::move(services)), shapes_(services_.files) {
+WinMgr::WinMgr(UiServices services, const WindowFactory& factory)
+    : services_(std::move(services)), shapes_(services_.files) {
   const WindowsTxt txt = parse_windows_txt(services_.files.load("windows.txt"));
   std::vector<HazeTable>& haze = services_.gsystem.haze_tables();
   haze.clear();
@@ -46,20 +113,30 @@ WinMgr::WinMgr(UiServices services) : services_(std::move(services)), shapes_(se
   large_font_ = std::make_unique<GameFont>(parse_font(services_.files.load(txt.large_font), txt.large_font), 0);
   for (std::size_t i = 0; i < focus_map_.size(); ++i) {
     focus_map_[i] = static_cast<std::uint8_t>(i);
+    race_map_[i] = static_cast<std::uint8_t>(i);
   }
   focus_map_[GWindow::kBackColor] = GWindow::kHotBackColor;
+  {
+    const std::vector<std::uint8_t> data = services_.files.load("gwshare.txt");
+    TokenReader r(data, "gwshare.txt");
+    for (int i = 0; i < kSharedShapes; ++i) {
+      shared_shape_files_.push_back(r.word());
+    }
+  }
   for (const auto& [screen, file] : txt.screen_shapes) {
     if (screen < 0 || screen >= kScreens) {
       throw DataError(std::format("windows.txt: screen {} out of range", screen));
     }
     screens_[static_cast<std::size_t>(screen)].shape_file = file;
   }
-  load_windows(txt);
+  load_windows(txt, factory);
+  install_screen_handlers();
+  load_config();
 }
 
 WinMgr::~WinMgr() = default;
 
-void WinMgr::load_windows(const WindowsTxt& txt) {
+void WinMgr::load_windows(const WindowsTxt& txt, const WindowFactory& factory) {
   for (const WindowRecord& record : txt.windows) {
     const ShapeTable* table = nullptr;
     if (!record.screens.empty()) {
@@ -72,29 +149,167 @@ void WinMgr::load_windows(const WindowsTxt& txt) {
         table = &shapes_.get(file);
       }
     }
-    // The other classes come with their screens (milestones 2 on): until
-    // then their records are plain windows.
-    std::unique_ptr<GWindow> w =
-        record.type == 1 ? std::make_unique<FlicWnd>(*this, record) : std::make_unique<GWindow>(*this, record, table);
-    const int id = static_cast<int>(windows_.size()) + 1;
-    w->set_id(id);
+    GWindow* parent = nullptr;
     if (upper(record.parent) != "NONE") {
-      GWindow* parent = find_window(record.parent);
+      parent = find_window(record.parent);
       if (parent == nullptr) {
         throw DataError(std::format("windows.txt: {} has no parent {}", record.name, record.parent));
       }
-      w->set_parent(parent->id());
-      parent->add_child(w.get());
+    }
+    std::unique_ptr<GWindow> w = factory.create(*this, record, table);
+    GWindow* raw = w.get();
+    const int id = register_window(std::move(w));
+    if (parent != nullptr) {
+      raw->set_parent(parent->id());
+      parent->add_child(raw);
     }
     for (const int s : record.screens) {
-      std::vector<int>& list = screens_[static_cast<std::size_t>(s)].windows;
-      if (list.size() == kScreenWindows) {
-        throw DataError(std::format("windows.txt: more than {} windows on screen {}", kScreenWindows, s));
+      if (s < 0 || s >= kScreens || !add_to_screen(id, s)) {
+        throw DataError(std::format("windows.txt: {} cannot go on screen {}", record.name, s));
       }
-      list.push_back(id);
     }
-    windows_.push_back(std::move(w));
   }
+}
+
+void WinMgr::install_screen_handlers() {
+  // main 0x1c424: screen 0 shows 0opening.gif, the others their .tmp
+  // background.
+  set_enter_handler(kScreenOpening, [this](int /*screen*/) {
+    const Image8 gif = decode_gif(services_.files.load("DATA\\0OPENING.GIF"), "DATA\\0OPENING.GIF");
+    Image8& out = screen();
+    for (int y = 0; y < std::min(gif.height(), out.height()); ++y) {
+      for (int x = 0; x < std::min(gif.width(), out.width()); ++x) {
+        out.set(x, y, gif.at(x, y));
+      }
+    }
+  });
+  for (const int s : {1, 2, 3, 4, 7, 8, 9, 10, 12, 13, 14, 15, 16, 18, 20}) {
+    set_enter_handler(s, [this](int screen) { draw_background(screen); });
+  }
+}
+
+void WinMgr::draw_background(int screen) {
+  std::string_view file;
+  switch (screen) {
+    case 1:
+      file = "DATA\\1starmap.tmp";
+      break;
+    case 2:
+    case 4:
+    case 10:
+    case 14:
+    case 15:
+    case 18:
+      file = "DATA\\10status.tmp";
+      break;
+    case 3:
+      file = "DATA\\3cfgnew.tmp";
+      break;
+    case 7:
+      file = "DATA\\7racesel.tmp";
+      break;
+    case 8:
+      file = "DATA\\8shipdes.tmp";
+      break;
+    case 9:
+      file = "DATA\\9ENDGAME.tmp";
+      break;
+    case 12:
+      file = "DATA\\12start.tmp";
+      break;
+    case 13:
+      file = "DATA\\13negot.tmp";
+      break;
+    case 16:
+      file = "DATA\\16battle.tmp";
+      break;
+    case 20:
+      file = "DATA\\20res.tmp";
+      break;
+    default:
+      return;
+  }
+  vfx_shape_draw(this->screen(), GSystem::kScreenPane, shapes_.get(file).at(0), 0, 0);
+}
+
+void WinMgr::load_config() {
+  std::optional<std::vector<std::uint8_t>> data;
+  if (!services_.user_dir.empty()) {
+    std::ifstream in(services_.user_dir / kConfigFile, std::ios::binary);
+    if (in) {
+      data.emplace(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    }
+  }
+  if (!data) {
+    // The install's own, the original's current directory.
+    data = services_.files.try_load(kConfigFile);
+  }
+  if (!data || data->size() < kConfigSize) {
+    return;
+  }
+  const auto i32 = [&](std::size_t at) {
+    std::uint32_t v = 0;
+    for (std::size_t k = 0; k < 4; ++k) {
+      v |= static_cast<std::uint32_t>((*data)[at + k]) << (8 * k);
+    }
+    return v;
+  };
+  services_.sound.set_sfx_muted(i32(0) != 0);
+  services_.sound.set_music_muted(i32(4) != 0);
+  rotation_speed_ = std::bit_cast<float>(i32(8));
+}
+
+void WinMgr::save_config() const {
+  if (services_.user_dir.empty()) {
+    return;
+  }
+  std::vector<std::uint8_t> data;
+  const auto put = [&](std::uint32_t v) {
+    for (int k = 0; k < 4; ++k) {
+      data.push_back(static_cast<std::uint8_t>(v >> (8 * k)));
+    }
+  };
+  put(services_.sound.sfx_muted() ? 0xffffffffU : 0U);
+  put(services_.sound.music_muted() ? 0xffffffffU : 0U);
+  put(std::bit_cast<std::uint32_t>(rotation_speed_));
+  std::ofstream out(services_.user_dir / kConfigFile, std::ios::binary | std::ios::trunc);
+  out.write(reinterpret_cast<const char*>(data.data()), static_cast<std::streamsize>(data.size()));
+  if (!out) {
+    log_warning("cannot write {}", (services_.user_dir / kConfigFile).string());
+  }
+}
+
+void WinMgr::draw_colored(const Pane& pane, const Shape& shape, int x, int y, int color) {
+  for (int k = 0; k < 4; ++k) {
+    race_map_[static_cast<std::size_t>(0x13 - k)] = static_cast<std::uint8_t>(color * 4 + 0x13 - k);
+  }
+  vfx_shape_translate_draw(screen(), pane, shape, x, y, race_map_);
+}
+
+const std::string& WinMgr::static_string(int index) {
+  if (static_strings_.empty()) {
+    static_strings_ = parse_static_strings(services_.files.load("static.txt"));
+  }
+  return static_strings_.at(static_cast<std::size_t>(index));
+}
+
+const ShapeTable& WinMgr::shared_shapes(int index) {
+  return shapes_.get(shared_shape_files_.at(static_cast<std::size_t>(index)));
+}
+
+WinMgr::Screen& WinMgr::screen_record(int screen) {
+  if (screen < 0 || screen >= kScreens) {
+    throw std::out_of_range(std::format("screen {}", screen));
+  }
+  return screens_[static_cast<std::size_t>(screen)];
+}
+
+std::vector<int> WinMgr::history() const {
+  std::vector<int> out;
+  for (int k = history_count_; k > 0; --k) {
+    out.push_back(history_[static_cast<std::size_t>((history_top_ - k + kHistory) % kHistory)]);
+  }
+  return out;
 }
 
 GWindow* WinMgr::window(int id) const {
@@ -105,13 +320,62 @@ GWindow* WinMgr::window(int id) const {
 }
 
 GWindow* WinMgr::find_window(std::string_view name) const {
-  const std::string wanted = upper(name.substr(0, 10));
+  const std::string wanted = upper(name.substr(0, std::min<std::size_t>(name.size(), 10)));
   for (const auto& w : windows_) {
-    if (upper(std::string_view(w->name()).substr(0, 10)) == wanted) {
+    if (w && upper(std::string_view(w->name()).substr(0, std::min<std::size_t>(w->name().size(), 10))) == wanted) {
       return w.get();
     }
   }
   return nullptr;
+}
+
+int WinMgr::register_window(std::unique_ptr<GWindow> window) {
+  windows_.push_back(std::move(window));
+  const int id = static_cast<int>(windows_.size());
+  windows_.back()->set_id(id);
+  return id;
+}
+
+void WinMgr::release_window(int id) {
+  if (id < 1 || static_cast<std::size_t>(id) > windows_.size()) {
+    return;
+  }
+  for (Screen& s : screens_) {
+    for (int& slot : s.slots) {
+      if (slot == id) {
+        slot = 0;
+        --s.count;
+      }
+    }
+  }
+  release_hot(id);
+  kill_timer(id, -1);
+  cancel_notify(id, -1);
+  windows_[static_cast<std::size_t>(id - 1)].reset();
+}
+
+bool WinMgr::add_to_screen(int id, int screen) {
+  Screen& s = screen_record(screen);
+  for (int& slot : s.slots) {
+    if (slot == 0) {
+      slot = id;
+      ++s.count;
+      return true;
+    }
+  }
+  return false;
+}
+
+bool WinMgr::remove_from_screen(int id, int screen) {
+  Screen& s = screen_record(screen);
+  for (int& slot : s.slots) {
+    if (slot == id) {
+      slot = 0;
+      --s.count;
+      return true;
+    }
+  }
+  return false;
 }
 
 void WinMgr::release_hot(int id) {
@@ -120,62 +384,60 @@ void WinMgr::release_hot(int id) {
   }
 }
 
+void WinMgr::set_enter_handler(int screen, std::function<void(int)> handler) {
+  screen_record(screen).enter = std::move(handler);
+}
+
+void WinMgr::set_leave_handler(int screen, std::function<void(int)> handler) {
+  screen_record(screen).leave = std::move(handler);
+}
+
 void WinMgr::set_screen(int screen, bool push) {
   if (screen == current_) {
     return;
   }
-  if (screen < 0 || screen >= kScreens) {
-    throw std::out_of_range(std::format("screen {}", screen));
+  Screen& next = screen_record(screen);
+  if (current_ >= 0 && screen_record(current_).leave) {
+    screen_record(current_).leave(current_);
   }
   if (hot_ != -1) {
     send_event(hot_, kEventMouseLeave, 0, 0);
   }
   broadcast_event(kEventDeactivate, 0, 0);
   if (push && current_ >= 0) {
-    history_.push_back(current_);
-    if (history_.size() > kHistory) {
-      history_.pop_front();
+    history_[static_cast<std::size_t>(history_top_)] = current_;
+    if (++history_top_ == kHistory) {
+      history_top_ = 0;
     }
+    history_count_ = std::min(history_count_ + 1, kHistory);
   }
   current_ = screen;
-  if (screen == 0 && first_opening_) {
-    // resume.gam is loaded with the game state (milestone 8).
-    first_opening_ = false;
+  if (screen == kScreenOpening && first_opening_ && services_.game.resume_exists()) {
+    services_.game.load_resume();
   }
+  first_opening_ = false;
   vfx_pane_wipe(services_.gsystem.screen(), GSystem::kScreenPane, 0);
-  enter_screen(screen);
+  if (next.enter) {
+    next.enter(screen);
+  }
   broadcast_event(kEventActivate, 0, 0);
   hot_ = -1;
   update_hover(last_input_);
 }
 
-void WinMgr::enter_screen(int screen) {
-  if (screen == 0) {
-    // show_opening_gif 0x1cc94: the menu picture under game.pal.
-    const Image8 gif = decode_gif(services_.files.load("DATA\\0OPENING.GIF"), "DATA\\0OPENING.GIF");
-    Image8& out = services_.gsystem.screen();
-    for (int y = 0; y < std::min(gif.height(), out.height()); ++y) {
-      for (int x = 0; x < std::min(gif.width(), out.width()); ++x) {
-        out.set(x, y, gif.at(x, y));
-      }
-    }
-  }
-  // The `.tmp` backgrounds of the other screens (screen_draw_background
-  // 0x55730) come with those screens.
-}
-
 void WinMgr::go_back() {
-  if (history_.empty()) {
+  if (history_count_ == 0) {
     return;
   }
-  const int screen = history_.back();
-  history_.pop_back();
+  history_top_ = history_top_ == 0 ? kHistory - 1 : history_top_ - 1;
+  const int screen = history_[static_cast<std::size_t>(history_top_)];
+  --history_count_;
   set_screen(screen, false);
 }
 
-void WinMgr::post_message(int id, int p1, int p2) {
+void WinMgr::post_message(int id, int p1, int p2, std::string text) {
   if (messages_.size() < kMaxMessages) {
-    messages_.push_back({id, p1, p2});
+    messages_.push_back({id, p1, p2, std::move(text)});
   }
 }
 
@@ -184,20 +446,27 @@ bool WinMgr::send_event(int id, int type, int a, int b) {
   return w != nullptr && w->handle_event(type, a, b);
 }
 
-bool WinMgr::broadcast_event(int type, int a, int b) {
+bool WinMgr::broadcast_event(int type, int a, int b) { return broadcast(type, a, b, false); }
+
+bool WinMgr::broadcast(int type, int a, int b, bool filter) {
   if (current_ < 0) {
     return false;
   }
-  const std::vector<int> ids = screens_[static_cast<std::size_t>(current_)].windows;
-  for (auto it = ids.rbegin(); it != ids.rend(); ++it) {
-    GWindow* w = window(*it);
-    if (!w->shown() && type != kEventActivate && type != kEventShow) {
+  const std::array<int, kScreenWindows> slots = screen_record(current_).slots;
+  for (int k = kScreenWindows - 1; k >= 0; --k) {
+    const std::size_t slot = static_cast<std::size_t>(k);
+    GWindow* w = window(slots[slot]);
+    if (w == nullptr || (filter && !modal_flags_[slot])) {
       continue;
     }
-    if (w->parent() != 0 && type >= 3) {
-      continue;
+    // Hidden windows only get 1 and 0xe; children get all but 1 and 2 (their
+    // parent forwards those).
+    const bool takes =
+        !((!w->shown() && type != kEventActivate && type != kEventShow) || (w->parent() != 0 && type < kEventKey));
+    if (filter) {
+      modal_flags_[slot] = takes;
     }
-    if (w->handle_event(type, a, b)) {
+    if (takes && w->handle_event(type, a, b)) {
       return true;
     }
   }
@@ -205,30 +474,84 @@ bool WinMgr::broadcast_event(int type, int a, int b) {
 }
 
 void WinMgr::set_timer(int id, int msg, int p1, int p2, std::uint32_t period) {
-  if (timers_.size() < kMaxTimers) {
-    timers_.push_back({id, msg, p1, p2, period, services_.ticks() + period});
+  for (Timer& t : timers_) {
+    if (t.window == 0) {
+      t = Timer{id, msg, p1, p2, period, services_.ticks() + period};
+      return;
+    }
   }
+  log_warning("window {}: no free timer", id);
 }
 
 void WinMgr::kill_timer(int id, int msg) {
-  std::erase_if(timers_, [&](const Timer& t) { return t.window == id && (msg == -1 || t.msg == msg); });
+  for (Timer& t : timers_) {
+    if (t.window == id && (msg == -1 || t.msg == msg)) {
+      t.window = 0;
+    }
+  }
+}
+
+int WinMgr::timer_period(int id, int msg) const {
+  for (const Timer& t : timers_) {
+    if (t.window == id && t.msg == msg) {
+      return static_cast<int>(t.period);
+    }
+  }
+  return -1;
+}
+
+void WinMgr::set_timer_period(int id, int msg, std::uint32_t period) {
+  for (Timer& t : timers_) {
+    if (t.window == id && t.msg == msg) {
+      t.period = period;
+    }
+  }
 }
 
 void WinMgr::run_timers() {
-  const std::vector<Timer> due = timers_;
-  for (const Timer& t : due) {
-    const std::uint32_t now = services_.ticks();
-    if (static_cast<std::int32_t>(now - t.due) < 0) {
+  for (Timer& t : timers_) {
+    if (t.window == 0 || t.due > services_.ticks()) {
       continue;
     }
-    // A timer killed by an earlier one's event does not fire.
-    const auto it = std::ranges::find_if(
-        timers_, [&](const Timer& x) { return x.window == t.window && x.msg == t.msg && x.due == t.due; });
-    if (it == timers_.end()) {
-      continue;
-    }
-    it->due = now + t.period;
+    // The slot is read again after the event: a timer killed by its own
+    // event keeps its due time unused.
     send_event(t.window, t.msg, t.p1, t.p2);
+    t.due += t.period;
+  }
+}
+
+void WinMgr::request_notify(int id, int mask, int msg, int p1, int p2) {
+  for (Notify& n : notifies_) {
+    if (n.window == 0) {
+      n = Notify{id, mask, msg, p1, p2};
+      return;
+    }
+  }
+  log_warning("window {}: no free notification", id);
+}
+
+void WinMgr::cancel_notify(int id, int msg) {
+  for (Notify& n : notifies_) {
+    if (n.window == id && (msg == -1 || n.msg == msg)) {
+      n.window = 0;
+    }
+  }
+}
+
+void WinMgr::run_notifies(const InputState& input) {
+  const int buttons = (input.left_changed ? kNotifyLeft : 0) | (input.right_changed ? kNotifyRight : 0);
+  const int move = input.moved ? kNotifyMove : 0;
+  for (const Notify& n : notifies_) {
+    if (n.window == 0) {
+      continue;
+    }
+    const Notify copy = n;
+    if ((copy.mask & buttons) != 0) {
+      send_event(copy.window, copy.msg, copy.p1, copy.p2);
+    }
+    if ((copy.mask & move) != 0) {
+      send_event(copy.window, copy.msg, input.x, input.y);
+    }
   }
 }
 
@@ -242,7 +565,7 @@ void WinMgr::update_hover(const InputState& input) {
   const int y = input.y;
   if (hot_ != -1) {
     GWindow* hot = window(hot_);
-    if (hot->contains(x, y)) {
+    if (hot != nullptr && hot->contains(x, y)) {
       // Inside the hot window: track its child under the pointer.
       for (GWindow* child : hot->children()) {
         if (child->shown() && child->contains(x, y)) {
@@ -262,10 +585,10 @@ void WinMgr::update_hover(const InputState& input) {
   if (current_ < 0) {
     return;
   }
-  const std::vector<int>& ids = screens_[static_cast<std::size_t>(current_)].windows;
-  for (auto it = ids.rbegin(); it != ids.rend(); ++it) {
-    GWindow* w = window(*it);
-    if (w->contains(x, y) && w->shown()) {
+  const std::array<int, kScreenWindows>& slots = screen_record(current_).slots;
+  for (int k = kScreenWindows - 1; k >= 0; --k) {
+    GWindow* w = window(slots[static_cast<std::size_t>(k)]);
+    if (w != nullptr && w->contains(x, y) && w->shown()) {
       hot_ = w->id();
       send_event(hot_, kEventMouseEnter, 0, 0);
       return;
@@ -273,28 +596,93 @@ void WinMgr::update_hover(const InputState& input) {
   }
 }
 
-void WinMgr::handle_hotkey(const InputState& input) {
-  if (input.scan_code == kScanEsc) {
-    go_back();
-    return;
+void WinMgr::set_pointer(int frame) {
+  // WinMgr_set_pointer 0x55680: help mode keeps its pointer.
+  if (!help_mode_) {
+    services_.set_pointer_frame(frame);
   }
-  if (!input.alt) {
-    return;
-  }
+}
+
+bool WinMgr::handle_hotkey(const InputState& input) {
   switch (input.scan_code) {
+    case kScanEsc:
+      if (modal_) {
+        end_modal(0);
+        return true;
+      }
+      if (current_ == kScreenPlanet) {
+        return false;  // the planet window takes it
+      }
+      go_back();
+      return true;
+    case kScanS:
+    case kScanL:
+      if (!modal_ && current_ != kScreenShipDesign) {
+        set_screen(input.scan_code == kScanS ? kScreenSave : kScreenLoad, true);
+      }
+      return true;
+    case kScanG:
+      save_screenshot();
+      return true;
     case kScanX:
-      running_ = false;
-      break;
+      if (!modal_) {
+        running_ = false;
+      }
+      return true;
     case kScanN:
       services_.sound.set_sfx_muted(!services_.sound.sfx_muted());
-      break;
+      return true;
     case kScanM:
       services_.sound.set_music_muted(!services_.sound.music_muted());
+      return true;
+    default:
+      // The developer keys (W, E, R, P, D, F) need `nougat.lf`.
+      return false;
+  }
+}
+
+void WinMgr::save_screenshot() {
+  if (services_.user_dir.empty()) {
+    return;
+  }
+  const std::filesystem::path path = services_.user_dir / std::format("scr{:03d}.gif", screenshot_count_);
+  const std::vector<std::uint8_t> gif = encode_gif(screen(), services_.gsystem.dac());
+  std::ofstream out(path, std::ios::binary | std::ios::trunc);
+  out.write(reinterpret_cast<const char*>(gif.data()), static_cast<std::streamsize>(gif.size()));
+  if (!out) {
+    log_warning("cannot write {}", path.string());
+    return;
+  }
+  ++screenshot_count_;
+  log_info("screenshot saved to {}", path.string());
+}
+
+void WinMgr::show_help(const Message& m) {
+  auto* help = dynamic_cast<HelpWnd*>(find_window("HELPWINDOW"));
+  if (help == nullptr) {
+    throw DataError("windows.txt: no HELPWINDOW");
+  }
+  switch (m.p2) {
+    case kHelpTopic:
+      if (m.text.empty()) {
+        return;
+      }
+      help->open_topic("help.txt", m.text);
+      break;
+    case kHelpNumbered:
+      help->open_topic("help.txt", std::format("help{}", m.p1));
+      break;
+    case kHelpNoIntro:
+      help->open_topic("help.txt", "NOINTRO");
       break;
     default:
-      // Alt+S/L (save/load screens), Alt+G (screenshot) and the developer
-      // keys come with their screens.
-      break;
+      // The special abilities, gizmo and planet help come with their
+      // screens.
+      log_debug("help kind {} not handled yet", m.p2);
+      return;
+  }
+  if (!modal_) {
+    do_modal(*help);
   }
 }
 
@@ -314,11 +702,137 @@ void WinMgr::dispatch_messages() {
       case kMessageBack:
         go_back();
         break;
+      case kMessageHelp:
+        show_help(m);
+        break;
+      case kMessageEndModal:
+        end_modal(m.p1);
+        break;
       default:
+        // 4 (trace replay) and 7, 8 (next turn) come with the tutorials and
+        // the simulation.
         log_debug("system message {} ({}, {}) not handled yet", m.id, m.p1, m.p2);
         break;
     }
   }
+}
+
+void WinMgr::end_modal(int result) {
+  modal_ = false;
+  modal_result_ = result;
+}
+
+int WinMgr::do_modal(GWindow& dialog) {
+  if (modal_) {
+    throw std::logic_error("nested modal loop");
+  }
+  // The auto next turn stops (and stays off: only the developer's AI test
+  // restores it).
+  auto_turn_ = false;
+  if (auto* next_turn = dynamic_cast<ToggleButton*>(find_window("NEXTTURNCONT"))) {
+    next_turn->set_state(false);
+    next_turn->draw(kDrawNormal);
+  }
+  if (hot_ != -1) {
+    send_event(hot_, kEventMouseLeave, 0, 0);
+  }
+  hot_ = -1;
+  modal_flags_.fill(true);
+  broadcast(kEventHide, 0, 0, true);
+  const Pane under = dialog.pane();
+  std::optional<Image8> saved;
+  if (save_under_) {
+    saved = save_under(screen(), under);
+  }
+  add_to_screen(dialog.id(), current_);
+  for (GWindow* child : dialog.children()) {
+    add_to_screen(child->id(), current_);
+  }
+  dialog.handle_event(kEventModalOpen, 0, 0);
+  dialog.handle_event(kEventActivate, 0, 0);
+
+  // WinMgr_run_modal_loop 0x50a28.
+  modal_ = true;
+  modal_result_ = 0;
+  while (running_ && modal_) {
+    run_pass();
+  }
+
+  dialog.handle_event(kEventDeactivate, 0, 0);
+  for (GWindow* child : dialog.children()) {
+    remove_from_screen(child->id(), current_);
+  }
+  remove_from_screen(dialog.id(), current_);
+  hot_ = -1;
+  if (saved) {
+    restore_under(screen(), under, *saved);
+  }
+  broadcast(kEventShow, 0, 0, true);
+  save_under_ = true;
+  return modal_result_;
+}
+
+void WinMgr::message_box(std::string text) {
+  auto box = std::make_unique<TextBox>(*this, "MSGBOX", kMessageBoxPane);
+  box->set_text(std::move(text));
+  TextBox& box_ref = *box;
+  const int box_id = register_window(std::move(box));
+  auto button = std::make_unique<GWindow>(*this, static_string(kOkString), kMessageButtonPane);
+  button->set_mouse_focus(true);
+  button->set_message(kEventOk, 0, 0);
+  button->set_parent(box_id);
+  GWindow& button_ref = *button;
+  const int button_id = register_window(std::move(button));
+  box_ref.add_child(&button_ref);
+  do_modal(box_ref);
+  release_window(button_id);
+  release_window(box_id);
+}
+
+int WinMgr::input_box(std::string_view title, std::string& buffer, int max_length) {
+  const int font_height = large_font().font().height;
+  const int h = font_height * 5 + 5;
+  const int y0 = (kScreenHeight - h) / 2;
+  auto box =
+      std::make_unique<GWindow>(*this, std::string(title.substr(0, 0x13)), Pane{kInputBoxX0, y0, kInputBoxX1, y0 + h});
+  box->set_text_pos(-1, 5);
+  GWindow& box_ref = *box;
+  const int box_id = register_window(std::move(box));
+
+  const Pane& p = box_ref.pane();
+  const std::string ok = static_string(kOkString);
+  const int ok_width = large_font().string_width(ok);
+  auto button =
+      std::make_unique<GWindow>(*this, ok, Pane{p.x1 - ok_width - 10, p.y1 - font_height - 5, p.x1 - 3, p.y1 - 2});
+  button->set_text_pos(-1, 2);
+  button->set_mouse_focus(true);
+  button->set_border(true);
+  button->set_message(kEventOk, 0, 0);
+  button->set_parent(box_id);
+  GWindow& button_ref = *button;
+  const int button_id = register_window(std::move(button));
+  box_ref.add_child(&button_ref);
+
+  const int edit_y0 = p.y0 + font_height + 8;
+  auto edit = std::make_unique<EditField>(*this, Pane{p.x0 + 15, edit_y0, p.x1 - 15, edit_y0 + font_height + 8});
+  edit->set_parent(box_id);
+  edit->set_buffer(buffer, max_length);
+  EditField& edit_ref = *edit;
+  const int edit_id = register_window(std::move(edit));
+  box_ref.add_child(&edit_ref);
+
+  // The frame under the box, saved and restored here (not by do_modal).
+  const Pane under{p.x0 - 8, p.y0 - 8, p.x1 + 8, p.y1 + 7};
+  save_under_ = false;
+  const Image8 saved = save_under(screen(), under);
+  vfx_shape_draw(screen(), under, shared_shapes(kHelpShapes).at(kInputBoxFrame), 0, 0);
+  const int result = do_modal(box_ref);
+  restore_under(screen(), under, saved);
+  buffer = edit_ref.text();
+  release_window(button_id);
+  release_window(edit_id);
+  release_window(box_id);
+  return result;
 }
 
 void WinMgr::pick_music(const InputState& input) {
@@ -355,24 +869,72 @@ void WinMgr::pick_music(const InputState& input) {
 
 void WinMgr::process_input(const InputState& input) {
   last_input_ = input;
+  // Shift held: help mode.
+  if (input.shift && !help_mode_ && !modal_) {
+    help_mode_ = true;
+    services_.set_pointer_frame(kPointerHelp);
+  } else if (help_mode_ && !input.shift) {
+    help_mode_ = false;
+    services_.set_pointer_frame(kPointerNormal);
+    if (hot_ != -1) {
+      send_event(hot_, kEventMouseLeave, 0, 0);
+      send_event(hot_, kEventMouseEnter, 0, 0);
+    }
+  }
+  // The exit corners: a corner pixel of any screen but the opening menu.
+  int corner = -1;
+  if (!help_mode_ && !modal_ && current_ != kScreenOpening) {
+    const int right = kScreenWidth - 1;
+    const int bottom = kScreenHeight - 1;
+    if (input.y == 0) {
+      corner = input.x == 0 ? 0 : input.x == right ? 1 : -1;
+    } else if (input.y == bottom) {
+      corner = input.x == 0 ? 2 : input.x == right ? 3 : -1;
+    }
+  }
+  if (corner != exit_corner_) {
+    exit_corner_ = corner;
+    set_pointer(corner == -1 ? kPointerNormal : kPointerExitCorner + corner);
+  }
   if (input.moved) {
     update_hover(input);
   }
-  run_timers();
+  if (!modal_) {
+    run_notifies(input);
+    run_timers();
+  }
   if (input.key_event) {
-    if (input.alt || input.scan_code == kScanEsc) {
-      handle_hotkey(input);
-    } else {
+    const bool hotkey = (input.alt || input.scan_code == kScanEsc) && handle_hotkey(input);
+    if (!hotkey) {
       broadcast_event(kEventKey, input.ascii, input.scan_code);
     }
   }
   if (input.left_changed && input.left_down) {
-    broadcast_event(kEventLeftClick, input.x, input.y);
+    if (exit_corner_ == -1) {
+      // Alt + click is the developer's palette pick: nothing otherwise.
+      if (!input.alt) {
+        broadcast_event(help_mode_ && !modal_ ? kEventHelpClick : kEventLeftClick, input.x, input.y);
+      }
+    } else if (!modal_) {
+      services_.sound.play_sfx(kExitSound);
+      set_pointer(kPointerNormal);
+      exit_corner_ = -1;
+      go_back();
+    } else {
+      end_modal(-1);
+    }
   }
   if (input.right_changed && input.right_down) {
-    broadcast_event(kEventRightClick, input.x, input.y);
+    if (help_mode_) {
+      help_mode_ = false;
+      services_.set_pointer_frame(kPointerNormal);
+    } else {
+      broadcast_event(kEventRightClick, input.x, input.y);
+    }
   }
-  dispatch_messages();
+  while (!messages_.empty()) {
+    dispatch_messages();
+  }
   pick_music(input);
   SoundSystem& sound = services_.sound;
   do {
@@ -398,6 +960,21 @@ void WinMgr::refresh_screen() {
       fade_pending_ = false;
     }
   }
+}
+
+void WinMgr::run_pass() {
+  process_input(services_.poll_input());
+  refresh_screen();
+  services_.present();
+}
+
+void WindowFactory::add(int type, WindowCreator create) { creators_[type] = std::move(create); }
+
+std::unique_ptr<GWindow> WindowFactory::create(WinMgr& wm, const WindowRecord& record, const ShapeTable* shapes) const {
+  if (const auto it = creators_.find(record.type); it != creators_.end()) {
+    return it->second(wm, record, shapes);
+  }
+  return std::make_unique<GWindow>(wm, record, shapes);
 }
 
 }  // namespace oa

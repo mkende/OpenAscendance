@@ -6,7 +6,10 @@ C++20 and SDL3, built from the reverse engineering in this repository
 (the folder holding `COB.CFG` and the `ASCEND00..02.COB` archives).
 
 Status: milestone 1, the platform layer, the asset decoders, the logo, the
-opening menu and the intro with its subtitles and music.
+opening menu and the intro with its subtitles and music, the window toolkit
+(buttons, toggles, list boxes, help, modal dialogs, help mode, exit corners,
+hotkeys, `ascend.cfg`) and the front-end screens (new game, species history,
+load/save lists) over a stand-in game core.
 
 ## Layout
 
@@ -16,10 +19,16 @@ the functions they port with their `PATCH.EXE` address:
 - `src/core`: install access, the Watcom `rand` and `qsort`, logging.
 - `src/assets`: the COB archives (`cfile`), shapes, palettes, haze tables,
   fonts, GIF, FLC, sounds and the text tables.
+- `src/game`: the headless game core (no SDL): the game tables, the state
+  (`Cosmos`, races, stars, lanes, planets, ships, research), the saves and
+  the galaxy generation.
 - `src/gfx`: the VFX blitters, the fonts, `GSystem` (screen, DAC, fades).
 - `src/audio`: the mixer and `SoundSystem` (music and effects).
 - `src/platform`: the SDL window, input, clock and sound output.
-- `src/ui`: `WinMgr`, `GWindow`, the FLIC player and window.
+- `src/ui`: `WinMgr`, `GWindow` and the toolkit's window classes, the FLIC
+  player and window, `GameSession` (the game core as the screens see it).
+- `src/screens`: the front-end screens (new game, species history, load/save
+  and tutorial lists).
 - `src/app`: `main`, the command line and the install setup.
 
 ## Build
@@ -32,7 +41,8 @@ CMake 3.25 or later, Ninja, clang and git (CMake downloads SDL3 and Catch2;
 
 Debug builds (the default) enable ASan and UBSan; under WSLg set
 `ASAN_OPTIONS=detect_leaks=0`. Add `-DCMAKE_BUILD_TYPE=Release` for a release
-build.
+build. [BUILD.md](BUILD.md) has the Windows, macOS and Android builds and the
+packages, [RELEASING.md](RELEASING.md) the releases.
 
 ## Run
 
@@ -45,7 +55,9 @@ Alt+Enter toggles fullscreen. `--screenshot <file.bmp> [--frames N]` with
 
 ## Tests
 
-    ninja -C build/debug oa_tests
+    ninja -C build/debug oa_tests oa_game_tests
     OA_DATA=<install dir> ctest --test-dir build/debug -j <processors>
 
-Tests of the original files' content are skipped when `OA_DATA` is unset.
+Tests of the original files' content are skipped when `OA_DATA` is unset;
+the comparisons with the original's saves (`docs/12-oracle.md`) when
+`OA_ORACLE` does not name the `work/oracle` folder of the reference runs.

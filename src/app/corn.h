@@ -26,6 +26,9 @@ struct GameOptions {
   // `frames` frames were shown, saves the last one there and exits.
   std::optional<std::filesystem::path> screenshot;
   int frames = 2;
+  // The writable folder of `ascend.cfg` and the Alt+G screenshots; empty for
+  // none.
+  std::filesystem::path user_dir;
 };
 
 // Runs the game from `install` until the player quits; returns the exit

@@ -152,4 +152,29 @@ int vfx_string_draw(Image8& window, const Pane& pane, int x, int y, const Font& 
   return x - start;
 }
 
+void vfx_shape_draw_half(Image8& window, const Pane& pane, const Shape& shape, int x, int y) {
+  if (shape.empty()) {
+    return;
+  }
+  const DecodedShape d = decode_shape(shape);
+  const auto source = [](int dest) { return 2 * dest + (dest >= 0 ? 1 : 0); };
+  for (int dy = d.y0 / 2 - 1; dy <= (d.y0 + d.pixels.height()) / 2; ++dy) {
+    const int sy = source(dy) - d.y0;
+    if (sy < 0 || sy >= d.pixels.height()) {
+      continue;
+    }
+    for (int dx = d.x0 / 2 - 1; dx <= (d.x0 + d.pixels.width()) / 2; ++dx) {
+      const int sx = source(dx) - d.x0;
+      if (sx < 0 || sx >= d.pixels.width() || !d.opaque[static_cast<std::size_t>(sy * d.pixels.width() + sx)]) {
+        continue;
+      }
+      const int px = pane.x0 + x + dx;
+      const int py = pane.y0 + y + dy;
+      if (px >= pane.x0 && px <= pane.x1 && py >= pane.y0 && py <= pane.y1 && window.contains(px, py)) {
+        window.set(px, py, d.pixels.at(sx, sy));
+      }
+    }
+  }
+}
+
 }  // namespace oa

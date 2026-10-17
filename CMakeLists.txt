@@ -15,17 +15,26 @@ option(OA_BUILD_TESTS "Build the unit tests" ON)
 option(OA_SANITIZE "Use ASan/UBSan in debug builds (Linux only)" ON)
 
 # The product: its name (window title, messages), executable, application id
-# and SDL per-user folder, in the generated header core/edition.h.
+# (SDL's, the Android package, the macOS bundle, the Linux .desktop file) and
+# SDL per-user folder, in the generated header core/edition.h and, for the
+# packaging scripts, edition.sh in the build directory.
 set(OA_NAME "Open Ascendance")
 set(OA_EXECUTABLE open_ascendance)
-set(OA_APP_ID org.openascendance.game)
-set(OA_PREF_ORG "Open Ascendance")
-# The version of the build, MAJOR.MINOR.PATCH with an optional -suffix.
+set(OA_APP_ID io.github.mkende.openascendance)
+# Empty: the per-user folder is just "<app>" (SDL_GetPrefPath skips an empty org).
+set(OA_PREF_ORG "")
+# The version of the build, MAJOR.MINOR.PATCH with an optional -suffix: the
+# release's tag without its "v" (.github/workflows/release.yml), in
+# core/edition.h and the Windows version resource.
 set(OA_VERSION "0.0.0-dev" CACHE STRING "The version: MAJOR.MINOR.PATCH[-suffix]")
 if(NOT OA_VERSION MATCHES "^([0-9]+)\\.([0-9]+)\\.([0-9]+)(-[0-9A-Za-z.-]+)?$")
   message(FATAL_ERROR "OA_VERSION must be MAJOR.MINOR.PATCH[-suffix], not '${OA_VERSION}'")
 endif()
+set(OA_VERSION_MAJOR ${CMAKE_MATCH_1})
+set(OA_VERSION_MINOR ${CMAKE_MATCH_2})
+set(OA_VERSION_PATCH ${CMAKE_MATCH_3})
 configure_file(src/core/edition.h.in ${CMAKE_CURRENT_BINARY_DIR}/generated/core/edition.h @ONLY)
+configure_file(cmake/edition.sh.in ${CMAKE_CURRENT_BINARY_DIR}/edition.sh @ONLY)
 
 # Release builds carry no path of the build machine (__FILE__ in SDL's and
 # our messages); before the dependencies, so that it applies to them too.
@@ -90,10 +99,12 @@ endfunction()
 
 add_subdirectory(src/core)
 add_subdirectory(src/assets)
+add_subdirectory(src/game)
 add_subdirectory(src/gfx)
 add_subdirectory(src/audio)
 add_subdirectory(src/platform)
 add_subdirectory(src/ui)
+add_subdirectory(src/screens)
 add_subdirectory(src/app)
 
 if(OA_BUILD_TESTS)

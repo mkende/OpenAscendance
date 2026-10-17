@@ -35,6 +35,20 @@ TEST_CASE("command line: data folder, screenshots and scripted input", "[app]") 
   CHECK_THROWS(parse({"--bogus", "1"}));
 }
 
+TEST_CASE("command line: a help-mode click holds Shift around the click", "[app]") {
+  const CommandLine o = parse({"--keys", "shiftclick:300:295"});
+  REQUIRE(o.keys.size() == 5);
+  CHECK(o.keys[0].type == EventType::kKeyDown);
+  CHECK(o.keys[0].mods != 0);
+  CHECK(o.keys[1].type == EventType::kMouseMove);
+  CHECK(o.keys[1].x == 300);
+  CHECK(o.keys[2].type == EventType::kMouseDown);
+  CHECK(o.keys[3].type == EventType::kMouseUp);
+  CHECK(o.keys[4].type == EventType::kKeyUp);
+  CHECK(o.keys[4].mods == 0);
+  CHECK_THROWS(parse({"--keys", "shiftclick:300"}));
+}
+
 TEST_CASE("the remembered install folder", "[app]") {
   const std::filesystem::path dir = std::filesystem::temp_directory_path() / "oa_app_test";
   std::filesystem::remove_all(dir);

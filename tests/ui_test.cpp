@@ -3,58 +3,15 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "audio/mixer.h"
-#include "audio/sound_system.h"
 #include "game_data.h"
-#include "gfx/gsystem.h"
-#include "platform/clock.h"
-#include "platform/input.h"
 #include "ui/flicwnd.h"
-#include "ui/winmgr.h"
+#include "ui_rig.h"
 
 namespace oa {
 namespace {
 
-// The window manager over the install, as `main` sets it up.
-struct Rig {
-  explicit Rig(const GameFiles& f)
-      : files(f),
-        gs([this] { clock.wait_vblank(); }),
-        sound(f, &mixer),
-        wm(UiServices{.files = f,
-                      .gsystem = gs,
-                      .sound = sound,
-                      .now_us = [this] { return clock.micros(); },
-                      .ticks = [this] { return clock.ticks(); },
-                      .idle = [this] { clock.idle(); },
-                      .show_pointer = [this](bool shown) { pointer = shown; }}) {
-    gs.load_palette(files, "DATA\\game.pal", 0, 256);
-    wm.set_screen(0, false);
-  }
-
-  // One main-loop pass with `event` fed first.
-  void pass(std::optional<InputEvent> event = std::nullopt) {
-    if (event) {
-      input.feed(*event);
-    }
-    wm.process_input(input.poll());
-    wm.refresh_screen();
-  }
-
-  void click(int x, int y) {
-    pass(InputEvent{.type = EventType::kMouseDown, .x = x, .y = y, .button = MouseButton::kLeft});
-    pass(InputEvent{.type = EventType::kMouseUp, .x = x, .y = y, .button = MouseButton::kLeft});
-  }
-
-  const GameFiles& files;
-  Clock clock{true};
-  Mixer mixer;
-  GSystem gs;
-  SoundSystem sound;
-  WinMgr wm;
-  Input input;
-  bool pointer = true;
-};
+// The rig of the window manager tests (ui_rig.h).
+using Rig = test::UiRig;
 
 TEST_CASE("the opening menu: text buttons on 0xf2, hot on 0x96", "[ui][content]") {
   OA_REQUIRE_GAME_FILES(files);

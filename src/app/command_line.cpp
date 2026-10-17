@@ -117,6 +117,16 @@ void add_click(std::vector<InputEvent>& keys, std::string_view key, std::string_
   }
 }
 
+// Appends a help-mode click at "X:Y" (`at`): Shift pressed, a move there,
+// the left button's press and release, Shift released.
+void add_shift_click(std::vector<InputEvent>& keys, std::string_view key, std::string_view at) {
+  const std::vector<int> p = parse_coordinates(key, at, 2);
+  keys.push_back(InputEvent{.type = EventType::kKeyDown, .key = SDLK_LSHIFT, .mods = SDL_KMOD_LSHIFT});
+  keys.push_back(InputEvent{.type = EventType::kMouseMove, .x = p[0], .y = p[1]});
+  add_click(keys, key, at, MouseButton::kLeft);
+  keys.push_back(InputEvent{.type = EventType::kKeyUp, .key = SDLK_LSHIFT, .mods = 0});
+}
+
 // Appends a left-button drag from "X1:Y1" to "X2:Y2" (`at`): a move to the
 // start, the press, a move on each of `kDragSteps` frames, the release.
 void add_drag(std::vector<InputEvent>& keys, std::string_view key, std::string_view at) {
@@ -139,6 +149,8 @@ void parse_keys(std::string_view value, std::vector<InputEvent>& keys) {
     const std::string_view key = value.substr(pos, comma - pos);
     if (key.starts_with("click:")) {
       add_click(keys, key, key.substr(6), MouseButton::kLeft);
+    } else if (key.starts_with("shiftclick:")) {
+      add_shift_click(keys, key, key.substr(11));
     } else if (key.starts_with("rclick:")) {
       add_click(keys, key, key.substr(7), MouseButton::kRight);
     } else if (key.starts_with("drag:")) {
@@ -154,7 +166,12 @@ void parse_keys(std::string_view value, std::vector<InputEvent>& keys) {
       // A key release does nothing: an idle frame.
       keys.insert(keys.end(), static_cast<std::size_t>(frames), InputEvent{.type = EventType::kKeyUp});
     } else {
-      keys.push_back(parse_key(key));
+      const InputEvent e = parse_key(key);
+      keys.push_back(e);
+      if (e.mods != 0) {
+        // The modifiers are released on the next pass.
+        keys.push_back(InputEvent{.type = EventType::kKeyUp});
+      }
     }
     pos = comma + 1;
   }

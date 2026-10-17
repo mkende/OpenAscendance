@@ -1,21 +1,23 @@
 // The window manager (`winmgr.cpp`, global `WinMgr` 0xfa344): the windows of
 // `windows.txt`, the screens listing them, event delivery, the system message
-// queue, window timers, the screen history and the per-pass input handling
-// and refresh of the main loop (`docs/07-ui-framework.md`, "Window manager").
+// queue, window timers and input notifications, the screen history, modal
+// loops, help mode, the exit corners, the hotkeys and the per-pass input
+// handling and refresh of the main loop (`docs/07-ui-framework.md`, "Window
+// manager").
 //
-// Milestone 1 subset: screen changes, back, quit, hover and clicks, the Esc
-// and Alt+X hotkeys, window timers, the music picker and the pending palette
-// fade. Help mode, exit corners, modal loops, notifications, game events and
-// event recording come later.
+// Not here yet: the game events of the star map (`WinMgr_show_game_events`
+// 0x50f84) and the next-turn messages 7 and 8 (the simulation's), the
+// developer keys and the event recording and replay (tutorials).
 #pragma once
 
 #include <array>
 #include <cstdint>
-#include <deque>
+#include <filesystem>
 #include <functional>
+#include <map>
 #include <memory>
-#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "assets/cfile.h"
@@ -24,6 +26,7 @@
 #include "gfx/font.h"
 #include "gfx/gsystem.h"
 #include "platform/input.h"
+#include "ui/game_session.h"
 #include "ui/gwindow.h"
 #include "ui/shape_cache.h"
 
@@ -35,13 +38,35 @@ enum SystemMessage : int {
   kMessageChangeScreen = 1,  // p1 screen, p2 != 0 pushes the current one
   kMessageQuit = 2,
   kMessageBack = 3,
+  kMessageReplay = 4,    // replay WINEVENT.BIN (developer)
+  kMessageHelp = 5,      // text topic, p2 a `HelpKind`
+  kMessageEndModal = 6,  // p1 the modal result
+  kMessageNextTurn = 7,
+  kMessageAutoTurn = 8,
 };
+
+// The kinds of help of message 5 (its p2).
+enum HelpKind : int {
+  kHelpTopic = 0,     // help.txt topic `text`
+  kHelpAbility = 1,   // the special abilities window
+  kHelpNumbered = 2,  // help.txt topic `help%d` of p1
+  kHelpNoIntro = 3,   // help.txt topic NOINTRO
+  kHelpGizmo = 4,     // gizhelp.txt
+  kHelpPlanet = 5,    // planhelp.txt
+};
+
+// The pointer frames of `MOUSE.SHP` (`GSystem_set_pointer`).
+enum PointerFrame : int { kPointerNormal = 0, kPointerHelp = 1, kPointerExitCorner = 4 };
 
 // What the window manager and the windows use of the rest of the program.
 struct UiServices {
   const GameFiles& files;
   GSystem& gsystem;
   SoundSystem& sound;
+  GameSession& game;
+  // The writable folder of `ascend.cfg` and the Alt+G screenshots (the
+  // original's current directory); empty for none (nothing is written).
+  std::filesystem::path user_dir;
   // Microseconds of the 100 Hz timer's clock (the FLIC timer's base).
   std::function<std::uint64_t()> now_us;
   // The 100 Hz tick counter (`0x12202c`).
@@ -50,6 +75,38 @@ struct UiServices {
   std::function<void()> idle;
   // Shows or hides the software mouse pointer (`MOUSE_show` / `MOUSE_hide`).
   std::function<void(bool)> show_pointer;
+  // Sets the pointer's `MOUSE.SHP` frame (`GSystem_set_pointer`).
+  std::function<void(int)> set_pointer_frame;
+  // `input_poll` (0x25c8c): the input of the next pass.
+  std::function<const InputState&()> poll_input;
+  // Shows the frame at the end of a pass (the dirty panes' copy to video
+  // memory).
+  std::function<void()> present;
+};
+
+// Builds the window of a `windows.txt` record by its TYPE
+// (`WinMgr_load_windows` 0x52a80). `shapes` is the shape table of the
+// record's first screen (null for none).
+using WindowCreator =
+    std::function<std::unique_ptr<GWindow>(WinMgr& wm, const WindowRecord& record, const ShapeTable* shapes)>;
+
+// The window classes by `windows.txt` TYPE. The standard set holds the
+// generic classes of the toolkit; the TYPEs of screens not written yet make
+// placeholders (plain windows) until their class is added.
+class WindowFactory {
+ public:
+  // The toolkit's classes (`docs/07-ui-framework.md`, "Classes and
+  // `windows.txt` TYPE values").
+  static WindowFactory standard();
+
+  // Makes `create` build the windows of TYPE `type` (replacing any other).
+  void add(int type, WindowCreator create);
+  // Returns the window of `record`; a TYPE without a class gives a plain
+  // window.
+  std::unique_ptr<GWindow> create(WinMgr& wm, const WindowRecord& record, const ShapeTable* shapes) const;
+
+ private:
+  std::map<int, WindowCreator> creators_;
 };
 
 class WinMgr {
@@ -59,13 +116,23 @@ class WinMgr {
   static constexpr int kHistory = 16;
   static constexpr int kMaxMessages = 32;
   static constexpr int kMaxTimers = 16;
+  static constexpr int kMaxNotifies = 16;
   // The main loop's minimum pass length, in ticks.
   static constexpr std::uint32_t kPassTicks = 3;
+  // `WinMgr_set_timer` message 666: the timer calls a function, not a window.
+  static constexpr int kTimerCallback = 666;
+
+  // Input notification masks (`WinMgr_request_notify` 0x51b38): a left or
+  // right button change (press or release) sends the message with the
+  // registered parameters, a mouse move with the pointer's position.
+  enum NotifyMask : int { kNotifyLeft = 1, kNotifyRight = 2, kNotifyMove = 4 };
 
   // `WinMgr_init` (0x529cc) and `WinMgr_load_windows` (0x52a80): reads
-  // `windows.txt`, the haze tables and fonts it names, and creates the
-  // windows. Throws `DataError` when a file is missing or malformed.
-  explicit WinMgr(UiServices services);
+  // `windows.txt`, `gwshare.txt`, the haze tables and fonts they name, and
+  // creates the windows through `factory`; installs the screens' enter
+  // handlers (`main` 0x1c424) and reads `ascend.cfg` (`Config_load`
+  // 0x54c38). Throws `DataError` when a file is missing or malformed.
+  explicit WinMgr(UiServices services, const WindowFactory& factory = WindowFactory::standard());
   ~WinMgr();
   WinMgr(const WinMgr&) = delete;
   WinMgr& operator=(const WinMgr&) = delete;
@@ -75,22 +142,73 @@ class WinMgr {
   GameFont& small_font() { return *small_font_; }
   GameFont& large_font() { return *large_font_; }
   Image8& screen() { return services_.gsystem.screen(); }
-  // The WMGR_MAPFOCUS remap (`+0x3012`): identity with 0xf2 -> 0x96.
-  const HazeTable& focus_map() const { return focus_map_; }
+  // The WMGR_MAPFOCUS remap (`+0x3012`): identity with 0xf2 -> 0x96, patched
+  // by the toggle buttons while they draw.
+  HazeTable& focus_map() { return focus_map_; }
+  // The WMGR_MAPRACES remap (`+0x3022`): identity, its entries 0x10..0x13
+  // set to a race's colour ramp (`draw_shape_race_colored` 0x4f2c8).
+  HazeTable& race_map() { return race_map_; }
+  // `gwshare.txt` table `index` (0..44, `GWindow_load_shared_shapes`
+  // 0x2c9ec), loaded at the first use.
+  const ShapeTable& shared_shapes(int index);
+
+  // `static_string` (0x1cea8): string `index` of `static.txt` (loaded at
+  // the first use). Throws `std::out_of_range` past the table.
+  const std::string& static_string(int index);
 
   // Whether the game runs (`0x865f4`; message 2 and Alt+X clear it).
   bool running() const { return running_; }
+  void quit() { running_ = false; }
   int current_screen() const { return current_; }
   // The hot (mouse-over) window id (`+0x3002`), -1 for none.
   int hot_window() const { return hot_; }
+  bool help_mode() const { return help_mode_; }
+  // The input of the current pass (the pointer position, `0xc84d4`).
+  const InputState& input() const { return last_input_; }
+  bool in_modal() const { return modal_; }
+  // The exit corner under the pointer (`+0x24da8`): 0..3, -1 for none.
+  int exit_corner() const { return exit_corner_; }
+  // The rotation speed factor (`+0x24dac`, saved in `ascend.cfg`).
+  float rotation_speed() const { return rotation_speed_; }
+  void set_rotation_speed(float speed) { rotation_speed_ = speed; }
+  // `draw_shape_race_colored` (0x4f2c8) / `draw_shape_colored` (0x4f350):
+  // draws `shape` at (x, y) of `pane` with its entries 0x10..0x13 remapped
+  // to the ramp of colour `color` (0x10 + 4 * color ..).
+  void draw_colored(const Pane& pane, const Shape& shape, int x, int y, int color);
+  // Whether the next entry to the opening menu loads `resume.gam`
+  // (`0x86a4c`: at start, and after the new-game screen opened until Begin).
+  void set_reload_resume(bool reload) { first_opening_ = reload; }
+  // The screen history (`+0x4736`): the screens Esc goes back to, oldest
+  // first.
+  std::vector<int> history() const;
+
   // Returns window `id` (1-based), null when there is none.
   GWindow* window(int id) const;
   // `WinMgr_find_window` (0x521b8): the window named `name` (first 10
-  // characters), null when there is none.
+  // characters, case-insensitive), null when there is none.
   GWindow* find_window(std::string_view name) const;
+  // `WinMgr_register_window` (0x525c8): takes a window made by the code
+  // (dialogs) and returns its id.
+  int register_window(std::unique_ptr<GWindow> window);
+  // `WinMgr_release_window` (0x52940): destroys window `id`.
+  void release_window(int id);
+  // `WinMgr_add_to_screen` (0x52630) / `WinMgr_remove_from_screen`
+  // (0x52720): puts window `id` in the first free slot of `screen`'s list,
+  // or takes it out; return false when the list is full or `id` is not in
+  // it.
+  bool add_to_screen(int id, int screen);
+  bool remove_from_screen(int id, int screen);
 
   // Clears the hot window when it is `id` (a deactivated window).
   void release_hot(int id);
+
+  // `WinMgr_set_enter_handler` / `WinMgr_set_leave_handler` (0x52900,
+  // 0x52920): called with the screen when it is entered (after the wipe,
+  // before the windows' activation) or left.
+  void set_enter_handler(int screen, std::function<void(int)> handler);
+  void set_leave_handler(int screen, std::function<void(int)> handler);
+  // `screen_draw_background` (0x55730): the `.tmp` background of `screen`.
+  void draw_background(int screen);
 
   // `WinMgr_set_screen` (0x522ac): switches to `screen`, pushing the current
   // one on the history with `push`.
@@ -98,8 +216,8 @@ class WinMgr {
   // `WinMgr_go_back` (0x524bc): pops the history and switches to it.
   void go_back();
   // `WinMgr_post_message` (0x51f70): queues a system message (dropped when
-  // the queue is full).
-  void post_message(int id, int p1, int p2);
+  // the queue is full). `text` is the help topic of message 5.
+  void post_message(int id, int p1, int p2, std::string text = {});
   // `WinMgr_send_event` (0x52140): `handle_event` of window `id`.
   bool send_event(int id, int type, int a, int b);
   // `WinMgr_broadcast_event` (0x51ff8): to the windows of the current screen
@@ -110,6 +228,29 @@ class WinMgr {
   // removes the window's timers of `msg` (-1: all).
   void set_timer(int id, int msg, int p1, int p2, std::uint32_t period);
   void kill_timer(int id, int msg);
+  // `WinMgr_get_timer_period` / `WinMgr_set_timer_period` (0x51938,
+  // 0x51974): the period of window `id`'s timer of `msg`, -1 for none.
+  int timer_period(int id, int msg) const;
+  void set_timer_period(int id, int msg, std::uint32_t period);
+  // `WinMgr_request_notify` (0x51b38) / `WinMgr_cancel_notify` (0x51bcc):
+  // sends `msg` to window `id` on the input changes of `mask`, wherever the
+  // pointer is.
+  void request_notify(int id, int mask, int msg, int p1, int p2);
+  void cancel_notify(int id, int msg);
+
+  // `WinMgr_do_modal` (0x50708): runs `dialog` (a registered window) and its
+  // children over the current screen until message 6 (or Esc, or a click on
+  // an exit corner) ends the loop; returns the result.
+  int do_modal(GWindow& dialog);
+  // Ends the running modal loop with `result` (message 6).
+  void end_modal(int result);
+  // `WinMgr_message_box` (0x50adc): `text` in a box with an OK button, run
+  // modally.
+  void message_box(std::string text);
+  // `WinMgr_input_box` (0x50be4): `title` and an edit field on `buffer` (at
+  // most `max_length` characters), run modally; returns the result (3 for
+  // Enter, 201 for OK, 0 for Esc).
+  int input_box(std::string_view title, std::string& buffer, int max_length);
 
   // Arms the pending palette fade (`0x122034`): `fade_to_palette_step` 0..64,
   // one per refresh.
@@ -122,50 +263,99 @@ class WinMgr {
   void process_input(const InputState& input);
   // `WinMgr_refresh_screen` (0x5049c): advances the pending fade.
   void refresh_screen();
+  // One pass of the main loop (`main` 0x1c424, `WinMgr_run_modal_loop`
+  // 0x50a28): input, `process_input`, `refresh_screen`, presentation.
+  void run_pass();
+
+  // `Config_save` (0x54cac): writes `ascend.cfg` (the mute flags and the
+  // rotation speed).
+  void save_config() const;
 
  private:
   struct Screen {
-    std::vector<int> windows;  // z order, last on top
-    std::string shape_file;    // TYPE 100 SHAPEFILE
+    std::array<int, kScreenWindows> slots{};  // window ids, 0 = free; slot 31 on top
+    int count = 0;
+    std::string shape_file;  // TYPE 100 SHAPEFILE
+    std::function<void(int)> enter;
+    std::function<void(int)> leave;
   };
   struct Timer {
-    int window;
-    int msg;
-    int p1;
-    int p2;
-    std::uint32_t period;
-    std::uint32_t due;
+    int window = 0;  // 0 = free
+    int msg = 0;
+    int p1 = 0;
+    int p2 = 0;
+    std::uint32_t period = 0;
+    std::uint32_t due = 0;
+  };
+  struct Notify {
+    int window = 0;  // 0 = free
+    int mask = 0;
+    int msg = 0;
+    int p1 = 0;
+    int p2 = 0;
   };
   struct Message {
     int id;
     int p1;
     int p2;
+    std::string text;
   };
 
-  void load_windows(const WindowsTxt& txt);
-  void enter_screen(int screen);
+  void load_windows(const WindowsTxt& txt, const WindowFactory& factory);
+  void install_screen_handlers();
+  void load_config();
+  Screen& screen_record(int screen);
+  // `WinMgr_broadcast_event` with its modal filter (`0x12200c`, one flag
+  // per slot): with `filter`, only the slots flagged get the event, and
+  // the flags are set to whether the window took it.
+  bool broadcast(int type, int a, int b, bool filter);
   void update_hover(const InputState& input);
   void run_timers();
-  void handle_hotkey(const InputState& input);
+  void run_notifies(const InputState& input);
+  // `WinMgr_handle_hotkey` (0x50174): returns false when the key is not a
+  // hotkey (it is then broadcast).
+  bool handle_hotkey(const InputState& input);
   void dispatch_messages();
+  void show_help(const Message& m);
   void pick_music(const InputState& input);
+  void set_pointer(int frame);
+  // Alt+G (`screenshot_save_gif` 0x31338): `scr%03d.gif` in the user folder.
+  void save_screenshot();
 
   UiServices services_;
   ShapeCache shapes_;
+  std::vector<std::string> shared_shape_files_;  // gwshare.txt
+  std::vector<std::string> static_strings_;      // static.txt
   std::unique_ptr<GameFont> small_font_;
   std::unique_ptr<GameFont> large_font_;
   HazeTable focus_map_{};
-  std::vector<std::unique_ptr<GWindow>> windows_;  // id - 1
+  HazeTable race_map_{};
+  std::vector<std::unique_ptr<GWindow>> windows_;  // id - 1; null once released
   std::array<Screen, kScreens> screens_;
   int current_ = -1;
-  std::deque<int> history_;
+  // The history ring (`+0x4736`, count `+0x4756`, top `+0x4758`).
+  std::array<int, kHistory> history_{};
+  int history_count_ = 0;
+  int history_top_ = 0;
   std::vector<Message> messages_;
-  std::vector<Timer> timers_;
+  std::array<Timer, kMaxTimers> timers_{};
+  std::array<Notify, kMaxNotifies> notifies_{};
+  std::array<bool, kScreenWindows> modal_flags_{};  // 0x12200c
   int hot_ = -1;
   bool running_ = true;
+  bool modal_ = false;      // +0x489e
+  int modal_result_ = 0;    // +0x48a2
+  bool help_mode_ = false;  // +0x24da4
+  int exit_corner_ = -1;    // +0x24da8
+  bool auto_turn_ = false;  // +0x24d9c (NEXTTURNCONT)
+  // Whether `do_modal` saves and restores the screen under the dialog
+  // (`0x86a44`; the input box does its own).
+  bool save_under_ = true;
+  float rotation_speed_ = 1.0F;
   bool fade_pending_ = false;
   int fade_step_ = 0;
   bool first_opening_ = true;  // `0x86a4c`: resume.gam not loaded yet
+  int screenshot_count_ = 0;
   // The music picker (`0x86a3c`, `0x86a40`).
   int previous_tune_ = -1;
   int volume_ramp_ = -1;

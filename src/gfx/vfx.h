@@ -43,6 +43,13 @@ void vfx_shape_draw(Image8& window, const Pane& pane, const Shape& shape, int x,
 void vfx_shape_translate_draw(Image8& window, const Pane& pane, const Shape& shape, int x, int y,
                               const HazeTable& table);
 
+// `vfx_shape_transform_draw` (0x58a41) at the scale 0x8000 on both axes
+// without rotation (the half-size portraits of the load list and the
+// new-game screen): the pixel at `d` from the hotspot takes the shape's
+// pixel `2 d` left of / above it, `2 d + 1` right of / below it (matched on
+// the original's screenshots; the general transform is not analysed).
+void vfx_shape_draw_half(Image8& window, const Pane& pane, const Shape& shape, int x, int y);
+
 // `vfx_character_draw` (0x5ba83): draws character `c` of `font` at (x, y) of
 // `pane`, each glyph pixel `v` through `table` (`table[v]`, not drawn when
 // 0xff); returns the glyph's width (the advance).
