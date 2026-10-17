@@ -4,6 +4,8 @@
 // 0xf2 patched while on (TOGLANES, NEXTTURNCONT, TOGGRID...).
 #pragma once
 
+#include <cstdint>
+
 #include "ui/gwindow.h"
 
 namespace oa {

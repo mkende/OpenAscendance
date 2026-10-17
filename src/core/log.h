@@ -2,6 +2,7 @@
 // executable's name, to standard error unless a sink is set.
 #pragma once
 
+#include <cstdint>
 #include <format>
 #include <functional>
 #include <string>

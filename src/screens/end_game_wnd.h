@@ -11,6 +11,7 @@
 // star map (the screen history), where the game goes on.
 #pragma once
 
+#include <cstdint>
 #include <span>
 #include <string>
 #include <string_view>

@@ -3,6 +3,7 @@
 // 0x50be4); not a `windows.txt` type.
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 #include "ui/gwindow.h"

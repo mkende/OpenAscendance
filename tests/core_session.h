@@ -3,6 +3,7 @@
 // `game::Session`, which `GameSession::core` hands to the screens.
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iterator>

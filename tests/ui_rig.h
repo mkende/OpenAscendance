@@ -2,6 +2,7 @@
 // clock, with scripted input: the tests of the toolkit and the screens.
 #pragma once
 
+#include <cstdint>
 #include <deque>
 #include <filesystem>
 #include <optional>
