@@ -88,9 +88,32 @@ struct GameRig {
   UiRig rig;
 };
 
-// Starts a new design on Flammifer I as the oracle script does: the Ship
-// from the build list, then orbital square column 0, row 2.
+// The oracle script's first visit of the design screen: Frigate 1 viewed
+// from the Ships list, the weapons shown (the design screen keeps its
+// category and selection), back on the list.
+void view_frigate(GameRig& r) {
+  r.rig.click(300, 300, MouseButton::kRight);
+  r.rig.pass();
+  REQUIRE(r.rig.wm.current_screen() == kScreenShipDesign);
+  r.rig.click(500, 22);  // WEAPONS
+  r.key(SDLK_ESCAPE);
+  REQUIRE(r.rig.wm.current_screen() == kScreenFleet);
+}
+
+// Opens the planet screen of `name`, the pointer at (x, y).
+void open_planet(GameRig& r, std::string_view name, int x, int y) {
+  r.cosmos().selected_planet = find_planet(r.s(), name);
+  r.rig.move(x, y);
+  r.rig.wm.set_screen(kScreenPlanet, true);
+  r.rig.pass();
+}
+
+// Starts a new design on Flammifer I as the oracle script does after
+// `view_frigate`: the Ship from the build list, then orbital square column
+// 0, row 2.
 void start_new_design(GameRig& r) {
+  view_frigate(r);
+  open_planet(r, "Flammifer I", 300, 257);
   r.rig.click(540, 50);  // PLBUILD
   const auto& items = r.plan().build_items();
   const auto it = std::find(items.begin(), items.end(), game::kItemShip);
@@ -284,7 +307,7 @@ TEST_CASE("Ships list rows, title and picks", "[shipdes]") {
 TEST_CASE("Ship design: a new design named and built", "[shipdes]") {
   // The oracle run `ship_design.txt` SCR006..SCR018 on Flammifer I.
   OA_REQUIRE_GAME_FILES(files);
-  GameRig r(files, kScreenPlanet, "Flammifer I", 300, 257);
+  GameRig r(files, kScreenFleet);
   const std::int16_t ships = r.cosmos().ship_count;
   start_new_design(r);
   ShipDesWnd& design = r.design();
@@ -294,8 +317,8 @@ TEST_CASE("Ship design: a new design named and built", "[shipdes]") {
   CHECK_FALSE(design.read_only());
   CHECK(r.cosmos().ship_count == ships + 1);
   CHECK(ship.hull_size == 0);
-  CHECK(design.category() == ShipDesWnd::kGenerator);
-  CHECK(design.selected_gizmo() == kProtonShaver);
+  CHECK(design.category() == ShipDesWnd::kWeapon);
+  CHECK(design.selected_gizmo() == kMassBarrageGun);
   write_shot(r.rig, "design_new");
   r.rig.move(403, 166);
   CHECK(design.hovered_slot() == 0);
@@ -306,7 +329,7 @@ TEST_CASE("Ship design: a new design named and built", "[shipdes]") {
     write_shot(r.rig, std::string("design_hull") + std::to_string(hull));
   }
   CHECK_FALSE(design.modified());
-  r.rig.click(403, 166);  // slot 0: the Proton Shaver
+  r.rig.click(403, 166);  // slot 0: the Mass Barrage Gun
   CHECK(design.modified());
   r.rig.click(500, 22);   // WEAPONS
   r.rig.click(557, 189);  // the second weapon
@@ -314,10 +337,12 @@ TEST_CASE("Ship design: a new design named and built", "[shipdes]") {
   r.rig.click(439, 184);  // slot 1
   r.rig.click(403, 202);  // slot 2
   r.rig.click(439, 184, MouseButton::kRight);
-  CHECK(ship.slots[0].gizmo == kProtonShaver);
+  CHECK(ship.slots[0].gizmo == kMassBarrageGun);
   CHECK(ship.slots[1].gizmo == -1);
   CHECK(ship.slots[2].gizmo == kFourierMissiles);
   CHECK(ship.gizmo_count == 2);
+  // 410 + 15 + 25 industry at 15 per day: " (30 Days)".
+  CHECK(game::ship_industry_cost(r.s(), ship) == 450);
   write_shot(r.rig, "design_fitted");
   for (const auto& [x, y, category, name] : {std::tuple{617, 22, ShipDesWnd::kShield, "design_defenses"},
                                              std::tuple{500, 61, ShipDesWnd::kDrive, "design_engines"},
@@ -329,7 +354,7 @@ TEST_CASE("Ship design: a new design named and built", "[shipdes]") {
   }
   r.rig.click(558, 22);  // HULL: back to Small, the gizmos repacked
   CHECK(ship.hull_size == 0);
-  CHECK(ship.slots[0].gizmo == kProtonShaver);
+  CHECK(ship.slots[0].gizmo == kMassBarrageGun);
   CHECK(ship.slots[1].gizmo == kFourierMissiles);
   write_shot(r.rig, "design_small");
 
@@ -343,8 +368,14 @@ TEST_CASE("Ship design: a new design named and built", "[shipdes]") {
   }
   CHECK(r.rig.wm.current_screen() == kScreenPlanet);
   CHECK(r.cosmos().ship_count == ships + 1);
+  // As the oracle's save: the ship as designed, built on day 825 (the day
+  // plus the empty hull's days at its creation, `Race_ai_new_ship`).
   CHECK(game::name_view(ship.name) == "Small");
   CHECK(ship.location_kind == game::ShipLocation::kBuilding);
+  CHECK(ship.built_day == 825);
+  CHECK(ship.gizmo_count == 2);
+  CHECK(ship.weapon_damage == 3);
+  CHECK(ship.max_hit_points == 10);
   game::Planet& p = r.planet();
   CHECK(p.project_item == game::kItemShip);
   CHECK(game::planet_square_ship(r.s(), p, p.project_square) == game::ship_index(r.cosmos(), ship));
@@ -355,7 +386,7 @@ TEST_CASE("Ship design: unchanged and hull-only designs are discarded", "[shipde
   // `exp/e10`: only the hull changed, Esc: no ship, no project.
   OA_REQUIRE_GAME_FILES(files);
   for (const bool change_hull : {false, true}) {
-    GameRig r(files, kScreenPlanet, "Flammifer I", 300, 257);
+    GameRig r(files, kScreenFleet);
     const std::int16_t ships = r.cosmos().ship_count;
     start_new_design(r);
     if (change_hull) {
@@ -395,7 +426,6 @@ TEST_CASE("Ship design: a refit at the Orbital Docks", "[shipdes]") {
   r.rig.click(558, 22);  // HULL: no change in a refit
   CHECK(ship.hull_size == hull);
   CHECK(design.refit_cost(r.s()) == 30);
-  write_shot(r.rig, "refit_design");
   // A generator in the first empty slot, 4 (Medium cell (7, 6)).
   REQUIRE(hull == 1);
   REQUIRE(game::ship_find_gizmo(ship, -1) == 4);
@@ -421,6 +451,8 @@ TEST_CASE("Ship design: a refit at the Orbital Docks", "[shipdes]") {
   CHECK(ship.location_kind == game::ShipLocation::kRefit);
   CHECK(ship.location == game::planet_index(r.cosmos(), p));
   CHECK(game::name_view(ship.name) == "Explorator 1");
+  CHECK(ship.gizmo_count == 9);
+  CHECK(ship.generator_power == 6);
   write_shot(r.rig, "refit_done");
 }
 
