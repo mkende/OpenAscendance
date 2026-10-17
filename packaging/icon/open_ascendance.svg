@@ -1,46 +1,48 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Open Ascendance's placeholder icon (original work, not the game's art): a
-     stylised spiral galaxy with a rising star at its core, on a night-blue
-     tile. packaging/icon/render_icons.sh renders the committed PNG, ICO and
-     Android launcher pictures from it; it drops the line holding
-     id="background" for the transparent foreground of Android's adaptive
-     icon. -->
+<!-- Proposal 6, star rise: a star climbing over the curved horizon of a dark planet, its atmosphere lit along the rim, against a dusk-coloured sky. -->
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <defs>
-    <radialGradient id="sky" cx="50%" cy="45%" r="70%">
-      <stop offset="0%" stop-color="#26357f"/>
-      <stop offset="60%" stop-color="#111a4a"/>
-      <stop offset="100%" stop-color="#070b26"/>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#070b26"/>
+      <stop offset="0.45" stop-color="#1c1d5e"/>
+      <stop offset="0.7" stop-color="#5a2e7a"/>
+      <stop offset="1" stop-color="#c0566a"/>
+    </linearGradient>
+    <radialGradient id="planet" cx="0.5" cy="0" r="0.6">
+      <stop offset="0" stop-color="#1b2a63"/>
+      <stop offset="1" stop-color="#060a1f"/>
     </radialGradient>
-    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#cfe0ff" stop-opacity="0.85"/>
-      <stop offset="45%" stop-color="#7f9cff" stop-opacity="0.35"/>
-      <stop offset="100%" stop-color="#4b5cff" stop-opacity="0"/>
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#7fd8ff" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#7fd8ff" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="tile"><rect width="1024" height="1024" rx="200"/></clipPath>
+    <radialGradient id="disc">
+      <stop offset="0.55" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#ffd27a"/>
     </radialGradient>
-    <radialGradient id="core" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#ffffff"/>
-      <stop offset="40%" stop-color="#fff4c8"/>
-      <stop offset="100%" stop-color="#ffd27a" stop-opacity="0"/>
+    <radialGradient id="sun">
+      <stop offset="0" stop-color="#ffe7a8" stop-opacity="1.0"/>
+      <stop offset="0.35" stop-color="#ffe7a8" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#ffe7a8" stop-opacity="0"/>
     </radialGradient>
   </defs>
-  <rect id="background" x="0" y="0" width="1024" height="1024" rx="200" ry="200" fill="url(#sky)"/>
-  <g transform="rotate(-28 512 512)">
-    <ellipse cx="512" cy="512" rx="400" ry="250" fill="url(#glow)"/>
-    <g fill="none" stroke-linecap="round">
-      <path d="M512,512 C650,420 800,500 770,640 C740,780 540,830 360,760" stroke="#9fb8ff" stroke-width="56" stroke-opacity="0.45"/>
-      <path d="M512,512 C374,604 224,524 254,384 C284,244 484,194 664,264" stroke="#9fb8ff" stroke-width="56" stroke-opacity="0.45"/>
-      <path d="M512,512 C650,420 800,500 770,640 C740,780 540,830 360,760" stroke="#e3ecff" stroke-width="22"/>
-      <path d="M512,512 C374,604 224,524 254,384 C284,244 484,194 664,264" stroke="#e3ecff" stroke-width="22"/>
-    </g>
-    <circle cx="512" cy="512" r="150" fill="url(#core)"/>
+  <rect id="background" width="1024" height="1024" rx="200" fill="url(#sky)"/>
+  <g clip-path="url(#tile)">
+    <circle cx="512" cy="650" r="520" fill="url(#sun)"/>
+    <path d="M512,210 Q525.2,636.8 556,650 Q525.2,663.2 512,1090 Q498.8,663.2 468,650 Q498.8,636.8 512,210 Z" fill="#ffffff"/>
+    <circle cx="512" cy="650" r="200" fill="url(#disc)"/>
+    <ellipse cx="512" cy="650" rx="480" ry="16" fill="#ffffff"/>
+    <circle cx="512" cy="1710" r="1050" fill="url(#planet)"/>
+    <circle cx="512" cy="1710" r="1050" fill="none" stroke="url(#rim)" stroke-width="22"/>
   </g>
-  <path d="M512,300 L540,484 L724,512 L540,540 L512,724 L484,540 L300,512 L484,484 Z" fill="#ffffff"/>
-  <g fill="#ffffff">
-    <circle cx="210" cy="230" r="10"/>
-    <circle cx="820" cy="200" r="14"/>
-    <circle cx="860" cy="760" r="9"/>
-    <circle cx="180" cy="800" r="12"/>
-    <circle cx="700" cy="880" r="7"/>
-    <circle cx="330" cy="130" r="6"/>
+  <g fill="#ffffff" fill-opacity="0.85">
+    <circle cx="190" cy="190" r="10"/>
+    <circle cx="340" cy="120" r="6"/>
+    <circle cx="830" cy="200" r="12"/>
+    <circle cx="700" cy="330" r="6"/>
+    <circle cx="150" cy="420" r="7"/>
+    <circle cx="880" cy="450" r="8"/>
   </g>
 </svg>
