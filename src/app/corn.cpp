@@ -178,6 +178,13 @@ void run(const GameOptions& options, const GameFiles& files) {
       cosmos_txt = game::parse_cosmos_txt(read_file(path));
     }
   }
+  // `flash.pop` in the user folder sets the developer autoplay flag
+  // (0x90b8c): the AI plays the player's race too (`docs/12-oracle.md`,
+  // "Autoplay runs").
+  if (!options.user_dir.empty()) {
+    std::error_code ec;
+    game.core()->autoplay = std::filesystem::exists(options.user_dir / "flash.pop", ec);
+  }
   game.start(static_cast<std::uint32_t>(std::time(nullptr)), cosmos_txt ? &*cosmos_txt : nullptr);
   std::unique_ptr<WinMgr> wm_holder;
   WindowFactory factory = WindowFactory::standard();

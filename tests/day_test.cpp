@@ -391,7 +391,7 @@ TEST_CASE("Standard autoplay games are the original's", "[game][content][oracle]
   run_cases(autoplay_cases(Variant::kStandard));
 }
 
-TEST_CASE("Antagonizer autoplay games are the original's", "[game][content][oracle][day][autoplay][antag][!mayfail]") {
+TEST_CASE("Antagonizer autoplay games are the original's", "[game][content][oracle][day][autoplay][antag]") {
   run_cases(autoplay_cases(Variant::kAntagonizer));
 }
 

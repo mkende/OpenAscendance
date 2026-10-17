@@ -986,8 +986,11 @@ std::int32_t planet_ai_target_value(const Session& session, const Planet& planet
         }
       }
       if (absent(session, planet, kOrbitalCloaker)) {
+        // Original bug kept (0x3663b): the orbital loop counts from
+        // `surface_squares` but its pointer restarts at square 0, so it
+        // sums the first `square_count - surface_squares` surface squares.
         for (std::uint16_t i = planet.surface_squares; i < planet.square_count; ++i) {
-          costs += square_cost(session, squares[i].item);
+          costs += square_cost(session, squares[i - planet.surface_squares].item);
         }
       }
       std::int32_t worth = u16(planet.industry) + u16(planet.prosperity) + u16(planet.research) + planet.population +

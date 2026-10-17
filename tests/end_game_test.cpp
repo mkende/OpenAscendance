@@ -4,6 +4,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <memory>
 #include <string>
 
 #include <SDL3/SDL_keycode.h>
@@ -47,24 +48,14 @@ TEST_CASE("An ending file gives its description, congratulations and rank title"
   CHECK(parse_ending(files.load("end-xtnc.txt"), 0, "end-xtnc.txt").rank.size() > 1);
 }
 
-// Returns the generator state `n` draws before `state` (the inverse of the
-// Watcom LCG step).
-std::uint32_t rewind(std::uint32_t state, int n) {
-  std::uint32_t inverse = 1;
-  for (int i = 0; i < 5; ++i) {
-    inverse *= 2 - 0x41c64e6du * inverse;  // Newton's iteration mod 2^32
-  }
-  for (int i = 0; i < n; ++i) {
-    state = (state - 0x3039u) * inverse;
-  }
-  return state;
-}
-
 TEST_CASE("The game ending on a new day shows the end-of-game screen", "[endgame]") {
   OA_REQUIRE_GAME_FILES(files);
   CoreGameSession game(files, files.load("RESUME.GAM"));
   game::Session& s = game.session();
-  // The oracle's run: the start-up galaxy of seed 1, then the save loaded.
+  // The oracle's run: the start-up galaxy of seed 1 (on fresh records: the
+  // stale fields of the loaded game would change its draws), then the save
+  // loaded.
+  s.game = std::make_unique<game::Game>();
   const game::CosmosTxt txt{.stars = 50, .races = 7, .seed = 1, .species = {}};
   game::program_start(s, 0, &txt, true);
   game::load_game(s, game::parse_save(files.load("RESUME.GAM")));
@@ -78,11 +69,6 @@ TEST_CASE("The game ending on a new day shows the end-of-game screen", "[endgame
   REQUIRE(cosmos.day == 821);
   REQUIRE(cosmos.ending == 2);
   REQUIRE(cosmos.score == 11);
-  // The original's generator at the draw is 295 draws behind ours (found by
-  // search on its screenshot): this artificial game's extinct species keep
-  // their ships and planets, which the remake's day plays more.
-  s.rng.srand(rewind(s.rng.state(), 295));
-
   UiRig rig(files, &game);
   rig.wm.setup_race_shapes();
   rig.wm.set_screen(kScreenStarMap, false);
