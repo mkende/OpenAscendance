@@ -1,15 +1,19 @@
 // The command line of the game's executable (app/main.cpp), adapted from
 // SilentHeritage's:
 //
-//   open_ascendance [--data <install dir> | --setup] [--sharp] [--keys <k1,k2,...>]
-//                   [--screenshot <file.bmp> [--frames N] [--save-dir <dir>]] [--seed N]
-//                   [--trace <file.bin>]
+//   open_ascendance [--data <install dir> | --setup] [--sharp | --smooth]
+//                   [--fullscreen | --window] [--variant standard|antagonizer]
+//                   [--keys <k1,k2,...>] [--screenshot <file.bmp> [--frames N]
+//                   [--save-dir <dir>]] [--seed N] [--trace <file.bin>]
 //
 // Without `--data` (or when it is not an install) the game files are those
 // remembered by the install setup (app/install_setup.h), which runs when
 // there are none or they are gone; `--setup` runs it again.
-// `--sharp` scales the picture with nearest-neighbour pixels instead of the
-// default bilinear smoothing.
+// `--sharp` scales the picture with nearest-neighbour pixels, `--smooth`
+// with bilinear smoothing; `--fullscreen` and `--window` start in that
+// display mode; `--variant` sets the variant of new games. These override
+// the settings of the options screen (`options.cfg`, `ui/options.h`) for
+// the run, without changing the file.
 // `--keys` feeds the given input, one step per main-loop pass: key names up,
 // down, left, right, pgup, pgdn, home, end, enter, esc, tab, space,
 // backspace, comma, minus, period, kpplus, kpminus, f1..f12 or a single
@@ -41,6 +45,7 @@
 #include <string_view>
 #include <vector>
 
+#include "game/variant.h"
 #include "platform/display.h"
 #include "platform/input_event.h"
 
@@ -48,13 +53,17 @@ namespace oa {
 
 // The usage line's options, after the program's name.
 inline constexpr std::string_view kUsageOptions =
-    "[--data <install dir> | --setup] [--sharp] [--keys <k1,k2,...>] [--screenshot <file.bmp> [--frames N] "
+    "[--data <install dir> | --setup] [--sharp | --smooth] [--fullscreen | --window] "
+    "[--variant standard|antagonizer] [--keys <k1,k2,...>] [--screenshot <file.bmp> [--frames N] "
     "[--save-dir <dir>]] [--seed N] [--trace <file.bin>]";
 
 struct CommandLine {
   std::optional<std::string> data_dir;
   bool setup = false;
-  Scaling scaling = Scaling::kSmooth;
+  // The overrides of the options screen's settings (nothing: keep them).
+  std::optional<Scaling> scaling;
+  std::optional<bool> fullscreen;
+  std::optional<game::Variant> variant;
   std::vector<InputEvent> keys;
   std::optional<std::string> screenshot;
   int frames = 2;

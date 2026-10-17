@@ -45,6 +45,7 @@ struct Display::Impl {
   SDL_Texture* texture = nullptr;
   std::vector<std::uint32_t> xrgb = std::vector<std::uint32_t>(std::size_t{kScreenWidth} * kScreenHeight);
   bool fullscreen = false;
+  Scaling scaling = Scaling::kSmooth;
   // The Enter key of the last Alt+Enter, until its release.
   std::optional<SDL_Keycode> toggle_key;
 };
@@ -68,7 +69,7 @@ Display::Display(std::string_view title, int scale, Scaling scaling) : impl_(std
   if (impl_->texture == nullptr) {
     sdl_fail("SDL_CreateTexture");
   }
-  SDL_SetTextureScaleMode(impl_->texture, scaling == Scaling::kSharp ? SDL_SCALEMODE_NEAREST : SDL_SCALEMODE_LINEAR);
+  set_scaling(scaling);
   SDL_HideCursor();
 }
 
@@ -107,6 +108,17 @@ void Display::set_fullscreen(bool fullscreen) {
     return;
   }
   impl_->fullscreen = fullscreen;
+}
+
+Scaling Display::scaling() const { return impl_->scaling; }
+
+void Display::set_scaling(Scaling scaling) {
+  if (!SDL_SetTextureScaleMode(impl_->texture,
+                               scaling == Scaling::kSharp ? SDL_SCALEMODE_NEAREST : SDL_SCALEMODE_LINEAR)) {
+    log_warning("cannot change the scaling: {}", SDL_GetError());
+    return;
+  }
+  impl_->scaling = scaling;
 }
 
 std::optional<InputEvent> Display::poll() {

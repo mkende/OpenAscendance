@@ -272,7 +272,8 @@ class WinMgr final : public WindowStateIo {
   // from the top down until one consumes it.
   bool broadcast_event(int type, int a, int b);
   // `WinMgr_set_timer` (0x51810): sends event `msg` (p1, p2) to window `id`
-  // every `period` ticks (each pass for 0). `WinMgr_kill_timer` (0x518d0)
+  // every `period` ticks (each pass for 0; always each pass while a trace
+  // is replayed). `WinMgr_kill_timer` (0x518d0)
   // removes the window's timers of `msg` (-1: all).
   void set_timer(int id, int msg, int p1, int p2, std::uint32_t period);
   void kill_timer(int id, int msg);

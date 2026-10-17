@@ -46,6 +46,9 @@ class NewGameWnd final : public GWindow {
   void draw_hilite(int mode) override { draw(mode); }
 
  private:
+  // `CosWnd_build_items` of the star map after a new galaxy (the star
+  // density and species count changes; not the species pick).
+  void rebuild_map();
   // `NewGameWnd_draw_galaxy_preview` (0x4db24).
   void draw_begin_box();
   // `NewGameWnd_draw_species_item` (0x4ca20): a RACELIST row.

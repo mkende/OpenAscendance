@@ -1,5 +1,6 @@
 #include "screens/bat_control_wnd.h"
 
+#include <algorithm>
 #include <stdexcept>
 #include <string>
 
@@ -173,8 +174,7 @@ bool BatControlWnd::check_target(int kind, int object) {
       target = game::lane_address(*s, static_cast<game::LaneIndex>(object));
     }
     ship.action = 1;
-    ship.action_slot =
-        game::gizmo_slot_address(*s, static_cast<game::ShipIndex>(selection_.object), action_slot_);
+    ship.action_slot = game::gizmo_slot_address(*s, static_cast<game::ShipIndex>(selection_.object), action_slot_);
     ship.target_kind = target_kind;
     ship.target = target;
     ship.target_point = {};
@@ -192,7 +192,7 @@ bool BatControlWnd::check_target(int kind, int object) {
   return false;
 }
 
-void BatControlWnd::execute(int kind, int object, const game::Vec3* point) {
+void BatControlWnd::execute(int kind, int object, const StaleBlock& stale, const game::Vec3* point) {
   game::Session* s = core();
   BatModeWnd* view = mode_wnd();
   repeat_ship_ = -1;
@@ -208,7 +208,7 @@ void BatControlWnd::execute(int kind, int object, const game::Vec3* point) {
     ship.destination_kind = game::ShipOrder::kNothing;
     if (action_ == kActionMove) {
       game::Vec3 target_point{};
-      game::RawAddress target = ship.target;
+      game::RawAddress target = stale.target.value_or(ship.target);
       std::uint8_t target_kind = ship.target_kind;
       if (kind == kObjectPoint) {
         target_kind = game::kTargetPoint;
@@ -229,6 +229,7 @@ void BatControlWnd::execute(int kind, int object, const game::Vec3* point) {
         target = game::lane_address(*s, static_cast<game::LaneIndex>(object));
       }
       ship.action = 0;
+      ship.action_slot = stale.slot;
       ship.target_kind = target_kind;
       ship.target = target;
       ship.target_point = target_point;
@@ -246,7 +247,8 @@ void BatControlWnd::execute(int kind, int object, const game::Vec3* point) {
   action_ = kActionMove;
   action_slot_ = 0;
   draw(kDrawNormal);
-  const game::BattleActor actor = selection_.kind == kObjectShip ? game::BattleActor::kShip : game::BattleActor::kPlanet;
+  const game::BattleActor actor =
+      selection_.kind == kObjectShip ? game::BattleActor::kShip : game::BattleActor::kPlanet;
   battle_.act(*s, {actor, static_cast<std::int16_t>(selection_.object)}, false);
   view->start_effect();
 }
@@ -476,8 +478,8 @@ void BatControlWnd::draw_object_item(const Pane& row, int object, bool planet, b
     wm_.draw_colored(row, stats_shapes.at(0), 0x12 + 5 * i, 0x11, owner.color);
   }
   // The five strengths: icons clipped to twice the value.
-  const std::array<std::int32_t, 5> values = {ship.weapon_damage, ship.shield_max, ship.drive_speed,
-                                              ship.scanner_level, ship.generator_power};
+  const std::array<std::int32_t, 5> values = {ship.weapon_damage, ship.shield_max, ship.drive_speed, ship.scanner_level,
+                                              ship.generator_power};
   for (std::size_t r = 0; r < values.size(); ++r) {
     Pane clip = row;
     clip.x1 = row.x0 + 1;
@@ -488,9 +490,8 @@ void BatControlWnd::draw_object_item(const Pane& row, int object, bool planet, b
       vfx_shape_draw(screen, clip, stats_shapes.at(r + 1), 2 + 8 * i, 0x1f + 9 * static_cast<int>(r));
     }
   }
-  // The hit points and power columns, then their unfilled parts wiped: at
-  // the screen's (124, 8) (pane-relative coordinates used as absolute
-  // ones: a bug of the original).
+  // The hit points and power columns, then their unfilled parts wiped
+  // (`draw_rect_frame` in fill mode).
   const std::array<std::int32_t, 2> value = {ship.hit_points, ship.power};
   const std::array<std::int32_t, 2> maximum = {ship.max_hit_points, game::ship_battle_power(*s, ship)};
   const std::array<int, 2> frames = {2, 5};
@@ -508,7 +509,11 @@ void BatControlWnd::draw_object_item(const Pane& row, int object, bool planet, b
     for (int i = 0; i < 9; ++i) {
       vfx_shape_draw(screen, row, stats_shapes.at(static_cast<std::size_t>(frames[k])), x, 9 + 8 * i);
     }
-    vfx_pane_wipe(screen, Pane{x, 8, x + 6, 0x50 - v * 0x48 / maximum[k]}, back);
+    const int y1 = 0x50 - v * 0x48 / maximum[k];
+    if (y1 >= 8) {
+      vfx_pane_wipe(
+          screen, Pane{row.x0 + x, row.y0 + 8, std::min(row.x0 + x + 6, row.x1), std::min(row.y0 + y1, row.y1)}, back);
+    }
   }
 }
 
@@ -680,8 +685,8 @@ void BatControlWnd::list_pick(int row, int button) {
         view->select_from_control();
         draw(kDrawNormal);
       } else {
-        const int i = view->find_item(
-            item.data >= 0 ? BatModeWnd::ItemKind::kShip : BatModeWnd::ItemKind::kPlanet, item.object);
+        const int i =
+            view->find_item(item.data >= 0 ? BatModeWnd::ItemKind::kShip : BatModeWnd::ItemKind::kPlanet, item.object);
         if (i >= 0) {
           view->center_on_item(i);
           view->refresh();
@@ -784,7 +789,7 @@ bool BatControlWnd::handle_event(int type, int a, int b) {
       action_ = kActionMove;
       action_slot_ = 0;
       const game::Vec3 point = repeat_point_;
-      execute(repeat_kind_, repeat_object_, &point);
+      execute(repeat_kind_, repeat_object_, kStaleFromRepeat, &point);
       return false;
     }
     case kMessageWeapons:
@@ -812,8 +817,9 @@ bool BatControlWnd::handle_event(int type, int a, int b) {
 void FlagButton::draw(int mode) {
   RaceColorButton::draw(mode);
   const GameSession& game = wm_.services().game;
-  wm_.draw_colored(pane_, wm_.shared_shapes(kRaceFlags).at(static_cast<std::size_t>(game.race_species(game.player_race()))),
-                   3, 3, game.race_color(game.player_race()));
+  wm_.draw_colored(pane_,
+                   wm_.shared_shapes(kRaceFlags).at(static_cast<std::size_t>(game.race_species(game.player_race()))), 3,
+                   3, game.race_color(game.player_race()));
 }
 
 void add_star_system_windows(WindowFactory& factory) {

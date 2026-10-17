@@ -746,6 +746,10 @@ bool WinMgr::broadcast(int type, int a, int b, bool filter) {
 }
 
 void WinMgr::set_timer(int id, int msg, int p1, int p2, std::uint32_t period) {
+  if (replaying_) {
+    // A replay runs the timers at each pass: the same passes as recorded.
+    period = 0;
+  }
   for (Timer& t : timers_) {
     if (t.window == 0) {
       t = Timer{id, msg, p1, p2, period, services_.ticks() + period};

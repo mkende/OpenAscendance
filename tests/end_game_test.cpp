@@ -8,10 +8,12 @@
 
 #include <SDL3/SDL_keycode.h>
 
+#include "assets/gif.h"
 #include "core_session.h"
 #include "game/cosmos.h"
 #include "game/new_game.h"
 #include "game_data.h"
+#include "game_oracle.h"
 #include "screen_shots.h"
 #include "screens/end_game_wnd.h"
 #include "ui_rig.h"
@@ -45,6 +47,19 @@ TEST_CASE("An ending file gives its description, congratulations and rank title"
   CHECK(parse_ending(files.load("end-xtnc.txt"), 0, "end-xtnc.txt").rank.size() > 1);
 }
 
+// Returns the generator state `n` draws before `state` (the inverse of the
+// Watcom LCG step).
+std::uint32_t rewind(std::uint32_t state, int n) {
+  std::uint32_t inverse = 1;
+  for (int i = 0; i < 5; ++i) {
+    inverse *= 2 - 0x41c64e6du * inverse;  // Newton's iteration mod 2^32
+  }
+  for (int i = 0; i < n; ++i) {
+    state = (state - 0x3039u) * inverse;
+  }
+  return state;
+}
+
 TEST_CASE("The game ending on a new day shows the end-of-game screen", "[endgame]") {
   OA_REQUIRE_GAME_FILES(files);
   CoreGameSession game(files, files.load("RESUME.GAM"));
@@ -52,8 +67,7 @@ TEST_CASE("The game ending on a new day shows the end-of-game screen", "[endgame
   // The oracle's run: the start-up galaxy of seed 1, then the save loaded.
   const game::CosmosTxt txt{.stars = 50, .races = 7, .seed = 1, .species = {}};
   game::program_start(s, 0, &txt, true);
-  const std::vector<std::uint8_t> save = files.load("RESUME.GAM");
-  game::load_game(s, game::parse_save(save));
+  game::load_game(s, game::parse_save(files.load("RESUME.GAM")));
   game::Cosmos& cosmos = s.game->cosmos;
   for (int r = 1; r < cosmos.race_count; ++r) {
     cosmos.races[static_cast<std::size_t>(r)].extinct = -1;
@@ -64,6 +78,10 @@ TEST_CASE("The game ending on a new day shows the end-of-game screen", "[endgame
   REQUIRE(cosmos.day == 821);
   REQUIRE(cosmos.ending == 2);
   REQUIRE(cosmos.score == 11);
+  // The original's generator at the draw is 295 draws behind ours (found by
+  // search on its screenshot): this artificial game's extinct species keep
+  // their ships and planets, which the remake's day plays more.
+  s.rng.srand(rewind(s.rng.state(), 295));
 
   UiRig rig(files, &game);
   rig.wm.setup_race_shapes();
@@ -79,14 +97,24 @@ TEST_CASE("The game ending on a new day shows the end-of-game screen", "[endgame
   for (int i = 0; i < cosmos.planet_count; ++i) {
     pictures += cosmos.planets[static_cast<std::size_t>(i)].owner == s.player_race ? 1 : 0;
   }
-  WatcomRandom expected;
-  expected.srand(before);
+  WatcomRandom expected(before);
   for (int i = 0; i < 2 * pictures; ++i) {
     expected.rand();
   }
   CHECK(s.rng.state() == expected.state());
-  // The pointer where the oracle's screenshot has it (after Next Turn).
   write_shot(rig, "endgame_dest");
+  if (const auto gif = game::oracle_test::oracle_file("exp/endgame_dest/out/SCR000.GIF")) {
+    // Identical but for the pointer (on the Next Turn button's spot).
+    const Image8 original = decode_gif(*gif, "SCR000.GIF");
+    int differing = 0;
+    for (int y = 0; y < kScreenHeight; ++y) {
+      for (int x = 0; x < kScreenWidth; ++x) {
+        const bool pointer = x >= 505 && x < 530 && y >= 60 && y < 90;
+        differing += !pointer && rig.wm.screen().at(x, y) != original.at(x, y) ? 1 : 0;
+      }
+    }
+    CHECK(differing == 0);
+  }
   // Esc goes back to the star map.
   rig.key(SDLK_ESCAPE);
   CHECK(rig.wm.current_screen() == kScreenStarMap);

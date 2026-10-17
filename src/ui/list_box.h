@@ -100,8 +100,8 @@ class ListBox final : public GWindow {
   void draw_scroll_bar();
   // `ListBox_track_mouse` (0x2e4e8): the hovered row and arrow under (x, y).
   void track_mouse(int x, int y);
-  // `ListBox_click` (0x2e7b0): picks the hovered row, or starts an arrow's
-  // auto-repeat.
+  // `ListBox_click` (0x2e7b0): picks the hovered row (0x1c01; in help mode
+  // asks for its help, 0x1c02), or starts an arrow's auto-repeat.
   void click(int x, int y, int button);
   // Shortens the auto-repeat period of `msg` and scrolls one row.
   void repeat_scroll(int msg);

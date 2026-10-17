@@ -37,6 +37,10 @@ class CosWnd final : public GWindow {
   static constexpr float kMinFov = 20.0F;
   static constexpr float kMaxFov = 60.0F;
 
+  // `CosWnd_build_items` (0x24450): the display items of the current
+  // galaxy (also after the new-game screen's new galaxies).
+  void build_items();
+
   // The messages of the child buttons and of the window's own timer.
   enum Message : int {
     kMessageKnownRaces = 26,  // the known races' mask = p1
@@ -121,8 +125,6 @@ class CosWnd final : public GWindow {
   void set_projection();
   // `CosWnd_reset_camera` (0x21f2c).
   void reset_camera();
-  // `CosWnd_build_items` (0x24450).
-  void build_items();
   // `CosWnd_project_items` (0x2394c), then the depth sort
   // (`CosDrawList_sort` 0x24bfc).
   void project_items();

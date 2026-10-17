@@ -11,9 +11,11 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 
 #include "game/battle_control.h"
 #include "game/float_math.h"
+#include "game/state.h"
 #include "ui/list_box.h"
 #include "ui/shape_button.h"
 #include "ui/winmgr.h"
@@ -79,10 +81,24 @@ class BatControlWnd final : public GWindow {
   // Message 0x322: whether the chosen gizmo or planet weapon can be used on
   // `object` of `kind` (its action block filled and checked).
   bool check_target(int kind, int object);
+  // The bytes a move order's action block takes from the stack: message
+  // 0x326 copies a block whose gizmo slot, and target for a point, it never
+  // sets, so they keep what the calls before it left there (observed in the
+  // original's runs for each way of ordering a move).
+  struct StaleBlock {
+    game::RawAddress slot = 0;
+    std::optional<game::RawAddress> target;  // none: the ship's own is kept
+  };
+  // The view's grid point picked by its second (height) click at screen
+  // row `y`, an item clicked in the view, Repeat Move.
+  static StaleBlock stale_from_view_point(int y) { return {0, static_cast<game::RawAddress>(y + 8) << 16}; }
+  static constexpr StaleBlock kStaleFromViewItem{0x08000000, std::nullopt};
+  static constexpr StaleBlock kStaleFromRepeat{0x10000000, 0xfd8c0000};
+
   // Message 0x326: the move or the checked action on `object` of `kind`
   // (the view's move point, or `point` when given, for `kObjectPoint`),
-  // then its animation.
-  void execute(int kind, int object, const game::Vec3* point = nullptr);
+  // then its animation; a move's action block takes `stale`.
+  void execute(int kind, int object, const StaleBlock& stale = kStaleFromViewItem, const game::Vec3* point = nullptr);
   // `BatControlWnd_finish_action` (0x12238) at the end of an animation:
   // the action applied, then (`interactive`) the list and the next turns,
   // else the rest of the round at once (the display closing).
@@ -117,8 +133,8 @@ class BatControlWnd final : public GWindow {
   void activate(int a, int b);
 
   Selection selection_;
-  Action action_ = kActionMove;  // +0xb0
-  int action_slot_ = 0;          // +0xb1 gizmo slot or planet square
+  Action action_ = kActionMove;     // +0xb0
+  int action_slot_ = 0;             // +0xb1 gizmo slot or planet square
   ListMode list_mode_ = kListNone;  // +0xb9
   std::uint8_t category_ = 0;       // +0xba
   // The repeat move (`+0xbf` ship, -1 none; `+0xc3` kind; `+0xc4` target;

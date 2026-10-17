@@ -9,6 +9,8 @@
 #include <stdexcept>
 
 #include "game/address.h"
+#include "game/cosmos.h"
+#include "game/race.h"
 #include "game/session.h"
 #include "game/ship.h"
 #include "gfx/vfx_poly.h"
@@ -452,33 +454,707 @@ bool BatModeWnd::fx_projectile() {
   return done;
 }
 
-// The effects still to port: they end at once (the action is applied
-// without its animation).
-bool BatModeWnd::fx_tractor() { return true; }
-bool BatModeWnd::fx_hyperswap() { return true; }
-bool BatModeWnd::fx_lane_blocker() { return true; }
-bool BatModeWnd::fx_condensor() { return true; }
-bool BatModeWnd::fx_remote_repair() { return true; }
-bool BatModeWnd::fx_grav_catapult() { return true; }
-bool BatModeWnd::fx_lane_magnetron() { return true; }
-bool BatModeWnd::fx_transfer() { return true; }
-bool BatModeWnd::fx_positron_bouncer() { return true; }
-bool BatModeWnd::fx_disperser() { return true; }
-bool BatModeWnd::fx_recaller() { return true; }
-bool BatModeWnd::fx_self_destruct() { return true; }
-bool BatModeWnd::fx_smart_bomb() { return true; }
+game::Ship& BatModeWnd::fx_ship() {
+  const BatControlWnd::Selection sel = control()->selection();
+  if (sel.kind != BatControlWnd::kObjectShip) {
+    throw std::logic_error("star system: a gizmo effect without a ship");
+  }
+  return core()->game->cosmos.ships[static_cast<std::size_t>(sel.object)];
+}
 
-void BatModeWnd::fx_draw_item(const Item& item) {
-  // The translucent sprites (`BatModeWnd_fx_draw_translucent` 0x15630):
-  // WHITE00..09 by the fade level.
+int BatModeWnd::fx_gizmo() {
+  const game::Session& s = *core();
+  const BatControlWnd::Selection sel = control()->selection();
+  const game::Ship& ship = fx_ship();
+  const auto slot = game::gizmo_slot_at(s, static_cast<game::ShipIndex>(sel.object), ship.action_slot);
+  return slot ? ship.slots[static_cast<std::size_t>(*slot)].gizmo : 0;
+}
+
+int BatModeWnd::fx_item_at(game::RawAddress raw) const {
+  const game::Session& s = *core();
+  if (const auto ship = game::ship_at(s, raw)) {
+    return find_item(ItemKind::kShip, *ship);
+  }
+  if (const auto planet = game::planet_at(s, raw)) {
+    return find_item(ItemKind::kPlanet, *planet);
+  }
+  if (const auto lane = game::lane_at(s, raw)) {
+    return find_item(ItemKind::kLaneEnd, *lane);
+  }
+  return -1;
+}
+
+void BatModeWnd::fx_add_ships(game::StarIndex star, int except) {
+  const game::Cosmos& c = core()->game->cosmos;
+  for (const game::ShipIndex i : game::cosmos_ships_at_star(c, c.stars[static_cast<std::size_t>(star)])) {
+    if (fx_count_ > 14) {
+      break;
+    }
+    const game::Ship& ship = c.ships[static_cast<std::size_t>(i)];
+    if (ship.location_kind != game::ShipLocation::kSystem || i == except) {
+      continue;
+    }
+    const int k = find_item(ItemKind::kShip, i);
+    Item& item = items_[static_cast<std::size_t>(k)];
+    item.flags |= kFlagNoLine | kFlagFxPosition;
+    item.fx_position = static_cast<std::uint8_t>(fx_count_);
+    fx_pos_[item.fx_position] = ship.position;
+    fx_items_[static_cast<std::size_t>(fx_count_++)] = k;
+  }
+}
+
+bool BatModeWnd::fx_tractor() {
+  game::Session* s = core();
+  const BatControlWnd::Selection sel = control()->selection();
+  const game::Cosmos& c = s->game->cosmos;
+  Vec3 shooter{};
+  float reach = 0;
+  int shooter_item = -1;
+  int target = -1;  // ship index
+  if (sel.kind == BatControlWnd::kObjectShip) {
+    const game::Ship& ship = c.ships[static_cast<std::size_t>(sel.object)];
+    if (ship.target_kind != game::kTargetShip) {
+      throw std::logic_error("star system: a tractor beam on no ship");
+    }
+    target = game::ship_at(*s, ship.target).value_or(-1);
+    shooter_item = find_item(ItemKind::kShip, sel.object);
+    shooter = ship.position;
+    reach = static_cast<float>(s->tables->gizmos.at(kGizmoTractorBeam).special1 << 5);
+  } else if (sel.kind == BatControlWnd::kObjectPlanet) {
+    const game::Planet& planet = c.planets[static_cast<std::size_t>(sel.object)];
+    target = game::ship_at(*s, planet.fire_target).value_or(-1);
+    shooter_item = find_item(ItemKind::kPlanet, sel.object);
+    shooter = planet.position;
+    reach = 3200.0F;
+  } else {
+    throw std::logic_error("star system: a tractor beam without a shooter");
+  }
+  if (target < 0) {
+    throw std::logic_error("star system: a tractor beam on no ship");
+  }
+  const game::Ship& pulled = c.ships[static_cast<std::size_t>(target)];
+  if (tick_ == 0) {
+    fx_count_ = 2;
+    phase_ = 0;
+    fx_items_[0] = kSpriteItem;
+    Item& beam = effect_sprite();
+    beam.kind = ItemKind::kBeam;
+    beam.object = shooter_item;
+    // The beam draws only with a shape slot: the original's item keeps a
+    // stale one.
+    if (beam.shapes == nullptr) {
+      beam.shapes = &file_shapes(0);
+    }
+    beam.flags |= kFlagNoLine | kFlagFxPosition;
+    beam.fx_position = 0;
+    fx_pos_[0] = shooter;
+    fx_items_[1] = find_item(ItemKind::kShip, target);
+    Item& item = items_[static_cast<std::size_t>(fx_items_[1])];
+    item.flags = kFlagNoLine | kFlagFxPosition;
+    item.fx_position = 1;
+    fx_pos_[1] = pulled.position;
+    wm_.services().sound.play_sfx(kSfxShield);
+  }
+  if (phase_ == 0) {
+    if (step_toward(fx_pos_[0], fx_pos_[1], 40.0F)) {
+      items_[static_cast<std::size_t>(fx_items_[1])].flags |= kFlagNoLine;
+      Vec3 dv = game::sub(fx_pos_[1], shooter);
+      const double left = game::length(dv) - d(reach);
+      float length = f32(left);
+      if (left < 64.0) {
+        length = 64.0F;
+      }
+      game::set_length(dv, length);
+      fx_pos_[2] = {f32(d(shooter[0]) + dv[0]), f32(d(shooter[1]) + dv[1]), f32(d(shooter[2]) + dv[2])};
+      phase_ = 1;
+    }
+    return false;
+  }
+  if (phase_ == 1) {
+    if (step_toward(fx_pos_[1], fx_pos_[2], 4.0F)) {
+      phase_ = 2;
+    }
+    fx_pos_[0] = fx_pos_[1];
+    return false;
+  }
+  return true;
+}
+
+bool BatModeWnd::fx_hyperswap() {
+  const game::Session& s = *core();
+  const game::Ship& ship = fx_ship();
+  const auto target = game::ship_at(s, ship.target);
+  if (tick_ == 0) {
+    fx_count_ = 2;
+    fx_items_[0] = find_item(ItemKind::kShip, control()->selection().object);
+    Item& user = items_[static_cast<std::size_t>(fx_items_[0])];
+    user.flags = kFlagCustomDraw | kFlagFxPosition;
+    user.fx_position = 0;
+    fx_pos_[0] = ship.position;
+    fx_items_[1] = target ? find_item(ItemKind::kShip, *target) : -1;
+    if (fx_items_[1] >= 0) {
+      Item& other = items_[static_cast<std::size_t>(fx_items_[1])];
+      other.flags = kFlagCustomDraw | kFlagFxPosition;
+      other.fx_position = 1;
+      fx_pos_[1] = s.game->cosmos.ships[static_cast<std::size_t>(*target)].position;
+    }
+  }
+  if (tick_ == 0x14) {
+    std::swap(fx_pos_[0], fx_pos_[1]);
+  } else if (tick_ == 0x29) {
+    return true;
+  }
+  return false;
+}
+
+bool BatModeWnd::fx_lane_blocker() {
+  const game::Ship& ship = fx_ship();
+  if (ship.target_kind != game::kTargetLane) {
+    throw std::logic_error("star system: a lane blocker on no lane");
+  }
+  const int g = fx_gizmo();
+  const EffectRow& row = effect_rows_.at(static_cast<std::size_t>(g));
+  if (tick_ == 0) {
+    fx_count_ = 2;
+    phase_ = 0;
+    fx_items_[0] = kSpriteItem;
+    Item& sprite = effect_sprite();
+    sprite.kind = ItemKind::kEffect;
+    sprite.flags = kFlagNoLine | kFlagFxPosition;
+    sprite.fx_position = 0;
+    fx_pos_[0] = ship.position;
+    set_item_file(sprite, row.shape1, 0);
+    fx_items_[1] = fx_item_at(ship.target);
+    wm_.services().sound.play_sfx(row.sfx1);
+  }
+  if (phase_ == 0) {
+    if (step_toward(fx_pos_[0], ship.action_point, 40.0F)) {
+      phase_ = 1;
+      effect_sprite().kind = ItemKind::kFree;
+      items_[static_cast<std::size_t>(fx_items_[1])].flags |= kFlagCustomDraw;
+      wm_.services().sound.play_sfx(row.sfx2);
+    }
+    return false;
+  }
+  return ++phase_ > 0x14;
+}
+
+bool BatModeWnd::fx_condensor() {
+  game::Session& s = *core();
+  const game::Cosmos& c = s.game->cosmos;
+  const game::Ship& ship = fx_ship();
+  const int g = fx_gizmo();
+  const bool mass = g == kGizmoMassCondensor;
+  int target = -1;
+  int first = 1;
+  if (mass) {
+    if (ship.target_kind != game::kTargetShip) {
+      throw std::logic_error("star system: a mass condensor on no ship");
+    }
+    target = game::ship_at(s, ship.target).value_or(-1);
+    first = 2;
+  }
+  const EffectRow& row = effect_rows_.at(static_cast<std::size_t>(g));
+  if (tick_ == 0) {
+    fx_count_ = 1;
+    if (mass) {
+      fx_count_ = 2;
+      fx_items_[0] = find_item(ItemKind::kShip, target);
+      fx_items_[1] = kSpriteItem;
+      Item& sprite = effect_sprite();
+      sprite.kind = ItemKind::kEffect;
+      sprite.flags = kFlagNoLine | kFlagFxPosition;
+      sprite.fx_position = 1;
+      fx_pos_[1] = ship.position;
+      set_item_file(sprite, row.shape1, 0);
+    } else {
+      fx_items_[0] = find_item(ItemKind::kStar, ship.location);
+    }
+    fx_add_ships(ship.location, target);
+    phase_ = 0;
+    wm_.services().sound.play_sfx(row.sfx1);
+  }
+  Item& centre = items_[static_cast<std::size_t>(fx_items_[0])];
+  switch (phase_) {
+    case 0:
+      if (mass) {
+        if (!step_toward(fx_pos_[1], c.ships[static_cast<std::size_t>(target)].position, 10.0F)) {
+          next_frame(effect_sprite());
+          return false;
+        }
+        effect_sprite().flags |= kFlagHidden;
+      }
+      phase_ = 1;
+      return false;
+    case 1:
+      centre.scale = f32(d(centre.scale) + d(0.04F));
+      condense_ = 0.0F;
+      if (centre.scale >= 2.0F) {
+        phase_ = 2;
+      }
+      return false;
+    case 2: {
+      const Vec3 at = mass ? c.ships[static_cast<std::size_t>(target)].position : Vec3{};
+      const game::Gizmo& gizmo = s.tables->gizmos.at(static_cast<std::size_t>(g));
+      const float pull = static_cast<float>(gizmo.special1);
+      const float minimum = static_cast<float>(gizmo.special2 << 5);
+      const double left = d(pull) - condense_;
+      float step = f32(left);
+      if (left > 0.2) {
+        step = 0.2F;
+      }
+      condense_ = f32(d(condense_) + step);
+      bool moved = false;
+      for (int i = first; i < fx_count_; ++i) {
+        Vec3& p = fx_pos_[items_[static_cast<std::size_t>(fx_items_[static_cast<std::size_t>(i)])].fx_position];
+        Vec3 dv = game::sub(p, at);
+        const double len = game::length(dv);
+        if (!(len > minimum)) {
+          continue;
+        }
+        const double shorter = d(f32(len)) - d(step) * d(32.0F);
+        float length = f32(shorter);
+        if (shorter >= minimum) {
+          moved = true;
+        } else {
+          length = minimum;
+        }
+        game::set_length(dv, length);
+        p = {f32(d(at[0]) + dv[0]), f32(d(at[1]) + dv[1]), f32(d(at[2]) + dv[2])};
+      }
+      if (condense_ >= pull || !moved) {
+        phase_ = 3;
+      }
+      return false;
+    }
+    default:
+      centre.scale = f32(d(centre.scale) + d(-0.04F));
+      if (1.0F >= centre.scale) {
+        centre.scale = 1.0F;
+        return true;
+      }
+      return false;
+  }
+}
+
+bool BatModeWnd::fx_remote_repair() {
+  const int g = fx_gizmo();
+  if (tick_ == 0) {
+    fx_count_ = 1;
+    fx_items_[0] = find_item(ItemKind::kShip, control()->selection().object);
+    items_[static_cast<std::size_t>(fx_items_[0])].flags |= kFlagCustomDraw;
+    phase_ = 0;
+    fade_ = 0;
+    wm_.services().sound.play_sfx(effect_rows_.at(static_cast<std::size_t>(g)).sfx1);
+  }
+  fade_ += tick_ & 1;
+  return tick_ == 0x24;
+}
+
+bool BatModeWnd::fx_grav_catapult() {
+  const game::Ship& ship = fx_ship();
+  const int g = fx_gizmo();
+  if (tick_ == 0) {
+    fx_count_ = 1;
+    fx_items_[0] = find_item(ItemKind::kShip, control()->selection().object);
+    Item& item = items_[static_cast<std::size_t>(fx_items_[0])];
+    item.flags |= kFlagNoLine | kFlagFxPosition;
+    item.fx_position = 0;
+    fx_pos_[0] = ship.position;
+    fx_pos_[1] = {-ship.position[0], -ship.position[1], -ship.position[2]};
+    phase_ = 0;
+    wm_.services().sound.play_sfx(effect_rows_.at(static_cast<std::size_t>(g)).sfx1);
+  }
+  const float to = f32(game::length(fx_pos_[1]));
+  const float at = f32(game::length(fx_pos_[0]));
+  float step = 0.0F;
+  if (1.0F < to) {
+    step = f32((d(to) - at) * d(96.0F) / to);
+  }
+  if (step < 3.2) {
+    step = 3.2F;
+  }
+  return step_toward(fx_pos_[0], fx_pos_[1], step);
+}
+
+bool BatModeWnd::fx_lane_magnetron() {
+  const game::Session& s = *core();
+  const game::Ship& ship = fx_ship();
+  if (ship.target_kind != game::kTargetLane) {
+    throw std::logic_error("star system: a lane magnetron on no lane");
+  }
+  const int g = fx_gizmo();
+  if (tick_ == 0) {
+    fx_count_ = 1;
+    fx_items_[0] = find_item(ItemKind::kShip, control()->selection().object);
+    Item& item = items_[static_cast<std::size_t>(fx_items_[0])];
+    item.flags |= kFlagNoLine | kFlagFxPosition;
+    item.fx_position = 0;
+    fx_pos_[0] = ship.position;
+    if (const auto lane = game::lane_at(s, ship.target)) {
+      const game::Lane& l = s.game->cosmos.lanes[static_cast<std::size_t>(*lane)];
+      fx_pos_[1] = ship.location == l.star_a ? l.end_a : l.end_b;
+    }
+    phase_ = 0;
+    wm_.services().sound.play_sfx(effect_rows_.at(static_cast<std::size_t>(g)).sfx1);
+  }
+  return step_toward(fx_pos_[0], fx_pos_[1], f32(static_cast<double>(tick_) * 3.2));
+}
+
+bool BatModeWnd::fx_transfer() {
+  const game::Session& s = *core();
+  const game::Ship& ship = fx_ship();
+  if (ship.target_kind != game::kTargetShip) {
+    throw std::logic_error("star system: a transfer to no ship");
+  }
+  const auto target = game::ship_at(s, ship.target);
+  const int g = fx_gizmo();
+  const EffectRow& row = effect_rows_.at(static_cast<std::size_t>(g));
+  if (tick_ == 0) {
+    fx_count_ = 3;
+    fx_items_[0] = find_item(ItemKind::kShip, control()->selection().object);
+    items_[static_cast<std::size_t>(fx_items_[0])].flags |= kFlagCustomDraw;
+    fx_items_[1] = kSpriteItem;
+    Item& sprite = effect_sprite();
+    sprite.kind = ItemKind::kEffect;
+    sprite.flags = kFlagNoLine | kFlagHidden | kFlagFxPosition;
+    sprite.fx_position = 1;
+    fx_pos_[1] = ship.position;
+    set_item_file(sprite, row.shape1, 0);
+    fx_items_[2] = target ? find_item(ItemKind::kShip, *target) : -1;
+    phase_ = 0;
+    fade_ = 0;
+    wm_.services().sound.play_sfx(row.sfx1);
+  }
+  if (phase_ == 0) {
+    fade_ += tick_ & 1;
+    if (fade_ == 0x12) {
+      items_[static_cast<std::size_t>(fx_items_[0])].flags &= static_cast<std::uint8_t>(~kFlagCustomDraw);
+      effect_sprite().flags &= static_cast<std::uint8_t>(~kFlagHidden);
+      phase_ = 1;
+      fade_ = 0;
+    }
+    return false;
+  }
+  if (phase_ == 1) {
+    if (step_toward(fx_pos_[1], s.game->cosmos.ships[static_cast<std::size_t>(*target)].position, 20.0F)) {
+      effect_sprite().flags |= kFlagHidden;
+      items_[static_cast<std::size_t>(fx_items_[2])].flags |= kFlagCustomDraw;
+      phase_ = 2;
+      return false;
+    }
+    next_frame(effect_sprite());
+    return false;
+  }
+  fade_ += tick_ & 1;
+  return fade_ == 0x12;
+}
+
+bool BatModeWnd::fx_positron_bouncer() {
+  game::Session& s = *core();
+  const game::Ship& ship = fx_ship();
+  if (ship.target_kind != game::kTargetShip) {
+    throw std::logic_error("star system: a positron bouncer on no ship");
+  }
+  const auto target = game::ship_at(s, ship.target);
+  const int g = fx_gizmo();
+  if (tick_ == 0) {
+    const EffectRow& row = effect_rows_.at(static_cast<std::size_t>(g));
+    fx_count_ = 2;
+    fx_items_[0] = kSpriteItem;
+    Item& sprite = effect_sprite();
+    sprite.kind = ItemKind::kEffect;
+    sprite.flags |= kFlagNoLine | kFlagFxPosition;
+    sprite.fx_position = 0;
+    fx_pos_[0] = ship.position;
+    set_item_file(sprite, row.shape1, 0);
+    fx_items_[1] = target ? find_item(ItemKind::kShip, *target) : -1;
+    Item& item = items_[static_cast<std::size_t>(fx_items_[1])];
+    item.flags |= kFlagNoLine | kFlagFxPosition;
+    item.fx_position = 1;
+    fx_pos_[1] = s.game->cosmos.ships[static_cast<std::size_t>(*target)].position;
+    Vec3 push = game::sub(fx_pos_[1], fx_pos_[0]);
+    game::set_length(push, static_cast<float>(s.tables->gizmos.at(static_cast<std::size_t>(g)).special1 << 5));
+    fx_pos_[2] = {f32(d(fx_pos_[1][0]) + push[0]), f32(d(fx_pos_[1][1]) + push[1]), f32(d(fx_pos_[1][2]) + push[2])};
+    phase_ = 0;
+    wm_.services().sound.play_sfx(row.sfx1);
+  }
+  if (phase_ == 0) {
+    next_frame(effect_sprite());
+    if (step_toward(fx_pos_[0], fx_pos_[1], 50.0F)) {
+      effect_sprite().flags |= kFlagHidden;
+      phase_ = 1;
+    }
+    return false;
+  }
+  const double far = game::length(game::sub(fx_pos_[2], fx_pos_[1])) * d(0.05F);
+  float step = f32(far);
+  if (far >= 3.2) {
+    if (step > 50.0F) {
+      step = 50.0F;
+    }
+  } else {
+    step = 3.2F;
+  }
+  return step_toward(fx_pos_[1], fx_pos_[2], step);
+}
+
+bool BatModeWnd::fx_disperser() {
+  game::Session& s = *core();
+  const game::Cosmos& c = s.game->cosmos;
+  const game::Ship& ship = fx_ship();
+  const int g = fx_gizmo();
+  const bool fleet = g == kGizmoFleetDisperser;
+  int centre_ship = control()->selection().object;
+  if (fleet) {
+    if (ship.target_kind != game::kTargetShip) {
+      throw std::logic_error("star system: a fleet disperser on no ship");
+    }
+    centre_ship = game::ship_at(s, ship.target).value_or(-1);
+  }
+  const game::Ship& centre = c.ships[static_cast<std::size_t>(centre_ship)];
+  if (tick_ == 0) {
+    fx_count_ = 2;
+    fx_items_[0] = find_item(ItemKind::kShip, centre_ship);
+    fx_items_[1] = kSpriteItem;
+    Item& sprite = effect_sprite();
+    sprite.kind = ItemKind::kFree;
+    if (fleet) {
+      sprite.kind = ItemKind::kEffect;
+      sprite.flags = kFlagNoLine | kFlagFxPosition;
+      sprite.fx_position = 1;
+      fx_pos_[1] = ship.position;
+      set_item_file(sprite, effect_rows_.at(kGizmoFleetDisperser).shape1, 0);
+    }
+    fx_add_ships(ship.location, centre_ship);
+    phase_ = fleet ? 0 : 1;
+    fade_ = 0;
+    wm_.services().sound.play_sfx(effect_rows_.at(static_cast<std::size_t>(g)).sfx1);
+    disperse_ = 0.0F;
+  }
+  switch (phase_) {
+    case 0:
+      next_frame(effect_sprite());
+      if (step_toward(fx_pos_[1], centre.position, 10.0F)) {
+        effect_sprite().flags |= kFlagHidden;
+        phase_ = 1;
+      }
+      return false;
+    case 1:
+      fade_ += tick_ & 1;
+      items_[static_cast<std::size_t>(fx_items_[0])].flags |= kFlagCustomDraw;
+      if (fade_ == 9) {
+        phase_ = 2;
+      }
+      return false;
+    case 2: {
+      const Vec3 at = centre.position;
+      const auto reach = static_cast<float>(s.tables->gizmos.at(static_cast<std::size_t>(g)).special1);
+      disperse_ = f32(d(disperse_) + d(0.2F));
+      bool moved = false;
+      for (int i = 2; i < fx_count_; ++i) {
+        Vec3& p = fx_pos_[items_[static_cast<std::size_t>(fx_items_[static_cast<std::size_t>(i)])].fx_position];
+        Vec3 dv = game::sub(p, at);
+        const double further = game::length(dv) * d(0.03125F) + d(0.2F);
+        float length = f32(further);
+        if (further < reach) {
+          moved = true;
+        } else {
+          length = reach;
+        }
+        game::set_length(dv, f32(d(length) * d(32.0F)));
+        p = {f32(d(at[0]) + dv[0]), f32(d(at[1]) + dv[1]), f32(d(at[2]) + dv[2])};
+      }
+      if (disperse_ >= reach || !moved) {
+        phase_ = 3;
+      }
+      return false;
+    }
+    default:
+      fade_ += tick_ & 1;
+      return fade_ == 0x12;
+  }
+}
+
+bool BatModeWnd::fx_recaller() {
+  const int g = fx_gizmo();
+  if (tick_ == 0) {
+    fx_count_ = 1;
+    fx_items_[0] = find_item(ItemKind::kShip, control()->selection().object);
+    items_[static_cast<std::size_t>(fx_items_[0])].flags |= kFlagCustomDraw;
+    phase_ = 0;
+    fade_ = 0;
+    wm_.services().sound.play_sfx(effect_rows_.at(static_cast<std::size_t>(g)).sfx1);
+  }
+  if (phase_ == 0) {
+    fade_ += (tick_ & 3) == 0 ? 1 : 0;
+    if (fade_ == 9) {
+      phase_ = 1;
+    }
+    return false;
+  }
+  Item& item = items_[static_cast<std::size_t>(fx_items_[0])];
+  item.scale = f32(d(item.scale) + d(-0.04F));
+  return d(item.scale) < 0.04;
+}
+
+bool BatModeWnd::fx_self_destruct() {
+  const game::Ship& ship = fx_ship();
+  if (tick_ == 0) {
+    fx_count_ = 2;
+    fx_items_[0] = find_item(ItemKind::kShip, control()->selection().object);
+    items_[static_cast<std::size_t>(fx_items_[0])].flags |= kFlagCustomDraw;
+    fx_items_[1] = kSpriteItem;
+    effect_sprite().kind = ItemKind::kFree;
+    phase_ = 0;
+    fade_ = 0;
+    wm_.services().sound.play_sfx(effect_rows_.at(kGizmoSelfDestruct).sfx1);
+  }
+  Item& sprite = effect_sprite();
+  if (phase_ == 0) {
+    fade_ += tick_ & 1;
+    if (fade_ == 9) {
+      items_[static_cast<std::size_t>(fx_items_[0])].flags |= kFlagHidden;
+      sprite.kind = ItemKind::kEffect;
+      sprite.flags |= kFlagFxPosition;
+      sprite.fx_position = 1;
+      fx_pos_[1] = ship.position;
+      set_item_file(sprite, effect_rows_.at(kGizmoSelfDestruct).shape1, 0);
+      sprite.scale = 5.0F;
+      phase_ = 1;
+    }
+    return false;
+  }
+  bool done = false;
+  if (phase_ == 1) {
+    if ((tick_ & 3) == 0 && next_frame(sprite)) {
+      done = true;
+    }
+    sprite.scale = 5.0F;
+  }
+  return done;
+}
+
+bool BatModeWnd::fx_smart_bomb() {
+  game::Session& s = *core();
+  game::Cosmos& c = s.game->cosmos;
+  const game::Ship& ship = fx_ship();
+  const EffectRow& row = effect_rows_.at(kGizmoSmartBomb);
+  // The bomb flies as the display item 0 (the move cursor's).
+  Item& bomb = items_[0];
+  if (tick_ == 0) {
+    fx_count_ = 1;
+    fx_items_[0] = 0;
+    bomb.kind = ItemKind::kFree;
+    bomb.flags |= kFlagNoLine | kFlagFxPosition;
+    bomb.fx_position = 0;
+    fx_pos_[0] = ship.position;
+    phase_ = 0;
+    wm_.services().sound.play_sfx(row.sfx1);
+  }
+  if (bomb.kind == ItemKind::kFree) {
+    // The next ship at war with the bomb's owner, from the one after the
+    // last hit (the phase's low byte).
+    const std::vector<game::ShipIndex> ships =
+        game::cosmos_ships_at_star(c, c.stars[static_cast<std::size_t>(ship.location)]);
+    const game::Race& owner = c.races[static_cast<std::size_t>(ship.owner)];
+    for (int i = phase_ & 0xff; i < static_cast<int>(ships.size()); ++i) {
+      const game::Ship& other = c.ships[static_cast<std::size_t>(ships[static_cast<std::size_t>(i)])];
+      if (other.location_kind == game::ShipLocation::kSystem && other.owner != ship.owner &&
+          owner.relation[static_cast<std::size_t>(other.owner)] == game::kWar) {
+        fx_count_ = 2;
+        fx_pos_[1] = other.position;
+        bomb.kind = ItemKind::kEffect;
+        fx_items_[1] = find_item(ItemKind::kShip, ships[static_cast<std::size_t>(i)]);
+        set_item_file(bomb, row.shape1, 0);
+        phase_ = i + 1;
+        break;
+      }
+    }
+    if (bomb.kind == ItemKind::kFree) {
+      return true;
+    }
+  }
+  if ((phase_ & 0x100) == 0) {
+    next_frame(bomb);
+    if (step_toward(fx_pos_[0], fx_pos_[1], 50.0F)) {
+      Item& hit = items_[static_cast<std::size_t>(fx_items_[1])];
+      const std::uint8_t result = game::ship_take_damage(s, c.ships[static_cast<std::size_t>(hit.object)], false,
+                                                         s.tables->gizmos.at(kGizmoSmartBomb).special1,
+                                                         static_cast<game::RaceIndex>(ship.owner));
+      int shape = kFileShield;
+      int sfx = kSfxShield;
+      if ((result & game::kActionDestroyed) != 0) {
+        shape = kFileDestroy;
+        sfx = kSfxExplosion;
+        hit.flags |= kFlagHidden;
+      } else if ((result & game::kActionPenetrated) != 0) {
+        shape = row.shape2;
+        sfx = row.sfx2;
+      }
+      set_item_file(bomb, shape, 0);
+      wm_.services().sound.play_sfx(sfx);
+      phase_ |= 0x100;
+    }
+  } else if ((tick_ & 3) == 0 && next_frame(bomb)) {
+    bomb.kind = ItemKind::kFree;
+    phase_ &= 0xff;
+  }
+  return false;
+}
+
+void BatModeWnd::fx_draw_item(const Item& shown) {
+  Item& item = items_[static_cast<std::size_t>(&shown - items_.data())];
+  Image8& screen = wm_.screen();
+  switch (effect_) {
+    case kFxHyperswap: {
+      // BatModeWnd_fx_draw_hyperswap 0x13a28: shrinking to the swap, then
+      // growing back.
+      if (item.kind != ItemKind::kShip || item.shapes == nullptr) {
+        throw std::logic_error("star system: a hyperswap draw of no ship");
+      }
+      const float size = f32((tick_ < 0x14 ? 20.0 - tick_ : tick_ + -20.0) * 0.05);
+      const std::int32_t scale = game::chop(static_cast<double>(item.draw_scale) * size);
+      vfx_shape_transform_draw(screen, pane_, item.shapes->at(static_cast<std::size_t>(item.frame)), item.x, item.y,
+                               scale, scale);
+      return;
+    }
+    case kFxLaneBlocker: {
+      // BatModeWnd_fx_draw_lane_blocker 0x13ad8: the lane end, then a field
+      // growing to tick 10 and shrinking with the blocker's shape.
+      int level = phase_;
+      if (level > 10) {
+        level = 20 - level;
+        set_item_file(item, effect_rows_.at(kGizmoLaneBlocker).shape2, 2);
+      }
+      if (item.shapes != nullptr) {
+        vfx_shape_transform_draw(screen, pane_, item.shapes->at(static_cast<std::size_t>(item.frame)), item.x, item.y,
+                                 item.draw_scale, item.draw_scale);
+      }
+      const std::int32_t width = level * (item.bx1 - item.bx0);
+      const int r = game::chop(static_cast<double>(static_cast<std::uint32_t>(item.draw_scale)) * (1.0 / 65536.0) *
+                               static_cast<double>(width) * d(0.05F));
+      vfx_ellipse_fill(screen, pane_, item.x, item.y, r, r, 0x96);
+      return;
+    }
+    case kFxRemoteRepair:
+    case kFxTransfer:
+    case kFxDisperser:
+    case kFxRecaller:
+    case kFxSelfDestruct:
+      break;
+    default:
+      throw std::logic_error("star system: a custom draw without its effect");
+  }
+  // BatModeWnd_fx_draw_translucent 0x15630: WHITE00..09 by the fade level.
   int level = fade_;
   if (level > 9) {
     level = 18 - level;
   }
   level = std::clamp(level, 0, 9);
   if (item.shapes != nullptr) {
-    vfx_shape_transform_draw(wm_.screen(), pane_, item.shapes->at(static_cast<std::size_t>(item.frame)), item.x,
-                             item.y, item.draw_scale, item.draw_scale,
+    vfx_shape_transform_draw(screen, pane_, item.shapes->at(static_cast<std::size_t>(item.frame)), item.x, item.y,
+                             item.draw_scale, item.draw_scale,
                              &wm_.services().gsystem.haze_tables().at(static_cast<std::size_t>(11 + level)));
   }
 }

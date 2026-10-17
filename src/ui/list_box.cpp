@@ -215,10 +215,16 @@ void ListBox::track_mouse(int x, int y) {
 void ListBox::click(int x, int y, int button) {
   if (x < pane_.x1 - bar_width_) {
     if (hover_ != -1) {
-      if (sound_ != -1) {
-        wm_.services().sound.play_sfx(sound_);
+      // In help mode (`0x11f0e8`, the window manager's flag) the row asks
+      // for its help instead, without the sound.
+      if (!wm_.help_mode()) {
+        if (sound_ != -1) {
+          wm_.services().sound.play_sfx(sound_);
+        }
+        wm_.send_event(parent_, kEventListPick, hover_, button);
+      } else {
+        wm_.send_event(parent_, kEventListHelp, hover_, button);
       }
-      wm_.send_event(parent_, kEventListPick, hover_, button);
       track_mouse(x, y);
     }
   } else if (scroll_bar_) {

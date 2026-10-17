@@ -39,6 +39,9 @@ constexpr int kListRowHeight = 0x73;
 constexpr int kCountFrame = 2;
 constexpr int kAtmosphereFrame = 10;
 
+// The remake's variant tag, under the settings' summary.
+constexpr Pane kVariantTagPane{0x11, 0x16b, 0x144, 0x174};
+
 // The click sound (`soundfx.txt` 0).
 constexpr int kClickSound = 0;
 
@@ -155,6 +158,7 @@ bool NewGameWnd::handle_event(int type, int a, int b) {
       }
       game.generate_galaxy(GameSession::kDensityStars[static_cast<std::size_t>(settings_.star_density)],
                            settings_.species_count, settings_.species);
+      rebuild_map();
       draw(kDrawNormal);
       set_button_frame(0, settings_.star_density, true);
       return true;
@@ -163,6 +167,7 @@ bool NewGameWnd::handle_event(int type, int a, int b) {
         settings_.species_count = 3;
       }
       game.new_galaxy(settings_.species_count, settings_.species);
+      rebuild_map();
       draw(kDrawNormal);
       set_button_frame(1, settings_.species_count + kCountFrame, true);
       return true;
@@ -182,6 +187,12 @@ bool NewGameWnd::handle_event(int type, int a, int b) {
       return true;
     default:
       return GWindow::handle_event(type, a, b);
+  }
+}
+
+void NewGameWnd::rebuild_map() {
+  if (auto* map = dynamic_cast<CosWnd*>(wm_.find_window("COSMOSWnd"))) {
+    map->build_items();
   }
 }
 
@@ -257,6 +268,12 @@ void NewGameWnd::draw(int mode) {
                                                wm_.static_string(kStringCounts + settings_.species_count - 3),
                                                wm_.static_string(kStringAtmospheres + settings_.atmosphere)});
   large.draw_wrapped(screen, 0, 0, summary, kFontWipe | kFontCenterH, kDefault, 0, 0xfa);
+  // The remake: a game of another variant than Standard says so (the
+  // Standard screen stays the original's).
+  if (const game::Variant variant = wm_.services().game.variant(); variant != game::Variant::kStandard) {
+    small.pane() = kVariantTagPane;
+    small.draw_wrapped(screen, 0, 0, game::variant_info(variant).label, kFontCenterH, kDefault, 0xff, 0);
+  }
 
   // The colour bar: the player's flag in each colour, the chosen one framed.
   Pane flag{0x17d, 0x1b1, 0x18b, 0x1cf};

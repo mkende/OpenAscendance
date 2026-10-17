@@ -266,8 +266,9 @@ void EndGameWnd::draw(int /*mode*/) {
       ship_level, ships / (ship_level + 1), cosmos.ship_count,
       [&](int k) { return cosmos.ships[static_cast<std::size_t>(k)].owner == player; },
       [&](int k) {
-        return std::pair{kRaceShips + player,
-                         static_cast<int>(static_cast<std::int8_t>(cosmos.ships[static_cast<std::size_t>(k)].hull_size))};
+        return std::pair{
+            kRaceShips + player,
+            static_cast<int>(static_cast<std::int8_t>(cosmos.ships[static_cast<std::size_t>(k)].hull_size))};
       },
       kShipsX0, kShipsY0, kShipsX1, kShipsY1);
   const int planet_level = haze_level(game::race_count_planets(cosmos, me));
@@ -291,8 +292,8 @@ void EndGameWnd::draw(int /*mode*/) {
       y += kResearchStep;
     }
     if ((research.items[static_cast<std::size_t>(i)].known_mask & (1u << player)) != 0) {
-      vfx_shape_transform_draw(screen, pane_, wm_.shared_shapes(kResearchShapes).at(static_cast<std::size_t>(i)), x,
-                               y, kThird, kThird);
+      vfx_shape_transform_draw(screen, pane_, wm_.shared_shapes(kResearchShapes).at(static_cast<std::size_t>(i)), x, y,
+                               kThird, kThird);
     }
     x += kResearchStep;
   }

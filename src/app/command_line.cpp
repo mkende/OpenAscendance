@@ -183,8 +183,12 @@ CommandLine parse_command_line(std::span<const std::string_view> args) {
   CommandLine o;
   for (std::size_t i = 0; i < args.size(); ++i) {
     const std::string_view a = args[i];
-    if (a == "--sharp") {
-      o.scaling = Scaling::kSharp;
+    if (a == "--sharp" || a == "--smooth") {
+      o.scaling = a == "--sharp" ? Scaling::kSharp : Scaling::kSmooth;
+      continue;
+    }
+    if (a == "--fullscreen" || a == "--window") {
+      o.fullscreen = a == "--fullscreen";
       continue;
     }
     if (a == "--setup") {
@@ -215,6 +219,11 @@ CommandLine parse_command_line(std::span<const std::string_view> args) {
       o.save_dir = value;
     } else if (a == "--trace") {
       o.trace = value;
+    } else if (a == "--variant") {
+      o.variant = game::parse_variant(value);
+      if (!o.variant) {
+        throw std::runtime_error(std::format("unknown variant '{}'", value));
+      }
     } else {
       throw usage_error();
     }

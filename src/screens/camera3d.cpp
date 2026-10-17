@@ -1,7 +1,7 @@
 #include "screens/camera3d.h"
 
-#include <cmath>
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 
 namespace oa {

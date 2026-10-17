@@ -37,8 +37,8 @@ class GameCoreSession final : public GameSession {
   GameCoreSession(const GameFiles& files, std::filesystem::path save_dir, bool install_saves);
 
   // `main` (0x1c424): the start-up galaxy of seed `time_seed`, or of
-  // `cosmos_txt` (`cosmos.txt`) when given; its hops only when no
-  // `RESUME.GAM` exists.
+  // `cosmos_txt` (`cosmos.txt`) when given, under the rules of the new
+  // game's variant; its hops only when no `RESUME.GAM` exists.
   void start(std::uint32_t time_seed, const game::CosmosTxt* cosmos_txt);
 
   // The file of save `slot` (1..20: `NN.SAV`, `kResumeSlot`: `RESUME.GAM`).
@@ -64,6 +64,7 @@ class GameCoreSession final : public GameSession {
   void assign_colors(int color) override;
   void begin_game(const NewGameSettings& settings) override;
   int atmosphere() const override;
+  game::Variant variant() const override { return session_.game->variant; }
 
   game::Session* core() override { return &session_; }
 

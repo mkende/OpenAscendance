@@ -73,6 +73,8 @@ GameCoreSession::GameCoreSession(const GameFiles& files, std::filesystem::path s
       session_(*tables_) {}
 
 void GameCoreSession::start(std::uint32_t time_seed, const game::CosmosTxt* cosmos_txt) {
+  // The variants draw differently from the start (`tests/oracle/corpus/MANIFEST.md`).
+  session_.game->variant = new_game_variant();
   game::program_start(session_, time_seed, cosmos_txt, resume_exists());
 }
 
@@ -200,7 +202,11 @@ bool GameCoreSession::load_bytes(std::span<const std::uint8_t> data, const std::
 
 bool GameCoreSession::resume_exists() const { return find_save(kResumeSlot).has_value(); }
 
-void GameCoreSession::open_new_game(const NewGameSettings& /*settings*/) { setup_.activate(session_); }
+void GameCoreSession::open_new_game(const NewGameSettings& /*settings*/) {
+  // The galaxy generation applies the variant's attitude shifts.
+  session_.game->variant = new_game_variant();
+  setup_.activate(session_);
+}
 
 void GameCoreSession::generate_galaxy(int stars, int races, int species) {
   game::cosmos_generate(session_, static_cast<std::int16_t>(stars), static_cast<std::int16_t>(races),

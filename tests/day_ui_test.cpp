@@ -26,6 +26,7 @@
 #include "audio/mixer.h"
 #include "audio/sound_system.h"
 #include "core/install.h"
+#include "game/address.h"
 #include "game/new_game.h"
 #include "game/save.h"
 #include "game_data.h"
@@ -99,6 +100,7 @@ struct Program {
                        .warp_pointer = [this](int x, int y) { input.warp(x, y); }}),
            test::full_factory()) {
     wm.setup_race_shapes();
+    wm.start_pending_fade();
     gs.load_palette(files, "DATA\\game.pal", 0, 256);
     gs.set_dac_range(0, 256);
     wm.set_screen(0, false);
@@ -210,7 +212,33 @@ std::vector<std::uint8_t> without_stale_header(std::vector<std::uint8_t> save) {
     }
   }
   std::fill_n(save.begin() + 0x6c, 8, 0);
+  // The star map's window state ends with 4 stale stack bytes of
+  // `CosWnd_serialize`: 0 in the saves of games up to 50 stars, other
+  // values in larger ones (a star index left on the stack).
+  std::fill_n(save.end() - static_cast<std::ptrdiff_t>(game::kWindowStateSize) + 0xba, 4, 0);
   return save;
+}
+
+// The bytes of a save with its stale list slots cleared: the stars' lane
+// and planet lists and the races' AI targets past their counts (the
+// tutorials' games hold their author's process's pointers there, which the
+// original writes back as they were), and the header's stale bytes.
+std::vector<std::uint8_t> without_stale_slots(const std::vector<std::uint8_t>& save) {
+  game::SaveImage image = game::parse_save(save);
+  for (game::Star& star : image.stars) {
+    for (std::size_t i = static_cast<std::size_t>(star.lane_count); i < star.lanes.size(); ++i) {
+      star.lanes[i] = game::kNone;
+    }
+    for (std::size_t i = static_cast<std::size_t>(star.planet_count); i < star.planets.size(); ++i) {
+      star.planets[i] = game::kNone;
+    }
+  }
+  for (game::Race& race : image.races) {
+    for (std::size_t i = static_cast<std::size_t>(race.target_count); i < race.targets.size(); ++i) {
+      race.targets[i] = game::kNone;
+    }
+  }
+  return without_stale_header(game::serialize_save(image));
 }
 
 // A run of the corpus (`tests/oracle/corpus/cases.txt`, PATCH).
@@ -247,8 +275,13 @@ bool replay_run(const GameFiles& files, const CorpusRun& c, int max_passes) {
     if (name.ends_with(".SAV") || name == "RESUME.GAM") {
       INFO(name);
       REQUIRE(std::filesystem::exists(ours));
-      CHECK(first_difference(without_stale_header(read_file(ours)), without_stale_header(read_file(entry.path()))) ==
-            -1);
+      if (c.tutorial) {
+        CHECK(first_difference(without_stale_slots(read_file(ours)), without_stale_slots(read_file(entry.path()))) ==
+              -1);
+      } else {
+        CHECK(first_difference(without_stale_header(read_file(ours)), without_stale_header(read_file(entry.path()))) ==
+              -1);
+      }
     } else if (name.ends_with(".GIF")) {
       INFO(name);
       // The remake writes the screenshots in lower case.
@@ -261,6 +294,195 @@ bool replay_run(const GameFiles& files, const CorpusRun& c, int max_passes) {
     }
   }
   return true;
+}
+
+// The shipped day-820 game (the install's `RESUME.GAM`) on the star map,
+// under the window manager.
+struct Game820 {
+  explicit Game820(const GameFiles& files) : session(files, dir.path, true), rig(files, &session, dir.path) {
+    REQUIRE(session.has_game());
+    rig.wm.set_screen(1, true);
+  }
+
+  game::Session& core() { return *session.core(); }
+  game::Cosmos& cosmos() { return core().game->cosmos; }
+  EventWnd& box() { return dynamic_cast<EventWnd&>(*rig.wm.find_window("EVENTWIN")); }
+  // The first ship of the player in a system.
+  const game::Ship& player_ship_in_system() {
+    for (std::int16_t i = 0; i < cosmos().ship_count; ++i) {
+      const game::Ship& ship = cosmos().ships[static_cast<std::size_t>(i)];
+      if (ship.owner == core().player_race && ship.location_kind == game::ShipLocation::kSystem) {
+        return ship;
+      }
+    }
+    FAIL("no ship of the player in a system");
+    return cosmos().ships[0];
+  }
+  std::string species(int race) { return rig.wm.static_string(101 + cosmos().races.at(race).species); }
+
+  TempDir dir;
+  GameCoreSession session;
+  test::UiRig rig;
+};
+
+std::string name_of(const auto& name) { return std::string(game::name_view(name)); }
+
+TEST_CASE("game-event boxes: texts and pictures of the events", "[screens][content]") {
+  OA_REQUIRE_GAME_FILES(files);
+  Game820 g(files);
+  EventWnd& box = g.box();
+  const game::Session& core = g.core();
+  const std::string player = g.species(core.player_race);
+  const auto text = [&] { return box.content().elements[0].text; };
+  const auto picture = [&](int element) {
+    const HelpElement& e = box.content().elements[static_cast<std::size_t>(element)];
+    return std::pair(e.shape_index, e.frame);
+  };
+
+  box.set_event({game::EventCode::kResearchDone, 5, 0});
+  CHECK(text() == player + " Science Report: Our researchers have discovered " +
+                      name_of(core.game->research.items[5].name) + ". ");
+  CHECK(picture(1) == std::pair(31, 5));
+
+  const game::Ship& ship = g.player_ship_in_system();
+  const game::ShipIndex s = game::ship_index(g.cosmos(), ship);
+  const game::Star& star = g.cosmos().stars[static_cast<std::size_t>(ship.location)];
+  box.set_event({game::EventCode::kSystemDiscovered, s, 0});
+  const auto plural = [](int n) { return n == 1 ? "" : "s"; };
+  CHECK(text() == std::format("{}: We have discovered the {} System.  It contains {} planet{} and {} star lane{}.  "
+                              "We're awaiting further orders. ",
+                              name_of(ship.name), name_of(star.name), star.planet_count, plural(star.planet_count),
+                              star.lane_count, plural(star.lane_count)));
+  CHECK(picture(1) == std::pair(14 + core.player_race, static_cast<int>(ship.hull_size)));
+
+  box.set_event({game::EventCode::kHostileShips, s, 2});
+  CHECK(text() == std::format("{}: Entered {} system.  Hostile ships ({}) have been detected. ", name_of(ship.name),
+                              name_of(star.name), g.species(2)));
+
+  // The arriving race's ship sprite, of the player's ship's hull.
+  box.set_event({game::EventCode::kHostileShipEntered, s, 3});
+  CHECK(text() == std::format("A hostile ship belonging to the {} has just entered the {} system. ", g.species(3),
+                              name_of(star.name)));
+  CHECK(picture(1) == std::pair(14 + 3, static_cast<int>(ship.hull_size)));
+
+  const game::Planet& planet = g.cosmos().planets[0];
+  box.set_event({game::EventCode::kBuildingComplete, 0, 2});
+  CHECK(text() == std::format("Construction of {} is complete on {}. \n\n{} has {} free population for additional "
+                              "projects. ",
+                              core.tables->planitems.items[2].name, name_of(planet.name), name_of(planet.name),
+                              planet.population - planet.used_population));
+  CHECK(picture(1) == std::pair(30, 2));
+  CHECK(picture(2) == std::pair(29, planet.type * 5 + planet.size));
+
+  box.set_event({game::EventCode::kRemainingMoves, ship.location, 7});
+  CHECK(text().starts_with("There are remaining moves in the " + name_of(star.name) + " System"));
+
+  box.set_event({game::EventCode::kRaceWantsToTalk, 1, 0});
+  CHECK(text() == "The " + g.species(1) + " would like to speak with you. ");
+  CHECK(picture(1) == std::pair(1, 0));
+
+  // Two pages: its OK button turns the page first.
+  box.set_event({game::EventCode::kBasicsKnown, 0, 0});
+  CHECK(box.content().pages == 1);
+  CHECK(text().starts_with(player + " Scientist Report"));
+}
+
+TEST_CASE("game events: one box per pass on the star map, Esc or a button, the screen it leads to",
+          "[screens][content]") {
+  OA_REQUIRE_GAME_FILES(files);
+  Game820 g(files);
+  game::Session& core = g.core();
+  const game::Ship& ship = g.player_ship_in_system();
+  const game::ShipIndex s = game::ship_index(g.cosmos(), ship);
+  core.post_event(game::EventCode::kResearchDone, 5);
+  core.post_event(game::EventCode::kShipArrived, s);
+  core.post_event(game::EventCode::kBuildingComplete, 0, 2);
+  // Esc on the first box (no jump), the second one's "Go to System" on the
+  // next pass (a box opens after the input of its pass); the third box
+  // waits on the star map until the System Display is left, in the pass
+  // of that Esc: its "Go to Planet".
+  g.rig.pending.push_back(InputEvent{.type = EventType::kKeyUp});
+  g.rig.pending.push_back(InputEvent{.type = EventType::kKeyDown, .key = SDLK_ESCAPE});
+  g.rig.pending.push_back(InputEvent{.type = EventType::kKeyUp});
+  g.rig.queue_click(170, 352);
+  g.rig.pass();
+  CHECK(g.box().event()->code == game::EventCode::kResearchDone);
+  CHECK(g.rig.wm.current_screen() == 1);
+  g.rig.pass();
+  CHECK(g.box().event()->code == game::EventCode::kShipArrived);
+  // The jump is the next pass's message.
+  g.rig.pass();
+  CHECK(g.rig.wm.current_screen() == 16);
+  CHECK(g.cosmos().selected_star == ship.location);
+  REQUIRE(g.session.has_game_events());
+  g.rig.pending.push_back(InputEvent{.type = EventType::kKeyDown, .key = SDLK_ESCAPE});
+  g.rig.queue_click(170, 352);
+  g.rig.drain();
+  CHECK_FALSE(g.session.has_game_events());
+  CHECK(g.box().event()->code == game::EventCode::kBuildingComplete);
+  g.rig.pass();
+  CHECK(g.rig.wm.current_screen() == 17);
+  CHECK(g.cosmos().selected_planet == 0);
+}
+
+TEST_CASE("Next Turn: the contested systems' prompt, Next Day or Go to System; the auto next turn stops at a box",
+          "[screens][content]") {
+  OA_REQUIRE_GAME_FILES(files);
+  Game820 g(files);
+  game::Session& core = g.core();
+  game::Cosmos& cosmos = g.cosmos();
+  // War with the species of a ship sharing a system with the player's.
+  const game::Ship& ship = g.player_ship_in_system();
+  const game::Star& star = cosmos.stars[static_cast<std::size_t>(ship.location)];
+  int enemy = -1;
+  for (int r = 0; r < cosmos.race_count; ++r) {
+    if (r != core.player_race && (star.ships_mask & (1 << r)) != 0) {
+      enemy = r;
+    }
+  }
+  REQUIRE(enemy != -1);
+  cosmos.races[core.player_race].relation[static_cast<std::size_t>(enemy)] = game::kWar;
+  cosmos.races[static_cast<std::size_t>(enemy)].relation[core.player_race] = game::kWar;
+  const int day = cosmos.day;
+  // Next Turn: "remaining moves" (the box) -> Next Day.
+  const GWindow& next = *g.rig.wm.find_window("NEXTTURN");
+  const int x = (next.pane().x0 + next.pane().x1) / 2;
+  const int y = (next.pane().y0 + next.pane().y1) / 2;
+  g.rig.move(x, y);
+  g.rig.queue_click(x, y);
+  for (int i = 0; i < 8; ++i) {
+    g.rig.queue_click(330, 352);  // Next Day, on every contested system
+  }
+  g.rig.drain();
+  CHECK(g.box().event()->code == game::EventCode::kRemainingMoves);
+  CHECK(g.box().event()->b == 7);
+  CHECK(cosmos.day == day + 1);
+  // The next day: Go to System on the first prompt.
+  g.rig.wm.find_window("NEXTTURN");
+  g.rig.queue_click(x, y);
+  g.rig.queue_click(170, 352);
+  g.rig.drain();
+  CHECK(g.box().event()->code == game::EventCode::kRemainingMoves);
+  CHECK(g.rig.wm.current_screen() == 16);
+  CHECK(cosmos.day == day + 1);
+}
+
+TEST_CASE("the end of the game: screen 9, the game events dropped", "[screens][content]") {
+  OA_REQUIRE_GAME_FILES(files);
+  Game820 g(files);
+  game::Session& core = g.core();
+  game::Cosmos& cosmos = g.cosmos();
+  for (int r = 0; r < cosmos.race_count; ++r) {
+    if (r != core.player_race) {
+      cosmos.races[static_cast<std::size_t>(r)].extinct = -1;
+    }
+  }
+  core.post_event(game::EventCode::kAbilityCharged);
+  g.rig.wm.post_message(kMessageNextTurn, 0, 0);
+  g.rig.pass();
+  CHECK(cosmos.ending == 2);
+  CHECK_FALSE(g.session.has_game_events());
+  CHECK(g.rig.wm.current_screen() == 9);
 }
 
 TEST_CASE("tutorials replayed to their end leave the original's game", "[screens][content][oracle]") {
@@ -299,6 +521,9 @@ TEST_CASE("days played through the user interface end in the original's saves", 
            {.run = "corpus/resume820_shipdesign_patch", .keep_saves = true},
            {.run = "corpus/actions_patch_s1"},
            {.run = "corpus/resume820_battle_patch", .keep_saves = true},
+           // `tests/oracle/event_boxes_*.txt`: screenshots of the boxes.
+           {.run = "events/boxes_820_patch", .keep_saves = true},
+           {.run = "events/boxes_new_patch_s1"},
        }) {
     if (only != nullptr && c.run.find(only) == std::string::npos) {
       continue;

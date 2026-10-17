@@ -13,7 +13,8 @@ load/save lists); milestone 2 (in progress), the game screens over the game
 core: the star map (its new-game, species and diplomacy variants), the saves
 with their window state, the planet and research screens; the diplomacy
 (milestone 6): species selection, negotiation, intelligence and the special
-abilities window.
+abilities window; the System Display (milestone 5): the 3D star-system view
+and the battles played in it.
 
 ## Layout
 
@@ -37,8 +38,8 @@ the functions they port with their `PATCH.EXE` address:
   player and window, `GameSession` (the game core as the screens see it)
   and `GameCoreSession` (it over `src/game`: saves, new game, the day).
 - `src/screens`: the screens (new game, species history, load/save and
-  tutorial lists, the star map, planets, research, negotiation,
-  intelligence).
+  tutorial lists, the star map, the System Display, planets, research,
+  negotiation, intelligence).
 - `src/app`: `main`, the command line and the install setup.
 
 ## Build
@@ -56,13 +57,33 @@ packages, [RELEASING.md](RELEASING.md) the releases.
 
 ## Run
 
-    build/debug/src/app/open_ascendance [--data <install dir> | --setup] [--sharp]
+    build/debug/src/app/open_ascendance [--data <install dir> | --setup]
+        [--sharp | --smooth] [--fullscreen | --window] [--variant standard|antagonizer]
 
 Without `--data` the game asks once for the install folder and remembers it.
 Alt+Enter toggles fullscreen. `--screenshot <file.bmp> [--frames N]` with
 `--keys <k1,k2,...>` runs headless and saves a frame, `--save-dir <dir>`
 keeping its saves and Alt+G screenshots, and `--seed N` starts the galaxy of
 the oracle's runs ([`src/app/command_line.h`](src/app/command_line.h)).
+
+## Options
+
+The opening menu has an **Options** button, the remake's own (the seven
+original buttons are a little shorter to make room). Its screen sets:
+
+- **Game variant**: the rules and opponents of the next new game, Standard
+  (Ascendancy 1.6.5) or Antagonizer (the Antagonizer edition's). A game keeps
+  its variant in its saves; the new-game screen names a variant other than
+  Standard under its summary.
+- **Display**: a window or the full screen (Alt+Enter also switches).
+- **Scaling**: smooth or sharp pixels.
+- **Music** and **Sound effects**: on or off (also Alt+M and Alt+N).
+
+OK (Enter) keeps the settings, Cancel (Esc) leaves them; Shift and a click on
+a row explains it. They are kept in `options.cfg` in the user folder (the
+sound in the original's `ascend.cfg`, which stays readable by the original);
+`--sharp`/`--smooth`, `--fullscreen`/`--window` and `--variant` override them
+for a run. While a tutorial plays, the opening menu has its original layout.
 
 ## Tests
 

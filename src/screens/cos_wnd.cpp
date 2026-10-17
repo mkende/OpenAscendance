@@ -939,6 +939,11 @@ bool CosWnd::save_state(std::span<std::uint8_t> out) const {
   const std::array<std::uint8_t, Camera3d::kSize> camera = camera_.serialize();
   std::copy(camera.begin(), camera.end(), out.begin() + kStateCamera);
   put_i32(out, kStateFov, static_cast<std::uint32_t>(game::chop(fov_)));
+  // The record's last 4 bytes are stale stack bytes of `CosWnd_serialize`:
+  // 0 in the original's saves of galaxies up to 50 stars, also after loading
+  // a game holding others (the tutorial `galactic.tsv`); in larger galaxies
+  // the third byte holds what looks like a star index (not reproduced).
+  put_i32(out, kStateFov + 4, 0);
   return true;
 }
 

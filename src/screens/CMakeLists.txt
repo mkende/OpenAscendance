@@ -21,6 +21,8 @@ oa_add_module(oa_screens
     end_game_wnd.cpp
     # The new-game set-up (status.cpp).
     new_game_wnd.cpp
+    # The remake's Options button and options screen.
+    options_wnd.cpp
     # The planet screen and its square dialog (planwin.cpp, psqwin.cpp).
     plan_wnd.cpp
     # The research screen (reswin.cpp).

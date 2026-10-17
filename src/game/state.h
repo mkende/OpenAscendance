@@ -19,6 +19,7 @@
 #include <string_view>
 
 #include "game/float_math.h"
+#include "game/variant.h"
 
 namespace oa::game {
 
@@ -342,10 +343,6 @@ struct Research {
   std::int32_t self_managed = 0;                        // +0x1d6a 0 / -1
   std::int32_t basics_done = 0;                         // +0x1d6e 0 / -1
 };
-
-// Game variants (`docs/HANDOFF.md`): the rules and AI of `PATCH.EXE`
-// v1.6.5 or of `ANTAG.EXE`.
-enum class Variant : std::uint32_t { kStandard = 0, kAntagonizer = 1 };
 
 // Everything a save holds about the game: the cosmos, the research state
 // and the saved globals.

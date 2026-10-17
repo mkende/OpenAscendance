@@ -41,6 +41,7 @@ enum WindowEvent : int {
   kEventScrollDown = 0x192,
   kEventScrollStop = 0x193,
   kEventListPick = 0x1c01,  // a list row picked: (row, 4/5) to the parent
+  kEventListHelp = 0x1c02,  // a list row clicked in help mode: (row, 0xc)
 };
 
 // The `draw` modes: 0 normal, 2 not hot, 3 hot.
@@ -129,6 +130,9 @@ class GWindow {
       items_[index].flags = frame;
     }
   }
+  // The WINITEMS entries (the remake's opening menu moves them).
+  const std::vector<WindowItem>& items() const { return items_; }
+  void set_items(std::vector<WindowItem> items) { items_ = std::move(items); }
   int frame() const { return frame_; }
   void set_frame(int frame) { frame_ = frame; }
   const ShapeTable* shape_table() const { return shapes_; }

@@ -22,6 +22,7 @@
 #include "platform/clock.h"
 #include "platform/input.h"
 #include "platform/screenshot.h"
+#include "screens/options_wnd.h"
 #include "screens/screens.h"
 #include "ui/game_core_session.h"
 #include "ui/winmgr.h"
@@ -48,15 +49,18 @@ struct SdlQuitGuard {
 
 // The SDL host of the game: the window, the clock, the input and the sound
 // output, and the software mouse pointer (the MOUSE module's).
-class Host {
+class Host final : public DisplayControl {
  public:
   Host(const GameOptions& options, const GameFiles& files)
       : options_(options),
         headless_(options.screenshot.has_value()),
-        display_(edition::kName, 2, options.scaling),
+        display_(edition::kName, 2, options.settings.scaling),
         clock_(headless_),
         pending_(options.keys.begin(), options.keys.end()) {
     if (!headless_) {
+      if (options.settings.fullscreen) {
+        display_.set_fullscreen(true);
+      }
       try {
         audio_ = std::make_unique<AudioDevice>(mixer_);
       } catch (const std::runtime_error& e) {
@@ -68,6 +72,12 @@ class Host {
   }
 
   Clock& clock() { return clock_; }
+  // The window settings of the options screen (none in a headless run).
+  DisplayControl* display_control() { return headless_ ? nullptr : this; }
+  bool fullscreen() const override { return display_.fullscreen(); }
+  void set_fullscreen(bool fullscreen) override { display_.set_fullscreen(fullscreen); }
+  Scaling scaling() const override { return display_.scaling(); }
+  void set_scaling(Scaling scaling) override { display_.set_scaling(scaling); }
   Input& input() { return input_; }
   // The mixer when there is a sound output (headless runs have none).
   Mixer* mixer() { return headless_ || audio_ ? &mixer_ : nullptr; }
@@ -157,6 +167,8 @@ void run(const GameOptions& options, const GameFiles& files) {
   // The start-up galaxy (`srand(time(NULL))`, `cosmos.txt`), before the
   // windows. Headless runs read no save of the install.
   GameCoreSession game(files, options.user_dir, !options.screenshot.has_value());
+  RemakeOptions settings = options.settings;
+  game.set_new_game_variant(settings.variant);
   std::optional<game::CosmosTxt> cosmos_txt;
   if (options.seed) {
     cosmos_txt = game::CosmosTxt{.stars = 50, .races = 7, .seed = *options.seed, .species = {}};
@@ -194,6 +206,11 @@ void run(const GameOptions& options, const GameFiles& files) {
                                factory);
   WinMgr& wm = *wm_holder;
   wm.setup_race_shapes();
+  if (!options.trace) {
+    // A trace of the original clicks on the original opening menu.
+    install_options(
+        wm, OptionsContext{.options = &settings, .file = options.settings_file, .display = host.display_control()});
+  }
 
   gs.fade_window_colors(VgaPalette{}, kLogoFadeOut);
   wm.start_pending_fade();

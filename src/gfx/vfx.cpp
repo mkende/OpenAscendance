@@ -284,6 +284,73 @@ void vfx_ellipse_draw(Image8& window, const Pane& pane, int x, int y, int rx, in
   }
 }
 
+void vfx_ellipse_fill(Image8& window, const Pane& pane, int x, int y, int rx, int ry, std::uint8_t color) {
+  if (rx == 0 || ry == 0) {
+    vfx_line_draw(window, pane, x - rx, y - ry, x + rx, y + ry, color);
+    return;
+  }
+  const ClipBox c = clip_box(window, pane);
+  if (c.x1 < c.x0 || c.y1 < c.y0) {
+    return;
+  }
+  const int cx = x + pane.x0;
+  const int cy = y + pane.y0;
+  const auto spans = [&](int px, int py) {
+    if (cx + px < c.x0 || cx - px > c.x1) {
+      return;
+    }
+    const int x0 = std::max(cx - px, c.x0);
+    const int x1 = std::min(cx + px, c.x1);
+    for (const int ey : {cy + py, cy - py}) {
+      if (ey >= c.y0 && ey <= c.y1) {
+        for (int ex = x0; ex <= x1; ++ex) {
+          window.set(ex, ey, color);
+        }
+      }
+    }
+  };
+  const std::uint32_t b2 = static_cast<std::uint32_t>(ry) * static_cast<std::uint32_t>(ry);
+  const std::uint32_t two_b2 = b2 << 1;
+  const std::uint32_t a2 = static_cast<std::uint32_t>(rx) * static_cast<std::uint32_t>(rx);
+  const std::uint32_t two_a2 = a2 << 1;
+  int px = 0;
+  int py = ry;
+  int rows = ry;
+  std::uint32_t ex = 0;
+  std::uint32_t ey = two_a2 * static_cast<std::uint32_t>(ry);
+  std::uint32_t p = (a2 >> 2) + b2 - a2 * static_cast<std::uint32_t>(ry);
+  const auto negative = [](std::uint32_t v) { return static_cast<std::int32_t>(v) < 0; };
+  while (negative(ex - ey)) {
+    spans(px, py);
+    if (!negative(p)) {
+      --py;
+      --rows;
+      ey -= two_a2;
+      p -= ey;
+    }
+    ++px;
+    ex += two_b2;
+    p += ex + b2;
+  }
+  const std::uint32_t d = a2 - b2;
+  p += static_cast<std::uint32_t>(
+      static_cast<std::int32_t>(static_cast<std::uint32_t>(static_cast<std::int32_t>(d) >> 1) + d - ex - ey) >> 1);
+  for (;;) {
+    spans(px, py);
+    if (negative(p)) {
+      ++px;
+      ex += two_b2;
+      p += ex;
+    }
+    --py;
+    ey -= two_a2;
+    p -= ey - a2;
+    if (--rows < 0) {
+      return;
+    }
+  }
+}
+
 void vfx_shape_draw(Image8& window, const Pane& pane, const Shape& shape, int x, int y) {
   draw_rle(shape, x + pane.x0 + shape.x0, y + pane.y0 + shape.y0, clip_box(window, pane),
            [&](int px, int py, std::uint8_t v) { window.set(px, py, v); });

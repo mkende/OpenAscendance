@@ -47,20 +47,20 @@ constexpr std::int32_t kFov = 35;
 constexpr float kNear = 1.0F;
 constexpr float kFar = 100000.0F;
 // The float constants of the view (`batmode.cpp` data).
-constexpr float kDegToRad = 0.017453292F;  // 0x85874
-constexpr float kHalf = 0.5F;              // 0x804c1, 0x804c9, 0x8049e
-constexpr float kThird = 0.33333334F;      // 0x804c5, the eye height
-constexpr float kTwo = 2.0F;               // 0x804cd
-constexpr float kZoomUnit = 0.01F;         // 0x804e8
-constexpr float kScaleMin = 16384.0F;      // 0x804a2
-constexpr float kScaleMax = 131072.0F;     // 0x804ae
-constexpr float kGridDrop = 0.125F;        // 0x804a6, 0x80656: the grid below the target
-constexpr float kRadiusMargin = 32.0F;     // 0x805fa
+constexpr float kDegToRad = 0.017453292F;     // 0x85874
+constexpr float kHalf = 0.5F;                 // 0x804c1, 0x804c9, 0x8049e
+constexpr float kThird = 0.33333334F;         // 0x804c5, the eye height
+constexpr float kTwo = 2.0F;                  // 0x804cd
+constexpr float kZoomUnit = 0.01F;            // 0x804e8
+constexpr float kScaleMin = 16384.0F;         // 0x804a2
+constexpr float kScaleMax = 131072.0F;        // 0x804ae
+constexpr float kGridDrop = 0.125F;           // 0x804a6, 0x80656: the grid below the target
+constexpr float kRadiusMargin = 32.0F;        // 0x805fa
 constexpr float kOneScale = 1.0F / 65536.0F;  // 0x803a5 / 0x803a9
-constexpr float kGuardMargin = 2.0F;       // 0x803b9
-constexpr float kStarDepthOffset = -440.0F;  // 0x8066d
-constexpr float kPickX = 0.00125F;         // 0x8045d, 0x80465
-constexpr float kPickZ = 0.002F;           // 0x80461
+constexpr float kGuardMargin = 2.0F;          // 0x803b9
+constexpr float kStarDepthOffset = -440.0F;   // 0x8066d
+constexpr float kPickX = 0.00125F;            // 0x8045d, 0x80465
+constexpr float kPickZ = 0.002F;              // 0x80461
 // The pointer's off-view marker (`+0x1d0e` = 1e6): no move cursor.
 constexpr float kNoCursor = 1000000.0F;
 
@@ -180,9 +180,7 @@ void BatModeWnd::load_effects() {
 
 void BatModeWnd::load_haze() {
   const GameFiles& files = wm_.services().files;
-  const auto load = [&](const std::string& name) {
-    haze_.push_back(parse_haze_table(files.load(name), name));
-  };
+  const auto load = [&](const std::string& name) { haze_.push_back(parse_haze_table(files.load(name), name)); };
   for (int i = 0; i < 31; ++i) {
     load(std::format("DATA\\BLACK{:02d}.HAZ", i));
   }
@@ -505,9 +503,8 @@ void BatModeWnd::project_scene() {
   Vec3 pos{};  // stale between items, as the original's locals
   for (std::size_t k = 0; k < item_count_; ++k) {
     Item& item = items_[k];
-    if (item.kind == ItemKind::kCursor &&
-        !((state_ == State::kMovePoint || state_ == State::kMoveElevation) && hovered_ == -1 &&
-          move_point_[1] != kNoCursor)) {
+    if (item.kind == ItemKind::kCursor && !((state_ == State::kMovePoint || state_ == State::kMoveElevation) &&
+                                            hovered_ == -1 && move_point_[1] != kNoCursor)) {
       continue;
     }
     if (item.kind == ItemKind::kFree) {
@@ -630,8 +627,8 @@ void BatModeWnd::draw_list(const std::vector<int>& list) {
     if ((item.kind == ItemKind::kBackdrop && backdrops_on_ == 0) || item.kind == ItemKind::kFree) {
       continue;
     }
-    const bool line = item.line != 0 && (elevation_ != 0 || item.kind == ItemKind::kCursor) &&
-                      (item.flags & kFlagNoLine) == 0;
+    const bool line =
+        item.line != 0 && (elevation_ != 0 || item.kind == ItemKind::kCursor) && (item.flags & kFlagNoLine) == 0;
     if (line) {
       std::uint8_t color = item.above != 0 ? kLineAbove : kLineBelow;
       if (item.kind == ItemKind::kCursor && state_ == State::kMoveElevation) {
@@ -715,14 +712,16 @@ void BatModeWnd::draw_grid() {
   r2 = f32(d(r2) * r2);
   const std::int32_t n = game::chop(d(grid_radius_) * d(0.03125F)) + 2;
   const std::int32_t start = ((n / 2) << 5) + 16;
-  const std::int32_t m = game::chop(d(grid_radius_) * d(0.025F)) + 2;
+  const std::int32_t m = game::chop(d(grid_radius_) * d(0.00625F)) + 2;
   std::int32_t bright = (m / 2) * 160 + 16;
   if (bright > start) {
     bright -= 160;
   }
   const bool minor = grid_radius_ < 960.0F;
   const float grid_y = f32(d(distance_) * d(kGridDrop));
-  const auto project = [&](const Vec3& v) { return project_point(transform_mat34(camera_.view, v), camera_.focal, cx_, cy_); };
+  const auto project = [&](const Vec3& v) {
+    return project_point(transform_mat34(camera_.view, v), camera_.focal, cx_, cy_);
+  };
   for (int pass = 0; pass < 2; ++pass) {
     float c = static_cast<float>(start);
     int bright_index = -1;
@@ -791,7 +790,8 @@ void BatModeWnd::draw_stars() {
     } else if (depth > -220) {
       shade = 2;
     }
-    vfx_shape_draw(wm_.screen(), pane_, map->star_shapes().at(static_cast<std::size_t>(star.type * 4 + shade)), p.x, p.y);
+    vfx_shape_draw(wm_.screen(), pane_, map->star_shapes().at(static_cast<std::size_t>(star.type * 4 + shade)), p.x,
+                   p.y);
   }
 }
 
@@ -809,7 +809,8 @@ void BatModeWnd::draw_caption() {
   };
   switch (item.kind) {
     case ItemKind::kStar:
-      text = format_s(wm_.static_string(kStringSun), game::name_view(c.stars[static_cast<std::size_t>(item.object)].name));
+      text =
+          format_s(wm_.static_string(kStringSun), game::name_view(c.stars[static_cast<std::size_t>(item.object)].name));
       break;
     case ItemKind::kPlanet: {
       const game::Planet& planet = c.planets[static_cast<std::size_t>(item.object)];
@@ -1074,7 +1075,7 @@ void BatModeWnd::select_from_control() {
   const BatControlWnd::Selection sel = ctrl->selection();
   const int i = find_item(sel.kind == BatControlWnd::kObjectShip ? ItemKind::kShip : ItemKind::kPlanet, sel.object);
   if (i < 0) {
-    throw std::logic_error("star system: the selection has no display item");
+    return;
   }
   selected_ = i;
   const Item& item = items_[static_cast<std::size_t>(i)];
@@ -1178,7 +1179,7 @@ bool BatModeWnd::handle_event(int type, int a, int b) {
         } else if (state_ == State::kMoveElevation) {
           state_ = State::kIdle;
           if (BatControlWnd* ctrl = control()) {
-            ctrl->execute(BatControlWnd::kObjectPoint, 0);
+            ctrl->execute(BatControlWnd::kObjectPoint, 0, BatControlWnd::stale_from_view_point(b));
           }
           selected_ = -1;
           build_scene();
@@ -1250,7 +1251,7 @@ bool BatModeWnd::handle_event(int type, int a, int b) {
     case kMessageZoomIn:
     case kMessageZoomOut: {
       if (!active_) {
-        throw std::logic_error("star system: a camera button of an inactive view");
+        return true;
       }
       int bits = 0;
       std::uint8_t v = static_cast<std::uint8_t>(actions_);

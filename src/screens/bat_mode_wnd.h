@@ -18,6 +18,7 @@
 #include <span>
 #include <vector>
 
+#include "game/state.h"
 #include "gfx/vfx_poly.h"
 #include "screens/camera3d.h"
 #include "ui/winmgr.h"
@@ -95,7 +96,7 @@ class BatModeWnd final : public GWindow {
     // +5 the shape table (null: none, slot 0xffff) and +7 its frame.
     const ShapeTable* shapes = nullptr;
     std::int32_t frame = 0;
-    float scale = 1.0F;         // +0xb
+    float scale = 1.0F;           // +0xb
     std::int32_t draw_scale = 0;  // +0xf, 16.16
     // +0x13..+0x19 the frame's opaque box (`vfx_shape_bounds`).
     std::int16_t bx0 = 0;
@@ -261,10 +262,21 @@ class BatModeWnd final : public GWindow {
   // The effect sprite (display item 1, the scene's free one) set up as
   // effect item `slot` at effect position `position`.
   Item& effect_sprite();
+  // The acting ship of an effect (the BatControlWnd's selection) and the
+  // gizmo of its action slot.
+  game::Ship& fx_ship();
+  int fx_gizmo();
+  // The display item of the ship (`kind` 0), planet (1) or lane (2) at the
+  // runtime address `raw`, -1 for none.
+  int fx_item_at(game::RawAddress raw) const;
+  // The effects moving a crowd of ships (`fx_condensor`, `fx_disperser`):
+  // every ship in space at `star` but `except` added as an effect item at
+  // the next effect position.
+  void fx_add_ships(game::StarIndex star, int except);
 
   // --- Resources.
-  std::uint8_t background_ = 0;  // +0x4f2e BACKGRNDCOLOR
-  int cursor_shape_ = 2;         // +0xb8 CURSORSHAPE
+  std::uint8_t background_ = 0;            // +0x4f2e BACKGRNDCOLOR
+  int cursor_shape_ = 2;                   // +0xb8 CURSORSHAPE
   std::vector<std::string> effect_files_;  // +0x19c6 (batfx.txt shape files)
   std::vector<EffectRow> effect_rows_;     // +0x1a92 / +0x1bce
   std::vector<HazeTable> haze_;            // +0x19be
@@ -284,30 +296,30 @@ class BatModeWnd final : public GWindow {
   Vec3 move_point_{};                    // +0x1d0a
 
   // --- The camera (saved).
-  std::array<Vec3, kMaxStars> star_positions_{};                // +0xbe
-  std::array<std::array<float, 9>, kMaxStars> star_rotations_;  // +0x56e
-  std::array<std::int32_t, kMaxStars> star_visited_{};          // +0x137e
-  std::array<Vec3, kMaxStars> star_targets_{};                  // +0x150e
-  Vec3 target_{};                                               // +0x1d1e
-  Camera3d camera_;                                             // +0x4e46
-  Vec3 default_position_{};                                     // +0x4ede
+  std::array<Vec3, kMaxStars> star_positions_{};                      // +0xbe
+  std::array<std::array<float, 9>, kMaxStars> star_rotations_;        // +0x56e
+  std::array<std::int32_t, kMaxStars> star_visited_{};                // +0x137e
+  std::array<Vec3, kMaxStars> star_targets_{};                        // +0x150e
+  Vec3 target_{};                                                     // +0x1d1e
+  Camera3d camera_;                                                   // +0x4e46
+  Vec3 default_position_{};                                           // +0x4ede
   std::array<float, 9> default_rotation_{1, 0, 0, 0, 1, 0, 0, 0, 1};  // +0x4eea
-  float near_limit_ = 0;        // +0x4f0e
-  float far_limit_ = 0;         // +0x4f12
-  float distance_ = 0;          // +0x4f16
-  float default_distance_ = 0;  // +0x4f1a
-  float radius_ = 0;            // +0x4f1e scene radius
-  std::int16_t cx_ = 0;         // +0x4f22 projection centre
-  std::int16_t cy_ = 0;         // +0x4f24
-  std::int32_t fov_ = 0;        // +0x4f26 degrees
-  float grid_radius_ = 0;       // +0x4f2a
-  std::uint32_t actions_ = 0;   // +0x4f2f rotate/zoom bits (1 rotate, 2 right, 4 zoom, 8 out)
+  float near_limit_ = 0;                                              // +0x4f0e
+  float far_limit_ = 0;                                               // +0x4f12
+  float distance_ = 0;                                                // +0x4f16
+  float default_distance_ = 0;                                        // +0x4f1a
+  float radius_ = 0;                                                  // +0x4f1e scene radius
+  std::int16_t cx_ = 0;                                               // +0x4f22 projection centre
+  std::int16_t cy_ = 0;                                               // +0x4f24
+  std::int32_t fov_ = 0;                                              // +0x4f26 degrees
+  float grid_radius_ = 0;                                             // +0x4f2a
+  std::uint32_t actions_ = 0;  // +0x4f2f rotate/zoom bits (1 rotate, 2 right, 4 zoom, 8 out)
   // The toggles (0 / -1): grid, unknown, elevation lines, foot quads,
   // backdrops.
-  std::int32_t grid_ = -1;        // +0x503a
-  std::int32_t unknown_503e_ = 0;  // +0x503e
-  std::int32_t elevation_ = -1;   // +0x5042
-  std::int32_t quads_on_ = -1;    // +0x5046
+  std::int32_t grid_ = -1;          // +0x503a
+  std::int32_t unknown_503e_ = 0;   // +0x503e
+  std::int32_t elevation_ = -1;     // +0x5042
+  std::int32_t quads_on_ = -1;      // +0x5046
   std::int32_t backdrops_on_ = -1;  // +0x504a
 
   // --- The effect.
@@ -315,10 +327,13 @@ class BatModeWnd final : public GWindow {
   std::int32_t tick_ = 0;       // +0x4f38
   std::int32_t phase_ = 0;      // +0x4f3c
   std::int32_t fade_ = 0;       // +0x4f40 the translucent sprites' level
+  // The condensors' and dispersers' progress (globals 0x8a0c0, 0x8a0c4).
+  float condense_ = 0;
+  float disperse_ = 0;
   std::array<int, kMaxEffectItems> fx_items_{};  // +0x4f44
   std::array<Vec3, kMaxEffectItems> fx_pos_{};   // +0x4f80
-  std::int16_t fx_count_ = 0;   // +0x5034
-  bool skip_ = false;           // +0x5036
+  std::int16_t fx_count_ = 0;                    // +0x5034
+  bool skip_ = false;                            // +0x5036
 };
 
 }  // namespace oa

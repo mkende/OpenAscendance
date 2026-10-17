@@ -205,11 +205,14 @@ TEST_CASE("the windows' state of the saves round-trips through the windows", "[s
     // The Antagonizer games get the variant trailer after the window state.
     const std::size_t end = std::min(original.size(), saved.size());
     REQUIRE(end >= game::kWindowStateSize);
-    const std::vector<std::uint8_t> a(original.end() - static_cast<std::ptrdiff_t>(game::kWindowStateSize),
-                                      original.end());
-    const std::vector<std::uint8_t> b(saved.begin() + static_cast<std::ptrdiff_t>(original.size()) -
-                                          static_cast<std::ptrdiff_t>(game::kWindowStateSize),
-                                      saved.begin() + static_cast<std::ptrdiff_t>(original.size()));
+    std::vector<std::uint8_t> a(original.end() - static_cast<std::ptrdiff_t>(game::kWindowStateSize),
+                                original.end());
+    std::vector<std::uint8_t> b(saved.begin() + static_cast<std::ptrdiff_t>(original.size()) -
+                                    static_cast<std::ptrdiff_t>(game::kWindowStateSize),
+                                saved.begin() + static_cast<std::ptrdiff_t>(original.size()));
+    // The star map's 4 stale stack bytes (`CosWnd::save_state`) are not
+    // kept.
+    std::fill_n(a.begin() + 0xba, 4, 0);
     CHECK(a == b);
   }
 }

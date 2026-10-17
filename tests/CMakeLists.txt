@@ -28,10 +28,14 @@ add_executable(oa_tests
   star_map_test.cpp
   # The planet screen and its square dialog.
   planet_screen_test.cpp
+  # The System Display (star-system view and battles).
+  star_system_test.cpp
   # The end-of-game screen.
   end_game_test.cpp
   # The research screen.
   research_screen_test.cpp
+  # The System Display's effect animations.
+  star_system_fx_test.cpp
   # The planet status list.
   status_screen_test.cpp
   # The species selection, negotiation and intelligence screens and the
@@ -44,6 +48,9 @@ add_executable(oa_tests
   day_ui_test.cpp
   # The command line and the install choice.
   app_test.cpp
+  # The remake's options: the opening menu's button, the options screen,
+  # options.cfg.
+  options_test.cpp
 )
 target_link_libraries(oa_tests PRIVATE oa_core oa_assets oa_gfx oa_audio oa_platform oa_ui oa_screens oa_game oa_app
   Catch2::Catch2WithMain SDL3::Headers)

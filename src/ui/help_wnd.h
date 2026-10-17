@@ -4,6 +4,8 @@
 // message 5 (`recon/notes/ui.md`, "Help system").
 #pragma once
 
+#include <cstdint>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -31,6 +33,9 @@ class HelpWnd : public GWindow {
   // deactivated) and places the window for the current screen. Throws
   // `DataError` when the topic is missing.
   void open_topic(std::string_view file, std::string_view topic);
+  // The same with the help file's content `data` (the remake's own help
+  // texts), `file` naming it in the errors.
+  void open_topic(std::string_view file, std::span<const std::uint8_t> data, std::string_view topic);
   const std::string& topic() const { return topic_; }
   const HelpTopic& content() const { return content_; }
   // The loaded topic, for the screens that fill its texts and pictures in

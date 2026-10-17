@@ -1,12 +1,14 @@
 #include "game/save.h"
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cstring>
 #include <format>
 #include <optional>
 #include <stdexcept>
 #include <string_view>
+#include <tuple>
 
 #include "core/byte_reader.h"
 #include "core/error.h"
@@ -137,7 +139,9 @@ class Reader {
   void pointer(std::int16_t& index, const ArrayLayout& array) { index = resolve(in_.u32(), array); }
   void index32(std::int16_t& index) { index = checked_index(in_.i32(), "index"); }
 
-  std::int16_t resolve(RawAddress raw, const ArrayLayout& array) const {
+  // `stale`: a slot past its list's count, `kNone` when it points nowhere
+  // in the cosmos.
+  std::int16_t resolve(RawAddress raw, const ArrayLayout& array, bool stale = false) const {
     if (raw == 0) {
       return kNone;
     }
@@ -155,6 +159,9 @@ class Reader {
       if (const auto other = element(*foreign_)) {
         return *other;
       }
+    }
+    if (stale) {
+      return kNone;
     }
     in_.fail(std::format("pointer 0x{:x} is not a {} of the cosmos at 0x{:x}", raw, array.name, cosmos_));
   }
@@ -228,6 +235,28 @@ void research_record(IO& io, T& r) {
   io.expect(start, 0x1d72);
 }
 
+// A list of pointers followed by its count (`i16`). The slots past the
+// count keep whatever the saving process had there: pointers into the
+// cosmos of another process (the tutorials' games) are read as none.
+template <typename IO, typename L, typename C>
+void pointer_list(IO& io, L& list, C& count, const ArrayLayout& array) {
+  if constexpr (IO::kReading) {
+    std::array<std::uint32_t, std::tuple_size_v<L>> raw{};
+    for (auto& v : raw) {
+      io.u32(v);
+    }
+    io.i16(count);
+    for (std::size_t i = 0; i < raw.size(); ++i) {
+      list[i] = io.resolve(raw[i], array, static_cast<std::int64_t>(i) >= count);
+    }
+  } else {
+    for (auto& v : list) {
+      io.pointer(v, array);
+    }
+    io.i16(count);
+  }
+}
+
 template <typename IO, typename T>
 void star_record(IO& io, T& s) {
   const std::size_t start = io.pos();
@@ -241,14 +270,8 @@ void star_record(IO& io, T& s) {
   io.u8(s.explored_mask);
   io.u32(s.flags);
   io.chars(s.name);
-  for (auto& lane : s.lanes) {
-    io.pointer(lane, kLanes);
-  }
-  io.i16(s.lane_count);
-  for (auto& planet : s.planets) {
-    io.pointer(planet, kPlanets);
-  }
-  io.i16(s.planet_count);
+  pointer_list(io, s.lanes, s.lane_count, kLanes);
+  pointer_list(io, s.planets, s.planet_count, kPlanets);
   io.i32(s.battle_done);
   io.expect(start, 0x60);
 }
@@ -394,10 +417,7 @@ void race_record(IO& io, T& r) {
   io.u8(r.color);
   io.i32(r.extinct);
   io.index32(r.home);
-  for (auto& target : r.targets) {
-    io.pointer(target, kStars);
-  }
-  io.i16(r.target_count);
+  pointer_list(io, r.targets, r.target_count, kStars);
   io.u8(r.ability);
   io.i32(r.ability_charge);
   for (auto& b : r.unused_1a2) {

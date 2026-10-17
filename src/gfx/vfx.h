@@ -43,6 +43,11 @@ void vfx_pixel_write(Image8& window, const Pane& pane, int x, int y, std::uint8_
 // a zero radius draws the line (x - rx, y - ry)-(x + rx, y + ry).
 void vfx_ellipse_draw(Image8& window, const Pane& pane, int x, int y, int rx, int ry, std::uint8_t color);
 
+// `vfx_ellipse_fill` (0x5a799): the filled ellipse of radii `rx`, `ry`
+// centred on (x, y) of `pane`, one span per row of the outline's midpoint
+// walk (clipped); a zero radius draws the line as `vfx_ellipse_draw`.
+void vfx_ellipse_fill(Image8& window, const Pane& pane, int x, int y, int rx, int ry, std::uint8_t color);
+
 // `vfx_shape_draw` (0x57f4c): draws `shape` with its hotspot at (x, y) of
 // `pane`; transparent pixels leave the window as it is. Throws `DataError`
 // when its rows are malformed.

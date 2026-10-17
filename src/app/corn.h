@@ -15,11 +15,15 @@
 #include "core/install.h"
 #include "platform/display.h"
 #include "platform/input_event.h"
+#include "ui/options.h"
 
 namespace oa {
 
 struct GameOptions {
-  Scaling scaling = Scaling::kSmooth;
+  // The options screen's settings at the start (the command line's
+  // overrides applied), and their file (`options.cfg`; empty: not written).
+  RemakeOptions settings;
+  std::filesystem::path settings_file;
   // Input fed one step per main-loop pass from the start.
   std::vector<InputEvent> keys;
   // Screenshot mode: runs headless (SDL dummy drivers, a virtual clock) until

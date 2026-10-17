@@ -27,6 +27,10 @@ constexpr int kButtonRow = 0x32;
 HelpWnd::HelpWnd(WinMgr& wm, const WindowRecord& record, const ShapeTable* shapes) : GWindow(wm, record, shapes) {}
 
 void HelpWnd::open_topic(std::string_view file, std::string_view topic) {
+  open_topic(file, wm_.services().files.load(file), topic);
+}
+
+void HelpWnd::open_topic(std::string_view file, std::span<const std::uint8_t> data, std::string_view topic) {
   file_ = file;
   topic_ = topic;
   page_ = 0;
@@ -35,8 +39,7 @@ void HelpWnd::open_topic(std::string_view file, std::string_view topic) {
   shapes_ = &wm_.shared_shapes(kHelpShapes);
   frame_ = 0;
   // CENTERPOS and BPOS use the rectangle of the previous placement.
-  content_ = parse_help_topic(wm_.services().files.load(file_), topic_, file_, (pane_.x1 - pane_.x0) / 2,
-                              (pane_.y1 - kButtonRow - pane_.y0) / 2);
+  content_ = parse_help_topic(data, topic_, file_, (pane_.x1 - pane_.x0) / 2, (pane_.y1 - kButtonRow - pane_.y0) / 2);
   for (std::size_t i = 0; i < content_.buttons.size() && i < children_.size(); ++i) {
     const HelpButton& b = content_.buttons[i];
     GWindow* child = children_[i];

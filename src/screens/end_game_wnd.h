@@ -23,9 +23,9 @@ namespace oa {
 // The texts of an ending file for a rank, converted as drawn (line ends and
 // `_` as spaces, `@` as line breaks).
 struct EndingText {
-  std::string description;  // ENDDESC
+  std::string description;      // ENDDESC
   std::string congratulations;  // CONGRAT
-  std::string rank;  // line `rank` (0..9) of RANKS
+  std::string rank;             // line `rank` (0..9) of RANKS
 };
 
 // Reads the sections ENDDESC, CONGRAT and RANKS of an ending file `data`

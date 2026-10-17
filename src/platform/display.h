@@ -42,6 +42,8 @@ class Display {
 
   bool fullscreen() const;
   void set_fullscreen(bool fullscreen);
+  Scaling scaling() const;
+  void set_scaling(Scaling scaling);
 
  private:
   struct Impl;

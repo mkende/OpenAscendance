@@ -4,7 +4,8 @@
 // - `parse_save` / `serialize_save` convert between the file and a
 //   `SaveImage`, the records exactly as written (counts, stale bytes, the
 //   raw pointers resolved to indices with the writer's cosmos address). The
-//   conversion is lossless: `serialize_save(parse_save(f)) == f`.
+//   conversion is lossless (`serialize_save(parse_save(f)) == f`) but for
+//   the stale list slots pointing into another process's cosmos (below).
 // - `save_game` / `load_game` move a `SaveImage` from and to a session as
 //   `Game_save` 0x4f458 / `Game_load` 0x4f3c0 (`Cosmos_save` 0x20a94,
 //   `Cosmos_load` 0x211c0) do, with the original's load semantics: star
@@ -73,6 +74,11 @@ struct SaveImage {
 // resolved against `foreign_cosmos` when given: a build saving a game loaded
 // from another build's file writes that file's stale pointers back (the
 // ANTAG saves of a PATCH game); such a file then does not round-trip.
+// The slots past their count of the stars' lane and planet lists and of
+// the races' AI targets that still point nowhere are read as none: the
+// tutorials' games (`<name>.tsv`) hold stale pointers of their author's
+// process there, which the original writes back unchanged (the remake
+// writes them as none or as its own addresses).
 SaveImage parse_save(std::span<const std::uint8_t> data, std::optional<RawAddress> foreign_cosmos = std::nullopt);
 
 // Returns the bytes of `image`. Throws `std::logic_error` for a state the

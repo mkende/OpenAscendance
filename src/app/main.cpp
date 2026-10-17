@@ -119,7 +119,8 @@ int main(int argc, char** argv) {
     if (!install) {
       return 0;
     }
-    oa::GameOptions game{.scaling = options.scaling,
+    oa::GameOptions game{.settings = {},
+                         .settings_file = {},
                          .keys = options.keys,
                          .screenshot = {},
                          .frames = options.frames,
@@ -137,6 +138,13 @@ int main(int argc, char** argv) {
     } else {
       game.user_dir = oa::user_dir();
     }
+    if (!game.user_dir.empty()) {
+      game.settings_file = game.user_dir / oa::kOptionsFile;
+      game.settings = oa::load_options(game.settings_file);
+    }
+    game.settings.scaling = options.scaling.value_or(game.settings.scaling);
+    game.settings.fullscreen = options.fullscreen.value_or(game.settings.fullscreen);
+    game.settings.variant = options.variant.value_or(game.settings.variant);
     return oa::run_game(game, *install);
   } catch (const std::exception& e) {
     oa::log_error("{}", e.what());

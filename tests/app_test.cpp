@@ -35,6 +35,21 @@ TEST_CASE("command line: data folder, screenshots and scripted input", "[app]") 
   CHECK_THROWS(parse({"--bogus", "1"}));
 }
 
+TEST_CASE("command line: the options screen's settings overridden", "[app]") {
+  const CommandLine none = parse({});
+  CHECK_FALSE(none.scaling.has_value());
+  CHECK_FALSE(none.fullscreen.has_value());
+  CHECK_FALSE(none.variant.has_value());
+  const CommandLine o = parse({"--variant", "antagonizer", "--fullscreen", "--smooth"});
+  CHECK(o.variant == game::Variant::kAntagonizer);
+  CHECK(o.fullscreen == true);
+  CHECK(o.scaling == Scaling::kSmooth);
+  CHECK(parse({"--window", "--variant", "standard"}).fullscreen == false);
+  CHECK(parse({"--variant", "standard"}).variant == game::Variant::kStandard);
+  CHECK_THROWS(parse({"--variant", "extended"}));
+  CHECK_THROWS(parse({"--variant"}));
+}
+
 TEST_CASE("command line: the oracle's seed and a save folder for headless runs", "[app]") {
   const CommandLine o = parse({"--seed", "-1234", "--save-dir", "/tmp/s"});
   CHECK(o.seed == -1234);

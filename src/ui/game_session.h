@@ -12,6 +12,8 @@
 #include <string>
 #include <vector>
 
+#include "game/variant.h"
+
 namespace oa::game {
 struct Session;
 }  // namespace oa::game
@@ -130,6 +132,14 @@ class GameSession {
   // The atmosphere byte (`0x93bac`: 0 peaceful, 1 neutral, 2 hostile), set
   // by "Begin" (the species history picks its paragraph by it).
   virtual int atmosphere() const = 0;
+  // The variant of the next new game (the remake's options screen): the
+  // galaxy set-up uses its rules from the new-game screen's entry on
+  // (`GameCoreSession` also from the start-up galaxy, as the original's
+  // executable of that variant).
+  void set_new_game_variant(game::Variant variant) { new_game_variant_ = variant; }
+  game::Variant new_game_variant() const { return new_game_variant_; }
+  // The variant of the current game, or of the one being set up.
+  virtual game::Variant variant() const { return new_game_variant_; }
 
   // The game core's state (`src/game`: the cosmos, the research, the
   // session globals) that the game screens read and act on through the
@@ -159,6 +169,7 @@ class GameSession {
 
  protected:
   WindowStateIo* windows_ = nullptr;
+  game::Variant new_game_variant_ = game::Variant::kStandard;
 };
 
 // The tests' stand-in game core: no game, every save slot empty, nothing
