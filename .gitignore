@@ -1,0 +1,16 @@
+# Build directories (CMake, android/build_apk.sh, packaging/build_desktop.sh)
+build/
+# Local configuration
+CMakeUserPresets.json
+compile_commands.json
+.cache/
+# Android packages and signing keys
+*.apk
+*.aab
+*.keystore
+*.jks
+*.p12
+# Screenshots written by --screenshot
+*.bmp
+# Release packages (packaging/build_desktop.sh)
+dist/

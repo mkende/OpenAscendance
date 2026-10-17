@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Behind the launcher icon's foreground: the night blue of
+         packaging/icon/open_ascendance.svg. -->
+    <color name="ic_launcher_background">#111A4A</color>
+</resources>

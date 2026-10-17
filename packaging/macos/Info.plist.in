@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- The macOS app's description (packaging/build_desktop.sh macos fills it):
+     its name, executable, identifier (OA_APP_ID),
+     version, icon and the oldest macOS it runs on. -->
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>en</string>
+  <key>CFBundleDisplayName</key>
+  <string>@NAME@</string>
+  <key>CFBundleName</key>
+  <string>@NAME@</string>
+  <key>CFBundleExecutable</key>
+  <string>@EXECUTABLE@</string>
+  <key>CFBundleIdentifier</key>
+  <string>@APP_ID@</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>@VERSION@</string>
+  <key>CFBundleVersion</key>
+  <string>@VERSION@</string>
+  <key>CFBundleIconFile</key>
+  <string>AppIcon</string>
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.strategy-games</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>@MINIMUM_SYSTEM@</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+</dict>
+</plist>

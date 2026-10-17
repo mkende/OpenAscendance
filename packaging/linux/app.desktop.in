@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=@NAME@
+GenericName=Space strategy game
+Comment=An open-source remake of Ascendancy (1995); needs the original game's files
+Exec=@EXECUTABLE@
+Icon=@APP_ID@
+Terminal=false
+Categories=Game;StrategyGame;
+StartupWMClass=@APP_ID@

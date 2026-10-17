@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Open Ascendance's placeholder icon (original work, not the game's art): a
+     stylised spiral galaxy with a rising star at its core, on a night-blue
+     tile. packaging/icon/render_icons.sh renders the committed PNG, ICO and
+     Android launcher pictures from it; it drops the line holding
+     id="background" for the transparent foreground of Android's adaptive
+     icon. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <radialGradient id="sky" cx="50%" cy="45%" r="70%">
+      <stop offset="0%" stop-color="#26357f"/>
+      <stop offset="60%" stop-color="#111a4a"/>
+      <stop offset="100%" stop-color="#070b26"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#cfe0ff" stop-opacity="0.85"/>
+      <stop offset="45%" stop-color="#7f9cff" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#4b5cff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="core" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="40%" stop-color="#fff4c8"/>
+      <stop offset="100%" stop-color="#ffd27a" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect id="background" x="0" y="0" width="1024" height="1024" rx="200" ry="200" fill="url(#sky)"/>
+  <g transform="rotate(-28 512 512)">
+    <ellipse cx="512" cy="512" rx="400" ry="250" fill="url(#glow)"/>
+    <g fill="none" stroke-linecap="round">
+      <path d="M512,512 C650,420 800,500 770,640 C740,780 540,830 360,760" stroke="#9fb8ff" stroke-width="56" stroke-opacity="0.45"/>
+      <path d="M512,512 C374,604 224,524 254,384 C284,244 484,194 664,264" stroke="#9fb8ff" stroke-width="56" stroke-opacity="0.45"/>
+      <path d="M512,512 C650,420 800,500 770,640 C740,780 540,830 360,760" stroke="#e3ecff" stroke-width="22"/>
+      <path d="M512,512 C374,604 224,524 254,384 C284,244 484,194 664,264" stroke="#e3ecff" stroke-width="22"/>
+    </g>
+    <circle cx="512" cy="512" r="150" fill="url(#core)"/>
+  </g>
+  <path d="M512,300 L540,484 L724,512 L540,540 L512,724 L484,540 L300,512 L484,484 Z" fill="#ffffff"/>
+  <g fill="#ffffff">
+    <circle cx="210" cy="230" r="10"/>
+    <circle cx="820" cy="200" r="14"/>
+    <circle cx="860" cy="760" r="9"/>
+    <circle cx="180" cy="800" r="12"/>
+    <circle cx="700" cy="880" r="7"/>
+    <circle cx="330" cy="130" r="6"/>
+  </g>
+</svg>

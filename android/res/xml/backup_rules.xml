@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- What Android's backup keeps of the app's storage, through Android 11
+     (android:fullBackupContent; data_extraction_rules.xml from Android 12):
+     everything but the copy of the game files (files/install, made by the
+     install setup, app/install_setup.h), larger than the 25 MB of Auto
+     Backup (the whole backup would be skipped), and the remembered install
+     (files/INSTALL.CFG), useless without the copy: the setup asks again. -->
+<full-backup-content>
+    <exclude domain="file" path="install/" />
+    <exclude domain="file" path="install.tmp/" />
+    <exclude domain="file" path="INSTALL.CFG" />
+</full-backup-content>
