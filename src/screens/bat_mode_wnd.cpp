@@ -492,15 +492,20 @@ void BatModeWnd::refresh(bool redraw) {
   camera_.update_view_offset(target_);
   project_scene();
   const auto by_depth = [this](std::vector<int>& list) {
-    // DrawList_compare_depth 0x157b4: farther first.
-    watcom_qsort(std::span(list), [this](int a, int b) {
-      const float da = items_[static_cast<std::size_t>(a)].depth;
-      const float db = items_[static_cast<std::size_t>(b)].depth;
-      if (!(da <= db)) {
-        return -1;
-      }
-      return da < db ? 1 : 0;
-    });
+    // DrawList_compare_depth 0x157b4: farther first. The lists (BatModeWnd
+    // +0x1d36, +0x253a, +0x2d3e) are not 4-aligned: Watcom's qsort moves
+    // the pivot to the base (the order of equal depths).
+    watcom_qsort(
+        std::span(list),
+        [this](int a, int b) {
+          const float da = items_[static_cast<std::size_t>(a)].depth;
+          const float db = items_[static_cast<std::size_t>(b)].depth;
+          if (!(da <= db)) {
+            return -1;
+          }
+          return da < db ? 1 : 0;
+        },
+        false);
   };
   by_depth(front_);
   by_depth(back_);

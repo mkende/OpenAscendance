@@ -940,6 +940,11 @@ bool PlSquareWnd::handle_event(int type, int a, int b) {
         draw_hilite(kDrawNormal);
       }
       return true;
+    case kEventLeftClick:
+    case kEventRightClick:
+      // Swallowed wherever they are (0x3876c): while the dialog is up, a
+      // click outside it reaches no window under it.
+      return true;
     case PlanWnd::kEventDialog:
       mode_ = a;
       square_ = static_cast<std::uint16_t>(b);

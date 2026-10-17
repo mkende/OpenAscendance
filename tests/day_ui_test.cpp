@@ -531,6 +531,17 @@ TEST_CASE("a dropped order's pointer stays in the saves", "[day][screens][conten
                                     .shots = {}}});
 }
 
+TEST_CASE("clicks outside the planet screen's square dialog are swallowed", "[screens][content][oracle]") {
+  OA_REQUIRE_GAME_FILES(files);
+  // `tests/oracle/cov/orch/square_dialog.txt`: the dialog of a square of
+  // Zoroaster III stays up through a left and a right click outside it.
+  test::replay_oracle_runs(files, {{.run = "cov/orch/square_dialog_patch", .keep_saves = true, .shots = {}},
+                                   {.run = "cov/orch/square_dialog_antag",
+                                    .variant = game::Variant::kAntagonizer,
+                                    .keep_saves = true,
+                                    .shots = {}}});
+}
+
 TEST_CASE("the end of the game: screen 9, the game events dropped", "[screens][content]") {
   OA_REQUIRE_GAME_FILES(files);
   Game820 g(files);

@@ -15,6 +15,7 @@
 #include <map>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "game_data.h"
@@ -112,29 +113,28 @@ std::map<int, int> posted_codes(const GameFiles& files, const InventoryRun& r) {
   ReplayProgram program(files, c.seed, dir.path, c.keep_saves && !antag, c.variant);
   REQUIRE(program.wm.start_replay(read_file(*trace), "trace.bin", false));
   // The queue keeps the shown events until it empties; a box's modal loop
-  // shows frames, so every event is seen there.
+  // shows frames, so every event is seen there. The tutorials' help boxes
+  // wait in a modal loop too: their input is fed at the frames. Alt+X once
+  // no replay has run for 50 passes (a tutorial starts its own replay one
+  // pass after the trace's end).
   std::size_t seen = 0;
-  const auto record = [&] {
-    const game::Session* core = program.session.core();
-    if (core == nullptr) {
-      return;
-    }
-    const std::vector<game::GameEvent>& events = core->events.events();
-    seen = events.size() < seen ? 0 : seen;
-    for (; seen < events.size(); ++seen) {
-      ++codes[static_cast<int>(events[seen].code)];
-    }
-  };
-  program.on_present = record;
   std::deque<InputEvent> pending;
   bool quit_sent = false;
-  for (int pass = 0; pass < 400000 && program.wm.running(); ++pass) {
+  int idle = 0;
+  program.on_present = [&] {
+    if (const game::Session* core = program.session.core()) {
+      const std::vector<game::GameEvent>& events = core->events.events();
+      seen = events.size() < seen ? 0 : seen;
+      for (; seen < events.size(); ++seen) {
+        ++codes[static_cast<int>(events[seen].code)];
+      }
+    }
     if (r.tutorial && pending.empty() && !program.wm.replaying()) {
       const InputState& s = program.input.state();
       if (program.wm.in_modal()) {
         pending.push_back(InputEvent{.type = EventType::kMouseDown, .x = s.x, .y = s.y, .button = MouseButton::kRight});
         pending.push_back(InputEvent{.type = EventType::kMouseUp, .x = s.x, .y = s.y, .button = MouseButton::kRight});
-      } else if (!quit_sent) {
+      } else if (!quit_sent && idle > 50) {
         pending.push_back(InputEvent{.type = EventType::kKeyDown, .key = SDLK_X, .mods = SDL_KMOD_LALT});
         pending.push_back(InputEvent{.type = EventType::kKeyUp, .key = SDLK_X, .mods = 0});
         quit_sent = true;
@@ -144,8 +144,10 @@ std::map<int, int> posted_codes(const GameFiles& files, const InventoryRun& r) {
       program.input.feed(pending.front());
       pending.pop_front();
     }
+  };
+  for (int pass = 0; pass < 400000 && program.wm.running(); ++pass) {
     program.wm.run_pass();
-    record();
+    idle = program.wm.replaying() ? 0 : idle + 1;
   }
   return codes;
 }
@@ -174,6 +176,55 @@ TEST_CASE("inventory of the game-event codes posted by oracle runs", "[.dev][eve
     }
     std::cout << line << "\n";
   }
+}
+
+namespace {
+
+// Replays the PATCH and ANTAG runs `cov/endev/<name>_{patch,antag}` resumed
+// from `cov/endev/<save>`.
+// `dip_arg`: `ReplayRun::dip_arg_low_word` (an AI race talks to the player).
+void replay_both_builds(const GameFiles& files, const std::vector<std::pair<std::string, std::string>>& runs,
+                        bool dip_arg = false) {
+  std::vector<ReplayRun> list;
+  for (const auto& [name, save] : runs) {
+    list.push_back({.run = std::format("cov/endev/{}_patch", name),
+                    .resume = "cov/endev/" + save,
+                    .shots = {},
+                    .dip_arg_low_word = dip_arg});
+    list.push_back({.run = std::format("cov/endev/{}_antag", name),
+                    .variant = game::Variant::kAntagonizer,
+                    .resume = "cov/endev/" + save,
+                    .shots = {},
+                    .dip_arg_low_word = dip_arg});
+  }
+  replay_oracle_runs(files, list);
+}
+
+}  // namespace
+
+TEST_CASE("the original's game-event boxes of the codes no other run showed", "[content][oracle][endev]") {
+  OA_REQUIRE_GAME_FILES(files);
+  // `tests/oracle/cov/endev/cases.txt` on `events_save.py`'s saves: ev_a
+  // events 2, 4, 5, 6, 8, 9, 12, 13, 19; ev_b 7, 11; ev_c 0, 1, 10, 16, 18,
+  // 20, 21, 22, 24; ev_jump the right-click answers of boxes 9, 2 and 8.
+  // The Capelons' offer of peace (ev_a, ev_jump) stores a stale stack word.
+  replay_both_builds(files, {{"ev_a", "ev_a.GAM"}, {"ev_b", "ev_b.GAM"}, {"ev_c", "ev_c.GAM"}, {"ev_jump", "ev_a.GAM"}},
+                     true);
+}
+
+TEST_CASE("the original's event 25: a first Laboratory without research", "[content][oracle][endev]") {
+  OA_REQUIRE_GAME_FILES(files);
+  // `ev_d_{patch,antag}.txt`: new games of seed 1.
+  replay_oracle_runs(files, {{.run = "cov/endev/ev_d_patch", .shots = {}},
+                             {.run = "cov/endev/ev_d_antag", .variant = game::Variant::kAntagonizer, .shots = {}}});
+}
+
+TEST_CASE("the original's planet items built through the planet screen", "[content][oracle][endev]") {
+  OA_REQUIRE_GAME_FILES(files);
+  // `items.txt` on `items_save.py`'s save: Orbital Missile Base, Lush Growth
+  // Bomb, Automation, Observation Installation, Endless Party, Scientist
+  // Takeover and Alien Hospitality chosen, then 26 days.
+  replay_both_builds(files, {{"items", "items.GAM"}});
 }
 
 }  // namespace oa::test

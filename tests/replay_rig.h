@@ -14,8 +14,8 @@
 #include <deque>
 #include <filesystem>
 #include <format>
-#include <functional>
 #include <fstream>
+#include <functional>
 #include <optional>
 #include <random>
 #include <string>
@@ -251,7 +251,26 @@ struct ReplayRun {
   std::string resume{};
   // The screenshots compared (`SCRnnn.GIF`), all when empty.
   std::vector<std::string> shots;
+  // The races' pending action arguments compared on their low word only:
+  // the high word is a stale stack value of the original's user interface
+  // frames (`Session::stale_dip_arg`, `docs/09-simulation.md`), for runs
+  // where an AI race proposes something to the player.
+  bool dip_arg_low_word = false;
 };
+
+// Returns `mine` with the high words of its races' pending action arguments
+// taken from `theirs` (`ReplayRun::dip_arg_low_word`).
+inline std::vector<std::uint8_t> with_their_dip_arg_high_words(const std::vector<std::uint8_t>& mine,
+                                                               const std::vector<std::uint8_t>& theirs,
+                                                               std::optional<game::RawAddress> foreign_cosmos) {
+  game::SaveImage image = game::parse_save(mine, foreign_cosmos);
+  const game::SaveImage original = game::parse_save(theirs, foreign_cosmos);
+  for (std::size_t r = 0; r < std::min(image.races.size(), original.races.size()); ++r) {
+    game::RawAddress& arg = image.races[r].pending_action_arg;
+    arg = (original.races[r].pending_action_arg & 0xffff0000u) | (arg & 0xffffu);
+  }
+  return game::serialize_save(image);
+}
 
 // Replays `c` and compares the saves and the screenshots the original
 // wrote; with OA_DUMP_DIR the remake's files are copied there. Returns
@@ -300,6 +319,11 @@ inline bool replay_oracle_run(const GameFiles& files, const ReplayRun& c, int ma
         // original's file.
         REQUIRE(mine.size() == theirs.size() + 8);
         mine.resize(theirs.size());
+      }
+      if (c.dip_arg_low_word) {
+        const std::optional<game::RawAddress> cosmos =
+            foreign ? std::optional<game::RawAddress>(game::kPatchCosmosAddress) : std::nullopt;
+        mine = with_their_dip_arg_high_words(mine, theirs, cosmos);
       }
       if (foreign) {
         mine = without_stale_slots(mine, game::kPatchCosmosAddress);

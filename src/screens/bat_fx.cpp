@@ -561,8 +561,11 @@ bool BatModeWnd::fx_tractor() {
       Vec3 dv = game::sub(fx_pos_[1], shooter);
       const double left = game::length(dv) - d(reach);
       float length = f32(left);
-      if (left < 64.0) {
-        length = 64.0F;
+      // The pull's minimum: 64, 1280 in the Antagonizer (ANTAG 0x13370) for
+      // both tractors, whatever the rule did.
+      const float minimum = s->game->variant == game::Variant::kAntagonizer ? 1280.0F : 64.0F;
+      if (left < d(minimum)) {
+        length = minimum;
       }
       game::set_length(dv, length);
       fx_pos_[2] = {f32(d(shooter[0]) + dv[0]), f32(d(shooter[1]) + dv[1]), f32(d(shooter[2]) + dv[2])};

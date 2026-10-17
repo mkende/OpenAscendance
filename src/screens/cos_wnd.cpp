@@ -366,15 +366,20 @@ void CosWnd::project_items() {
       }
     }
   }
-  // CosDrawList_compare_depth 0x21b50: farthest first.
-  watcom_qsort(std::span(drawn_).first(drawn_count_), [this](std::int32_t a, std::int32_t b) {
-    const float da = items_[static_cast<std::size_t>(a)].depth;
-    const float db = items_[static_cast<std::size_t>(b)].depth;
-    if (!(da <= db)) {
-      return -1;
-    }
-    return da < db ? 1 : 0;
-  });
+  // CosDrawList_compare_depth 0x21b50: farthest first. The list (CosWnd
+  // +0x172) is not 4-aligned: Watcom's qsort moves the pivot to the base
+  // (the order of equal depths, e.g. ships at the same point of a lane).
+  watcom_qsort(
+      std::span(drawn_).first(drawn_count_),
+      [this](std::int32_t a, std::int32_t b) {
+        const float da = items_[static_cast<std::size_t>(a)].depth;
+        const float db = items_[static_cast<std::size_t>(b)].depth;
+        if (!(da <= db)) {
+          return -1;
+        }
+        return da < db ? 1 : 0;
+      },
+      false);
 }
 
 void CosWnd::rotate_step(bool y_axis, float degrees) {

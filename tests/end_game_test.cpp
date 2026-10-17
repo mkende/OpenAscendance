@@ -120,8 +120,8 @@ TEST_CASE("the original's endings 2..5 reached by a day of play", "[content][ora
   std::vector<ReplayRun> runs;
   for (const char* name : {"dest", "capt", "unit", "ctrl", "dest_hostile", "capt_peaceful"}) {
     const std::string save = std::string(name).substr(0, 4);
-    runs.push_back({.run = std::format("cov/endev/{}_patch", name), .resume = std::format("cov/endev/{}.GAM", save),
-                    .shots = {}});
+    runs.push_back(
+        {.run = std::format("cov/endev/{}_patch", name), .resume = std::format("cov/endev/{}.GAM", save), .shots = {}});
     runs.push_back({.run = std::format("cov/endev/{}_antag", name),
                     .variant = game::Variant::kAntagonizer,
                     .resume = std::format("cov/endev/{}.GAM", save),

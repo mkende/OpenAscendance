@@ -26,8 +26,9 @@ std::uint8_t* med3(std::uint8_t* a, std::uint8_t* b, std::uint8_t* c, const Qsor
 
 }  // namespace
 
-void watcom_qsort(std::uint8_t* base, std::size_t n, std::size_t size, const QsortCompare& cmp) {
-  const bool copy_pivot = size == 4;
+void watcom_qsort(std::uint8_t* base, std::size_t n, std::size_t size, const QsortCompare& cmp, bool aligned) {
+  // 0x72374: `(base | size) & 3` selects the swap of the pivot to `base`.
+  const bool copy_pivot = aligned && size == 4;
   // The original's stack has 32 entries and no overflow check; the larger
   // part is always pushed, so the depth stays below log2(n).
   std::array<std::uint8_t*, 32> stack_base{};
