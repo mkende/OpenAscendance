@@ -322,11 +322,9 @@ TEST_CASE("an Antagonizer new game from the options is the original Antagonizer'
     rig.click(318, 282);
     wait(60);
     REQUIRE(rig.wm.current_screen() == 3);
-    // The original's screen (with its pointer) but the variant's tag under
-    // the summary.
+    // The original's screen (with its pointer): the variant shows nowhere.
     const Image8 original = decode_gif(test::read_file(*new_game_shot), new_game_shot->string());
-    int outside_tag = 0;
-    int in_tag = 0;
+    int differing = 0;
     for (int y = 0; y < original.height(); ++y) {
       for (int x = 0; x < original.width(); ++x) {
         // The original's pointer, on its New Game button.
@@ -334,11 +332,10 @@ TEST_CASE("an Antagonizer new game from the options is the original Antagonizer'
         if (pointer || original.at(x, y) == rig.wm.screen().at(x, y)) {
           continue;
         }
-        (x >= 0x11 && x <= 0x144 && y >= 0x16b && y <= 0x174 ? in_tag : outside_tag) += 1;
+        ++differing;
       }
     }
-    CHECK(outside_tag == 0);
-    CHECK(in_tag > 0);
+    CHECK(differing == 0);
     if (seed == 1) {
       test::write_shot(rig, "options_new_game_antagonizer");
     }
