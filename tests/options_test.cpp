@@ -45,6 +45,12 @@ std::vector<Pane> original_menu() {
   return panes;
 }
 
+// The y of the middle of the Options button on the remake's menu.
+int options_y() {
+  const Pane pane = spread_menu_buttons(original_menu(), 8)[kOptionsButtonIndex];
+  return (pane.y0 + pane.y1) / 2;
+}
+
 // The options screen's buttons: choice `c` of row `row` (two choices), and
 // OK and Cancel (`options_wnd.cpp`: rows from y 72 every 60, the choices'
 // columns 258..422 and 445..609, OK and Cancel at y 424).
@@ -134,12 +140,12 @@ TEST_CASE("the opening menu with the Options button", "[screens][content]") {
     }
   }
   CHECK(differing == 0);
-  rig.move(318, 433);
+  rig.move(318, options_y());
   CHECK(rig.wm.hot_window() == button->id());
   test::write_shot(rig, "options_menu");
 
   // Options opens the options screen, Esc goes back.
-  rig.click(318, 433);
+  rig.click(318, options_y());
   CHECK(rig.wm.current_screen() == kScreenOptions);
   rig.key(SDLK_ESCAPE);
   CHECK(rig.wm.current_screen() == 0);
@@ -196,7 +202,7 @@ TEST_CASE("the options screen: OK applies and saves the settings, Cancel and Esc
   rig.sound.set_music_muted(false);
   rig.sound.set_sfx_muted(true);
 
-  rig.click(318, 433);
+  rig.click(318, options_y());
   REQUIRE(rig.wm.current_screen() == kScreenOptions);
   // The current settings are selected: Sound Effects off.
   rig.move(choice_x(1), row_y(kVariant));
@@ -213,13 +219,13 @@ TEST_CASE("the options screen: OK applies and saves the settings, Cancel and Esc
   CHECK_FALSE(std::filesystem::exists(file));
 
   // Opened again: the picks were forgotten. Esc cancels too.
-  rig.click(318, 433);
+  rig.click(318, options_y());
   rig.click(choice_x(1), row_y(kVariant));
   rig.key(SDLK_ESCAPE);
   CHECK(rig.wm.current_screen() == 0);
   CHECK(rig.game.new_game_variant() == game::Variant::kStandard);
 
-  rig.click(318, 433);
+  rig.click(318, options_y());
   for (const Row row : {kVariant, kDisplay, kScaling, kMusic}) {
     rig.click(choice_x(1), row_y(row));
   }
@@ -241,7 +247,7 @@ TEST_CASE("the options screen: OK applies and saves the settings, Cancel and Esc
 
   // Enter is OK; the screen shows the settings in force (the window's).
   display.set_fullscreen(false);
-  rig.click(318, 433);
+  rig.click(318, options_y());
   rig.key(SDLK_RETURN);
   CHECK(rig.wm.current_screen() == 0);
   CHECK_FALSE(options.fullscreen);
@@ -263,9 +269,9 @@ TEST_CASE("the options screen's help: Shift and a click", "[screens][content]") 
     rig.drain();
   };
   auto& help = dynamic_cast<HelpWnd&>(*rig.wm.find_window("HELPWINDOW"));
-  help_click(318, 433);
+  help_click(318, options_y());
   CHECK(help.topic() == "oa_options");
-  rig.click(318, 433);
+  rig.click(318, options_y());
   REQUIRE(rig.wm.current_screen() == kScreenOptions);
   help_click(choice_x(0), row_y(kScaling));
   CHECK(help.topic() == "oa_scaling");

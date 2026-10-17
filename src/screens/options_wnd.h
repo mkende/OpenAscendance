@@ -28,7 +28,7 @@ inline constexpr int kScreenOptions = 30;
 // of the Options button among them.
 inline constexpr std::array<std::string_view, 7> kMenuButtons{"INTRO", "PLAYTUTORIAL", "FRESHGAME", "RESUME",
                                                               "LOAD",  "SAVE",         "EXITTODOS"};
-inline constexpr std::size_t kOptionsButtonIndex = 6;
+inline constexpr std::size_t kOptionsButtonIndex = 4;
 
 // Returns `count` panes spread over the vertical span of `original` (the
 // first pane's top to the last one's bottom, at the first pane's x), the

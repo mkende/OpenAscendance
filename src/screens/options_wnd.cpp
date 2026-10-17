@@ -50,6 +50,13 @@ constexpr int kMessageCancel = 602;
 constexpr int kClickSound = 0;
 constexpr std::uint16_t kEnterKey = '\r';
 
+// The help's mentions of the keyboard shortcuts (none on Android).
+#ifdef __ANDROID__
+#define OA_KEY_HINT(text) ""
+#else
+#define OA_KEY_HINT(text) " " text
+#endif
+
 // The remake's help topics, in the format of `help.txt`.
 constexpr std::string_view kHelpFile = "OpenAscendance help";
 constexpr std::string_view kHelpText = R"(// The help topics of the remake's options.
@@ -103,7 +110,7 @@ endtext
 pos 0 15
 flags TJ_HC
 text
-Plays in a window or on the full screen. Alt+Enter also switches between them.
+Plays in a window or on the full screen.)" OA_KEY_HINT("Alt+Enter also switches between them.") R"(
 endtext
 pos 5 50
 button
@@ -131,7 +138,7 @@ endtext
 pos 0 15
 flags TJ_HC
 text
-Plays the music or not. Alt+M also switches it.
+Plays the music or not.)" OA_KEY_HINT("Alt+M also switches it.") R"(
 endtext
 pos 5 50
 button
@@ -145,7 +152,7 @@ endtext
 pos 0 15
 flags TJ_HC
 text
-Plays the sound effects or not. Alt+N also switches them.
+Plays the sound effects or not.)" OA_KEY_HINT("Alt+N also switches them.") R"(
 endtext
 pos 5 50
 button
@@ -182,6 +189,7 @@ msg 0
 
 help end
 )";
+#undef OA_KEY_HINT
 
 // Returns the pane of choice `c` of `n` in the row whose top is `y0`.
 Pane choice_pane(int c, int n, int y0) {
@@ -545,9 +553,13 @@ class MenuLayout {
   }
 
   // The items of button `i` in `pane`: the lines placed from the top
-  // (`y` != 0) closer in proportion to the height, centred.
+  // (`y` != 0) closer in proportion to the height, centred. On Android,
+  // without the keyboard shortcuts' lines ("Alt-L").
   std::vector<WindowItem> scaled_items(std::size_t i, const Pane& pane) const {
     std::vector<WindowItem> items = items_[i];
+#ifdef __ANDROID__
+    std::erase_if(items, [](const WindowItem& item) { return item.kind == 0 && item.text.starts_with("Alt-"); });
+#endif
     int top = 0;
     int bottom = 0;
     for (const WindowItem& item : items) {
