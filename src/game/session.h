@@ -58,10 +58,12 @@ struct Session {
   std::int16_t screen = 12;
   // A stack slot the original reads uninitialised: the argument local of
   // `Race_diplomacy_turn` (0x3fb00, esp+4), which only the third-party
-  // actions write. It holds what the call just before left at that address:
-  // the race loop counter of `Race_update_attitude_drift` (low word, the
-  // race count; the high word observed 0 in the oracle's saves); the AI-to-AI
-  // answers store it in `Race::pending_action_arg`.
+  // actions write. It holds what the calls before left at that address: the
+  // race loop counter of `Race_update_attitude_drift` (low word, the race
+  // count), on bio-rhythm days `Race_bio_rhythm`'s double (the whole slot),
+  // `Race_list_ships`'s and the ship orders' counts (high word 0); the
+  // user interface's frames are not modelled (`docs/09-simulation.md`). The
+  // AI-to-AI answers store it in `Race::pending_action_arg`.
   std::uint32_t stale_dip_arg = 0;
   // The shared work buffer 0xc8c2c (ANTAG 0xd8da0, both 0x35e34 bytes after
   // the cosmos), kScratchSize bytes: `main` 0x1c424 loads `logo.gif` into
