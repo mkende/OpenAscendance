@@ -52,6 +52,15 @@ class Input {
 
   const InputState& state() const { return state_; }
 
+  // `MOUSE_force_move`: the pointer moved to (x, y) without a move event
+  // (a replayed trace's).
+  void warp(int x, int y) {
+    mouse_x_ = x;
+    mouse_y_ = y;
+    state_.x = x;
+    state_.y = y;
+  }
+
  private:
   struct ButtonChange {
     MouseButton button;

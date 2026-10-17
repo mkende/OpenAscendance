@@ -122,7 +122,9 @@ void HelpWnd::draw(int /*mode*/) {
   }
   for (; index < content_.element_count; ++index) {
     const HelpElement& e = content_.elements[static_cast<std::size_t>(index)];
-    if (e.kind == HelpElement::Kind::kShape) {
+    if (e.kind == HelpElement::Kind::kNone) {
+      // Hidden.
+    } else if (e.kind == HelpElement::Kind::kShape) {
       const ShapeTable& table = wm_.shared_shapes(e.shape_index);
       vfx_shape_draw(screen, text, table.at(static_cast<std::size_t>(e.frame)), e.x, e.y);
     } else {

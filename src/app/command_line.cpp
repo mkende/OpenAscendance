@@ -213,6 +213,8 @@ CommandLine parse_command_line(std::span<const std::string_view> args) {
       o.seed = seed;
     } else if (a == "--save-dir") {
       o.save_dir = value;
+    } else if (a == "--trace") {
+      o.trace = value;
     } else {
       throw usage_error();
     }

@@ -40,9 +40,10 @@ class BattleControl {
   void close(Session& session);
 
   // The player's action (move, gizmo, planet weapon) whose action block is
-  // filled: checked (`Ship_do_action` / `Planet_fire_weapon` with apply 0),
-  // then pending until `finish`.
-  void act(Session& session, BattleAction action);
+  // filled: checked (`Ship_do_action` / `Planet_fire_weapon` with apply 0)
+  // unless `check` is false (the untargeted gizmos of the list,
+  // `BatControlWnd_handle` 0x1c01), then pending until `finish`.
+  void act(Session& session, BattleAction action, bool check = true);
   // Pass (message 0x327) and Auto (0x328): allowed on the player's turn
   // (cursor 0, Auto off, the player present, no action pending). Return
   // whether they ran.
@@ -57,16 +58,23 @@ class BattleControl {
   // Applies every action at once, as closing the display during an effect
   // does.
   void finish_all(Session& session);
+  // The two halves of `finish`, for the display, which redraws its list in
+  // between: the pending action applied, then `BatControlWnd_run_turns`
+  // 0x1229c (the next races' turns until one chooses an action, left
+  // pending, or the round ends without Auto).
+  void apply_pending(Session& session);
+  void run_turns(Session& session);
+  // The rounds ended so far (`BatControlWnd_new_round` 0x12368 calls), which
+  // the display redraws after.
+  std::uint32_t rounds() const { return rounds_; }
 
   bool auto_on() const { return auto_; }
+  // The race whose turn it is (`+0xd4`, an index into the present races).
+  std::int16_t cursor() const { return cursor_; }
   // Tells whether it is the player's turn (cursor 0, nothing pending).
   bool player_turn() const { return cursor_ == 0 && !pending_ && !auto_; }
 
  private:
-  // `BatControlWnd_run_turns` 0x1229c: the next races' turns until one
-  // chooses an action (checked, left pending) or the round ends without
-  // Auto.
-  void run_turns(Session& session);
   // `BatControlWnd_new_round` 0x12368: Auto stays on while a race acted, the
   // races listed again, cursor 0, every race's moves refilled; returns
   // whether the turns go on.
@@ -81,6 +89,7 @@ class BattleControl {
   bool auto_ = false;                            // +0x104
   std::optional<BattleAction> pending_;          // +0xab / +0xac
   std::int16_t previous_screen_ = 12;
+  std::uint32_t rounds_ = 0;
 };
 
 }  // namespace oa::game

@@ -5,6 +5,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstring>
+#include <ctime>
 #include <format>
 #include <fstream>
 
@@ -14,10 +15,13 @@
 #include "core/c_format.h"
 #include "core/error.h"
 #include "core/log.h"
+#include "game/address.h"
+#include "game/raceneg.h"
 #include "game/session.h"
 #include "game/tables.h"
 #include "ui/button_group.h"
 #include "ui/edit_field.h"
+#include "ui/event_wnd.h"
 #include "ui/help_wnd.h"
 #include "ui/text_box.h"
 #include "ui/toggle_button.h"
@@ -34,6 +38,8 @@ constexpr std::uint16_t kScanL = 0x26;
 constexpr std::uint16_t kScanX = 0x2d;
 constexpr std::uint16_t kScanN = 0x31;
 constexpr std::uint16_t kScanM = 0x32;
+// Ctrl+P of a replayed trace: the next tutorial help box.
+constexpr std::uint16_t kScanP = 0x19;
 
 // The screens of the hotkeys and the screen-specific rules.
 constexpr int kScreenOpening = 0;
@@ -41,7 +47,15 @@ constexpr int kScreenStarMap = 1;
 constexpr int kScreenSave = 2;
 constexpr int kScreenLoad = 4;
 constexpr int kScreenShipDesign = 8;
+constexpr int kScreenEndOfGame = 9;
+constexpr int kScreenNegotiation = 13;
+constexpr int kScreenStarSystem = 16;
 constexpr int kScreenPlanet = 17;
+constexpr int kScreenResearch = 20;
+
+// The developer's trace (message 4) and the tutorials' end question.
+constexpr std::string_view kDeveloperTrace = "WINEVENT.BIN";
+constexpr std::string_view kEndTutorialTopic = "endtut";
 
 // The themes the music picker chooses from (tunes 0..4).
 constexpr int kThemes = 5;
@@ -381,6 +395,10 @@ void WinMgr::reset_history_to_opening() {
   history_[0] = kScreenOpening;
   history_count_ = 1;
   history_top_ = 1;
+  // The same write clears the game-event count.
+  if (game::Session* core = services_.game.core()) {
+    core->events.clear();
+  }
 }
 
 void WinMgr::load_windows(const WindowsTxt& txt, const WindowFactory& factory) {
@@ -931,6 +949,17 @@ void WinMgr::show_help(const Message& m) {
     case kHelpNoIntro:
       help->open_topic("help.txt", "NOINTRO");
       break;
+    case kHelpAbility: {
+      // The special abilities window (`AbilityWnd_show_help` 0x32fa4): the
+      // topic `abil%02d` of the player's ability; the map is redrawn after.
+      const game::Session* core = services_.game.core();
+      help = dynamic_cast<HelpWnd*>(find_window("ABILITYWIN"));
+      if (core == nullptr || help == nullptr) {
+        return;
+      }
+      help->open_topic("help.txt", std::format("abil{:02d}", core->game->cosmos.races[core->player_race].ability));
+      break;
+    }
     case kHelpPlanet: {
       // A planet item (the planet screen's build list): its name in the
       // text, its picture (a Ship: the player's small ship).
@@ -956,12 +985,17 @@ void WinMgr::show_help(const Message& m) {
       break;
     }
     default:
-      // The special abilities and gizmo help come with their screens.
+      // The gizmo help comes with its screen.
       log_debug("help kind {} not handled yet", m.p2);
       return;
   }
   if (!modal_) {
     do_modal(*help);
+  }
+  if (m.p2 == kHelpAbility) {
+    if (GWindow* map = find_window("COSMOSWnd")) {
+      send_event(map->id(), kEventRefresh, 0, 0);
+    }
   }
 }
 
@@ -987,19 +1021,32 @@ void WinMgr::dispatch_messages() {
       case kMessageEndModal:
         end_modal(m.p1);
         break;
+      case kMessageReplay:
+        // The developer's replay of WINEVENT.BIN (looping).
+        if (!replaying_) {
+          std::optional<std::vector<std::uint8_t>> trace;
+          if (!services_.user_dir.empty()) {
+            std::ifstream in(services_.user_dir / kDeveloperTrace, std::ios::binary);
+            if (in) {
+              trace.emplace(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+            }
+          }
+          if (!trace) {
+            trace = services_.files.try_load(kDeveloperTrace);
+          }
+          if (trace) {
+            start_replay(*trace, kDeveloperTrace, true);
+          }
+        }
+        break;
       case kMessageNextTurn:
         next_turn();
         break;
       case kMessageAutoTurn:
-        if (services_.game.next_contested_star() < 0) {
-          auto_turn_ = !auto_turn_;
-        } else {
-          log_debug("contested star: the game event 19 comes with the game events");
-        }
+        auto_turn_message();
         break;
       default:
-        // 4 (trace replay) comes with the tutorials.
-        log_debug("system message {} ({}, {}) not handled yet", m.id, m.p1, m.p2);
+        log_warning("system message {} ({}, {}) unknown", m.id, m.p1, m.p2);
         break;
     }
   }
@@ -1007,15 +1054,295 @@ void WinMgr::dispatch_messages() {
 
 void WinMgr::next_turn() {
   GameSession& game = services_.game;
-  if (game.next_contested_star() >= 0) {
-    // Game event 19 (a battle to fight or skip) comes with the game events.
-    log_debug("contested star: the game event 19 comes with the game events");
+  if (const int star = game.next_contested_star(); star >= 0) {
+    // "There are remaining moves": the box's Next Day posts the command
+    // again.
+    if (game::Session* core = game.core()) {
+      core->post_event(game::EventCode::kRemainingMoves, star, auto_turn_ ? kMessageAutoTurn : kMessageNextTurn);
+    }
     return;
   }
-  game.end_day();
+  if (game.end_day()) {
+    // Cosmos_check_game_over 0x1fec4: the end-of-game screen.
+    post_message(kMessageChangeScreen, kScreenEndOfGame, 1);
+  }
+  // (The developer's trade-all of every new day, Alt+E, is left out.)
   setup_race_shapes();
   broadcast_event(kEventRefresh, 0, 0);
   refresh_screen();
+}
+
+void WinMgr::auto_turn_message() {
+  GameSession& game = services_.game;
+  const int star = game.next_contested_star();
+  game::Session* core = game.core();
+  if (star < 0 || core == nullptr || core->autoplay) {
+    auto_turn_ = !auto_turn_;
+  } else {
+    core->post_event(game::EventCode::kRemainingMoves, star, kMessageAutoTurn);
+  }
+}
+
+void WinMgr::show_game_events() {
+  game::Session* core = services_.game.core();
+  if (showing_event_ || core == nullptr || core->events.empty() || current_ != kScreenStarMap) {
+    return;
+  }
+  auto* box = dynamic_cast<EventWnd*>(find_window("EVENTWIN"));
+  if (box == nullptr) {
+    throw DataError("windows.txt: no EVENTWIN");
+  }
+  const game::GameEvent event = core->events.front();
+  box->set_event(event);
+  showing_event_ = true;
+  int result = 0;
+  if (!core->autoplay) {
+    result = do_modal(*box);
+  }
+  showing_event_ = false;
+  // Esc (0) leaves every event without a jump.
+  const int screen = result == 0 ? 0 : game_event_screen(event, result);
+  core->events.pop();
+  if (screen != 0) {
+    post_message(kMessageChangeScreen, screen, 1);
+  }
+}
+
+int WinMgr::game_event_screen(const game::GameEvent& event, int result) {
+  using game::EventCode;
+  game::Session& core = *services_.game.core();
+  game::Cosmos& cosmos = core.game->cosmos;
+  switch (event.code) {
+    case EventCode::kResearchDone:
+    case EventCode::kXenoDigDiscovery:
+    case EventCode::kLabWithoutResearch:
+      return kScreenResearch;
+    case EventCode::kBuildingComplete:
+    case EventCode::kFreePopulation:
+      cosmos.selected_planet = static_cast<game::PlanetIndex>(event.a);
+      return kScreenPlanet;
+    case EventCode::kEnteredOrbit:
+    case EventCode::kShipBuilt:
+    case EventCode::kShipRefitted:
+      cosmos.selected_planet = static_cast<game::PlanetIndex>(event.b);
+      return kScreenPlanet;
+    case EventCode::kRaceWantsToTalk:
+      target_race_ = static_cast<std::uint8_t>(event.a);
+      return kScreenNegotiation;
+    case EventCode::kLaneTransmission:
+      target_race_ = static_cast<std::uint8_t>(event.b);
+      return kScreenNegotiation;
+    case EventCode::kRemainingMoves:
+      if (result == 1) {
+        cosmos.selected_star = static_cast<game::StarIndex>(event.a);
+        return kScreenStarSystem;
+      }
+      // Next Day (or a right click): the command again; the auto next
+      // turn's turns on.
+      if (event.b == kMessageNextTurn) {
+        post_message(kMessageNextTurn, 0, 0);
+      } else {
+        auto_turn_ = true;
+      }
+      return 0;
+    case EventCode::kShipArrived:
+    case EventCode::kFirstContact:
+    case EventCode::kHostileShips:
+    case EventCode::kHostileColony:
+    case EventCode::kOthersAtWar:
+    case EventCode::kUnknownShipEntered:
+    case EventCode::kHostileShipEntered:
+    case EventCode::kSystemDiscovered: {
+      const game::Ship& ship = cosmos.ships.at(static_cast<std::size_t>(event.a));
+      if (ship.location_kind != game::ShipLocation::kSystem) {
+        throw std::logic_error("game event of a ship outside a system");
+      }
+      const game::StarIndex star = ship.location;
+      if ((event.code == EventCode::kFirstContact || event.code == EventCode::kUnknownShipEntered) && result != 2) {
+        // Respond: the met species opens the talk, asking for help when it
+        // has ships at war at the star.
+        game::Race& race = cosmos.races.at(static_cast<std::size_t>(event.b));
+        if (game::race_count_ships_at_star(core, race, game::kWar, cosmos.stars.at(static_cast<std::size_t>(star)),
+                                           nullptr) == 0) {
+          race.pending_action = game::kDipDiscover;
+        } else {
+          race.pending_action = game::kDipDiscoverAskHelp;
+          race.pending_action_arg = game::star_address(core, star);
+        }
+        target_race_ = static_cast<std::uint8_t>(event.b);
+        return kScreenNegotiation;
+      }
+      cosmos.selected_star = star;
+      return kScreenStarSystem;
+    }
+    case EventCode::kRaceExtinct:
+    case EventCode::kShipScrapped:
+    case EventCode::kShipLost:
+    case EventCode::kColonyInvaded:
+    case EventCode::kBasicsKnown:
+    case EventCode::kAbilityCharged:
+      return 0;
+  }
+  return 0;
+}
+
+bool WinMgr::start_replay(std::span<const std::uint8_t> trace, std::string_view name, bool loop) {
+  if (replaying_) {
+    return false;
+  }
+  Trace parsed = parse_trace(trace, name);
+  if (parsed.records.empty()) {
+    return false;
+  }
+  trace_ = std::move(parsed);
+  // The help file: the trace's name with `txt` for its last three
+  // characters.
+  tutorial_help_ = std::string(name);
+  if (tutorial_help_.size() >= 3) {
+    tutorial_help_.replace(tutorial_help_.size() - 3, 3, "txt");
+  }
+  // The buttons as last read (`0x121fe8`, `0x121fec`).
+  replay_state_ = last_input_;
+  replaying_ = true;
+  replay_pass_ = 0;
+  replay_next_ = 0;
+  replay_loops_ = loop;
+  tutorial_boxes_ = 0;
+  return true;
+}
+
+bool WinMgr::start_tutorial(const std::string& name) {
+  const std::optional<std::vector<std::uint8_t>> trace = services_.files.try_load(name + ".bin");
+  if (!trace || !services_.game.load_game_file(name + ".tsv")) {
+    log_warning("tutorial {} cannot be read", name);
+    return false;
+  }
+  post_message(kMessageBack, 0, 0);
+  services_.game.srand(0);
+  saved_rotation_speed_ = rotation_speed_;
+  rotation_speed_ = 1.0F;
+  return start_replay(*trace, name + ".bin", false);
+}
+
+const InputState& WinMgr::replay_input() {
+  replay_state_.left_changed = false;
+  replay_state_.right_changed = false;
+  replay_state_.moved = false;
+  replay_state_.key_event = false;
+  while (replaying_) {
+    const TraceRecord& r = trace_.records[replay_next_];
+    if (replay_pass_ < r.time) {
+      break;
+    }
+    if (r.type == TraceEventType::kMouseMove || r.type == TraceEventType::kMouseButton ||
+        r.type == TraceEventType::kKey) {
+      inject(r);
+    }
+    if (++replay_next_ >= trace_.records.size()) {
+      if (!replay_loops_) {
+        // WinEvent_stop_recording 0x54d44.
+        replaying_ = false;
+        break;
+      }
+      replay_next_ = 0;
+      replay_pass_ = 0;
+    }
+  }
+  return replay_state_;
+}
+
+void WinMgr::inject(const TraceRecord& r) {
+  InputState& s = replay_state_;
+  s.moved = false;
+  s.left_changed = false;
+  s.right_changed = false;
+  s.key_event = false;
+  switch (r.type) {
+    case TraceEventType::kMouseMove:
+      s.x = static_cast<std::int32_t>(r.a);
+      s.y = static_cast<std::int32_t>(r.b);
+      if (services_.warp_pointer) {
+        services_.warp_pointer(s.x, s.y);
+      }
+      s.moved = true;
+      break;
+    case TraceEventType::kMouseButton:
+      if (r.a != 0) {
+        s.right_down = r.b != 0;
+        s.right_changed = true;
+      } else {
+        s.left_down = r.b != 0;
+        s.left_changed = true;
+        // A help-mode click carries Shift with its press.
+        s.shift = r.msg != 0 && r.b != 0;
+      }
+      break;
+    case TraceEventType::kKey:
+      s.shift_flags = r.msg;
+      s.ascii = static_cast<std::uint16_t>(r.b);
+      s.scan_code = static_cast<std::uint16_t>(r.a);
+      s.key_event = true;
+      s.shift = (r.msg & 3) != 0;
+      s.ctrl = (r.msg & 4) != 0;
+      s.alt = (r.msg & 8) != 0;
+      break;
+    default:
+      break;
+  }
+}
+
+void WinMgr::check_replay_abort() {
+  if (!replaying_) {
+    return;
+  }
+  const int x = replay_state_.x;
+  const int y = replay_state_.y;
+  InputState now = services_.poll_input();
+  bool keep = true;
+  if (now.key_event || (now.left_changed && now.left_down) || (now.right_changed && now.right_down)) {
+    replaying_ = false;
+    int result = 0;
+    if (!modal_) {
+      auto* help = dynamic_cast<HelpWnd*>(find_window("HELPWINDOW"));
+      if (help == nullptr) {
+        throw DataError("windows.txt: no HELPWINDOW");
+      }
+      help->open_topic("help.txt", kEndTutorialTopic);
+      result = do_modal(*help);
+      now = last_input_;
+    }
+    if (result == 0) {
+      replaying_ = true;
+    } else {
+      services_.game.srand(static_cast<std::uint32_t>(std::time(nullptr)));
+      rotation_speed_ = saved_rotation_speed_;
+      keep = false;
+    }
+  }
+  if (keep) {
+    // The replayed pointer stays; the rest is the real input's.
+    replay_state_ = now;
+    replay_state_.moved = false;
+    replay_state_.x = x;
+    replay_state_.y = y;
+  }
+}
+
+void WinMgr::show_tutorial_box() {
+  replaying_ = false;
+  auto* help = dynamic_cast<HelpWnd*>(find_window("HELPWINDOW"));
+  if (help == nullptr) {
+    throw DataError("windows.txt: no HELPWINDOW");
+  }
+  help->open_topic(tutorial_help_, std::format("info{:02d}", tutorial_boxes_));
+  do_modal(*help);
+  // The input after the box: its last pass's, the key and button changes
+  // cleared (by the modal loop), no Alt and no scan code.
+  last_input_.alt = false;
+  last_input_.scan_code = 0;
+  replay_state_ = last_input_;
+  replaying_ = true;
+  ++tutorial_boxes_;
 }
 
 void WinMgr::end_modal(int result) {
@@ -1058,6 +1385,9 @@ int WinMgr::do_modal(GWindow& dialog) {
   while (running_ && modal_) {
     run_pass();
   }
+  last_input_.left_changed = false;
+  last_input_.right_changed = false;
+  last_input_.key_event = false;
 
   dialog.handle_event(kEventDeactivate, 0, 0);
   for (GWindow* child : dialog.children()) {
@@ -1169,12 +1499,17 @@ void WinMgr::pick_music(const InputState& input) {
 }
 
 void WinMgr::process_input(const InputState& input) {
+  if (replaying_) {
+    ++replay_pass_;
+  }
   last_input_ = input;
+  // The pass works on the input globals, which nested passes overwrite.
+  InputState& in = last_input_;
   // Shift held: help mode.
-  if (input.shift && !help_mode_ && !modal_) {
+  if (in.shift && !help_mode_ && !modal_) {
     help_mode_ = true;
     services_.set_pointer_frame(kPointerHelp);
-  } else if (help_mode_ && !input.shift) {
+  } else if (help_mode_ && !in.shift) {
     help_mode_ = false;
     services_.set_pointer_frame(kPointerNormal);
     if (hot_ != -1) {
@@ -1187,34 +1522,37 @@ void WinMgr::process_input(const InputState& input) {
   if (!help_mode_ && !modal_ && current_ != kScreenOpening) {
     const int right = kScreenWidth - 1;
     const int bottom = kScreenHeight - 1;
-    if (input.y == 0) {
-      corner = input.x == 0 ? 0 : input.x == right ? 1 : -1;
-    } else if (input.y == bottom) {
-      corner = input.x == 0 ? 2 : input.x == right ? 3 : -1;
+    if (in.y == 0) {
+      corner = in.x == 0 ? 0 : in.x == right ? 1 : -1;
+    } else if (in.y == bottom) {
+      corner = in.x == 0 ? 2 : in.x == right ? 3 : -1;
     }
   }
   if (corner != exit_corner_) {
     exit_corner_ = corner;
     set_pointer(corner == -1 ? kPointerNormal : kPointerExitCorner + corner);
   }
-  if (input.moved) {
-    update_hover(input);
+  if (in.moved) {
+    update_hover(in);
   }
   if (!modal_) {
-    run_notifies(input);
+    run_notifies(in);
     run_timers();
   }
-  if (input.key_event) {
-    const bool hotkey = (input.alt || input.scan_code == kScanEsc) && handle_hotkey(input);
+  if (in.key_event) {
+    if (replaying_ && in.ctrl && in.scan_code == kScanP) {
+      show_tutorial_box();
+    }
+    const bool hotkey = (in.alt || in.scan_code == kScanEsc) && handle_hotkey(in);
     if (!hotkey) {
-      broadcast_event(kEventKey, input.ascii, input.scan_code);
+      broadcast_event(kEventKey, in.ascii, in.scan_code);
     }
   }
-  if (input.left_changed && input.left_down) {
+  if (in.left_changed && in.left_down) {
     if (exit_corner_ == -1) {
       // Alt + click is the developer's palette pick: nothing otherwise.
-      if (!input.alt) {
-        broadcast_event(help_mode_ && !modal_ ? kEventHelpClick : kEventLeftClick, input.x, input.y);
+      if (!in.alt) {
+        broadcast_event(help_mode_ && !modal_ ? kEventHelpClick : kEventLeftClick, in.x, in.y);
       }
     } else if (!modal_) {
       services_.sound.play_sfx(kExitSound);
@@ -1225,23 +1563,25 @@ void WinMgr::process_input(const InputState& input) {
       end_modal(-1);
     }
   }
-  if (input.right_changed && input.right_down) {
+  if (in.right_changed && in.right_down) {
     if (help_mode_) {
       help_mode_ = false;
       services_.set_pointer_frame(kPointerNormal);
     } else {
-      broadcast_event(kEventRightClick, input.x, input.y);
+      broadcast_event(kEventRightClick, in.x, in.y);
     }
   }
   while (!messages_.empty()) {
     dispatch_messages();
   }
-  // The game events of the star map (`WinMgr_show_game_events` 0x50f84)
-  // come with the game events; the auto next turn waits for them.
+  if (current_ == kScreenStarMap && services_.game.has_game_events() && !modal_) {
+    show_game_events();
+  }
+  // The auto next turn waits for the game events.
   if (auto_turn_ && !services_.game.has_game_events() && !modal_) {
     post_message(kMessageNextTurn, 0, 0);
   }
-  pick_music(input);
+  pick_music(in);
   SoundSystem& sound = services_.sound;
   do {
     if (sound.music_ready() && sound.tune_playing()) {
@@ -1269,9 +1609,10 @@ void WinMgr::refresh_screen() {
 }
 
 void WinMgr::run_pass() {
-  process_input(services_.poll_input());
+  process_input(replaying_ ? replay_input() : services_.poll_input());
   refresh_screen();
   services_.present();
+  check_replay_abort();
 }
 
 void WindowFactory::add(int type, WindowCreator create) { creators_[type] = std::move(create); }

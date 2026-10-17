@@ -22,7 +22,10 @@ namespace oa {
 namespace game {
 struct Planet;
 struct Session;
+struct Ship;
 }  // namespace game
+
+class ShipDesWnd;
 
 // The screen geometry (`PlanWnd_draw` 0x36de0, `plan_square_at_point`
 // 0x35d10).
@@ -122,6 +125,7 @@ class PlanWnd final : public GWindow {
   void ship_design(std::uint16_t square, bool refit);
   // `PlanWnd_finish_ship_design` (0x37dec).
   void finish_ship_design();
+  ShipDesWnd& design_window() const;
   void key(int scan);
   void draw_surface(const game::Session& s, const game::Planet& p);
   void draw_orbit(const game::Session& s, const game::Planet& p);
@@ -136,8 +140,10 @@ class PlanWnd final : public GWindow {
   std::uint16_t design_square_ = kNoSquare;                // +0xb0
   std::vector<std::uint8_t> build_items_;                  // +0xb2
   std::uint8_t flags_ = kColoredSquares | kPlanetPicture;  // +0x18b
-  // Whether the pending design is a refit (the design screen's `+0xc9`).
-  bool design_refit_ = false;
+  // The ship that the input box names at the activation (`0xf4508`), with
+  // its title's static string (`0xf450c`).
+  game::Ship* name_ship_ = nullptr;
+  int name_title_ = 0;
 };
 
 // The top panels (`planwin.cpp`, TYPE 29, ctor 0x37f1c).

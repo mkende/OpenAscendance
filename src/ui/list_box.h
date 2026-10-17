@@ -25,6 +25,9 @@ class ListBox final : public GWindow {
   struct Item {
     std::string text;
     int data = 0;
+    // The record a row stands for when the list's rows are objects (the
+    // original's text pointer pointing at a ship, a planet...), by index.
+    int object = 0;
   };
   // Draws `item` in `row` (inclusive screen coordinates), highlighted when
   // hovered (the `+0x8fa` callback).
@@ -61,6 +64,7 @@ class ListBox final : public GWindow {
   int add_item(std::string text, int height = -1, bool redraw = false);
   // `ListBox_set_item_data` / `ListBox_get_item_data` / `get_item_text`.
   void set_item_data(int index, int data);
+  void set_item_object(int index, int object);
   const Item& item(int index) const { return items_.at(static_cast<std::size_t>(index)); }
   int count() const { return static_cast<int>(items_.size()); }
   // `ListBox_clear` (0x2e46c).

@@ -43,7 +43,7 @@ class LoadWnd final : public GWindow {
   // mode, the keys `1`..`9` pick the row of that index (`1` is the second
   // row; the save list takes 1..9, the others 1..8), 0x1c01 (a row picked)
   // saves into the slot and goes back, loads a used slot and goes to the
-  // star map, or (later) starts a tutorial.
+  // star map, or starts a tutorial (`WinMgr::start_tutorial`).
   bool handle_event(int type, int a, int b) override;
   // `LoadWnd_draw` (0x30d2c): the title bar (wiped with 0x10 to load, 0x73
   // to save, left as the background for the tutorials) and the list.

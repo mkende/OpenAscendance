@@ -5,9 +5,10 @@
 // handling and refresh of the main loop (`docs/07-ui-framework.md`, "Window
 // manager").
 //
-// Not here yet: the game events of the star map (`WinMgr_show_game_events`
-// 0x50f84), the developer keys and the event recording and replay
-// (tutorials).
+// Also the game events of the star map (`WinMgr_show_game_events` 0x50f84)
+// and the replay of window-event traces (the tutorials, `docs/07-ui-framework.md`
+// "Recording and tutorials"). Not here: the developer keys and the
+// recorder.
 #pragma once
 
 #include <array>
@@ -22,8 +23,10 @@
 #include <vector>
 
 #include "assets/cfile.h"
+#include "assets/winevent.h"
 #include "assets/windows_txt.h"
 #include "audio/sound_system.h"
+#include "game/events.h"
 #include "gfx/font.h"
 #include "gfx/gsystem.h"
 #include "platform/input.h"
@@ -87,6 +90,9 @@ struct UiServices {
   // (what the VFX driver reads back for the Alt+G screenshots); none: the
   // off-screen buffer.
   std::function<const Image8&()> shown_frame = {};
+  // Moves the pointer to (x, y) (`MOUSE_force_move`: a replayed mouse
+  // move); none: the input's own position is kept.
+  std::function<void(int, int)> warp_pointer = {};
 };
 
 // Builds the window of a `windows.txt` record by its TYPE
@@ -313,6 +319,26 @@ class WinMgr final : public WindowStateIo {
   // rotation speed).
   void save_config() const;
 
+  // `Tutorial_start_replay` (0x54d98): from the next pass, the input comes
+  // from the window-event trace `trace` (the file `name`) instead of the
+  // player, one pass per counted pass; a recorded Ctrl+P opens the next
+  // `info%02d` topic of the help file named as the trace with the extension
+  // `txt`, and a real key or click asks whether to end the replay. With
+  // `loop` (the developer's message 4) the trace starts over at its end,
+  // else the replay stops there. Returns false (nothing done) while a
+  // replay runs. Throws `DataError` when `trace` is not a trace.
+  bool start_replay(std::span<const std::uint8_t> trace, std::string_view name, bool loop);
+  // A tutorial picked in the tutorial list (`LoadWnd_handle_event`
+  // 0x30988): `<name>.tsv` loaded, back to the previous screen, `srand(0)`,
+  // the rotation speed 1 (the player's restored when the tutorial is
+  // ended), then `<name>.bin` replayed. Returns false when a file is
+  // missing or not readable.
+  bool start_tutorial(const std::string& name);
+  // Whether a trace is being replayed (`+0x48aa`).
+  bool replaying() const { return replaying_; }
+  // The counted main-loop passes of the replay (`+0x48b6`).
+  std::uint32_t replay_pass() const { return replay_pass_; }
+
  private:
   struct Screen {
     std::array<int, kScreenWindows> slots{};  // window ids, 0 = free; slot 31 on top
@@ -362,6 +388,26 @@ class WinMgr final : public WindowStateIo {
   void pick_music(const InputState& input);
   // Message 7: the next contested star's event, else the end of the day.
   void next_turn();
+  // Message 8: the auto next turn toggled, or the next contested star's
+  // event.
+  void auto_turn_message();
+  // `WinMgr_show_game_events` (0x50f84): the next queued game event in
+  // `EVENTWIN`, run modally, then the screen its answer leads to.
+  void show_game_events();
+  // The screen the answer `result` (a button's MSG, 0 for Esc) to `event`
+  // leads to, 0 for none, with the selections it makes (the star, planet
+  // or species of the screen).
+  int game_event_screen(const game::GameEvent& event, int result);
+  // `WinEvent_replay` (0x54f90): the input of a replayed pass.
+  const InputState& replay_input();
+  // `input_inject_event` (0x25cc8): one record into the replayed input.
+  void inject(const TraceRecord& record);
+  // `WinMgr_check_replay_abort` (0x54e64): after a replayed pass, the real
+  // input is read; a key or a button press asks `endtut`.
+  void check_replay_abort();
+  // The Ctrl+P of a replay: the next tutorial help box, run modally with
+  // the replay paused.
+  void show_tutorial_box();
   // Alt+G (`screenshot_save_gif` 0x31338): `scr%03d.gif` in the user folder,
   // of the picture on the screen (the frame of the previous pass, with the
   // pointer).
@@ -406,7 +452,26 @@ class WinMgr final : public WindowStateIo {
   int previous_tune_ = -1;
   int volume_ramp_ = -1;
   std::uint32_t last_pass_tick_ = 0;  // `0x122008`
+  // The input globals of the pass (`0xc8484..`): nested passes (modal
+  // loops) overwrite them, and a modal loop clears the key and button
+  // changes when it ends.
   InputState last_input_;
+  // The replay (`+0x48aa` replaying, `+0x48ae` stop at the end, `+0x48b6`
+  // pass counter, `+0x48ba` records, `+0x48be` next record).
+  bool replaying_ = false;
+  bool replay_loops_ = false;
+  std::uint32_t replay_pass_ = 0;
+  Trace trace_;
+  std::size_t replay_next_ = 0;
+  InputState replay_state_;
+  // The tutorial's help file (`0x121ff4`) and the number of its boxes
+  // shown (`0x121ff0`).
+  std::string tutorial_help_;
+  int tutorial_boxes_ = 0;
+  // The rotation speed before the tutorial (`0x86a48`).
+  float saved_rotation_speed_ = 1.0F;
+  // `0xfa340`: a game event box is being prepared.
+  bool showing_event_ = false;
 };
 
 }  // namespace oa

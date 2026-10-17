@@ -43,6 +43,9 @@ struct Camera3d {
   // vertical axis by `degrees` (nothing for +-0), then re-orthonormalises the
   // basis keeping the up vector (`orient_orthonormalize_keep_up` 0x4eb64).
   void rotate_forward_y(float degrees);
+  // `Camera_update_view_offset` 0x1b958: `update_view` with the camera at
+  // `position + offset` (the star-system view orbits its target point).
+  void update_view_offset(const Vec3& offset);
   // `vec3_transform_mat34` 0x4e794 of `p` by the view matrix.
   Vec3 transform(const Vec3& p) const;
 
@@ -58,5 +61,24 @@ struct ScreenPoint {
   std::int16_t y = 0;
 };
 ScreenPoint project_point(const Vec3& v, float focal, std::int32_t cx, std::int32_t cy);
+
+// `vec3_transform_mat34` 0x4e794: each row `((m1 p1 + m0 p0) + m2 p2) + m3`.
+Vec3 transform_mat34(const std::array<float, 12>& m, const Vec3& p);
+// `vec3_mul_mat3` 0x4e524: each row `(m1 v1 + m0 v0) + m2 v2` (row-major).
+Vec3 mul_mat3(const std::array<float, 9>& m, const Vec3& v);
+// `vec3_rotate_x` 0x4e64c: (y, z) turned by `degrees`, the cosine stored as a
+// float; nothing for +-0.
+void rotate_x(Vec3& v, float degrees);
+// `orient_orthonormalize_keep_forward` 0x4ec74 of a basis (rows right, up,
+// forward): forward normalised, right = up x forward, up = forward x right,
+// each normalised.
+void orthonormalize_keep_forward(std::array<float, 9>& basis);
+// `orient_rotate_y` 0x4e9f4 / `orient_rotate_x` 0x4e9c4: rows 2 then 1 of the
+// basis turned about the y (x) axis by `degrees`, then
+// `orthonormalize_keep_forward`; nothing for +-0.
+void orient_rotate_y(std::array<float, 9>& basis, float degrees);
+void orient_rotate_x(std::array<float, 9>& basis, float degrees);
+// `vec3_angle_between` 0x4e4ac: the angle between `a` and `b` in degrees.
+double angle_between(const Vec3& a, const Vec3& b);
 
 }  // namespace oa

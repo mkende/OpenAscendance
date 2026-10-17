@@ -11,6 +11,7 @@
 #include "core/watcom_qsort.h"
 #include "game/session.h"
 #include "game/state.h"
+#include "screens/neg_wnd.h"
 #include "screens/new_game_wnd.h"
 
 namespace oa {
@@ -95,20 +96,6 @@ Vec3 transform(const std::array<float, 12>& m, const Vec3& p) {
     out[i] = f32(sum + r[3]);
   }
   return out;
-}
-
-// `vec3_rotate_x` (0x4e64c): (y, z) turned by `degrees`, the cosine stored as
-// a float, the sine kept double; nothing for +-0.
-void rotate_x(Vec3& v, float degrees) {
-  if (degrees == 0.0F) {
-    return;
-  }
-  const double radians = static_cast<double>(degrees) * static_cast<double>(kDegToRad);
-  const float c = f32(std::cos(radians));
-  const double s = std::sin(radians);
-  const float y = v[1];
-  v[1] = f32(static_cast<double>(y) * c - v[2] * s);
-  v[2] = f32(static_cast<double>(v[2]) * c + y * s);
 }
 
 // `a x b`, each component stored as a float.
@@ -499,9 +486,13 @@ void CosWnd::click_item() {
       wm_.post_message(kMessageChangeScreen, kScreenStarSystem, 1);
     }
   } else if (wm_.current_screen() == kScreenDiplomacy) {
-    // The negotiation window then names this system in its options
-    // (`NegWnd_on_star_selected` 0x3213c), once written.
+    // The negotiation window names this system in its options.
     c.selected_star = it.index;
+    auto* negotiation = dynamic_cast<NegWnd*>(wm_.find_window("NEGSCREEN"));
+    if (negotiation == nullptr) {
+      throw DataError("windows.txt: no NEGSCREEN");
+    }
+    negotiation->on_star_selected();
     draw(kDrawNormal);
   }
 }

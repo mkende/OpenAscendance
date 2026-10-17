@@ -3,6 +3,7 @@
 //
 //   open_ascendance [--data <install dir> | --setup] [--sharp] [--keys <k1,k2,...>]
 //                   [--screenshot <file.bmp> [--frames N] [--save-dir <dir>]] [--seed N]
+//                   [--trace <file.bin>]
 //
 // Without `--data` (or when it is not an install) the game files are those
 // remembered by the install setup (app/install_setup.h), which runs when
@@ -28,6 +29,9 @@
 // `--seed` starts as with a `cosmos.txt` of 50 stars, 7 races and that seed
 // (the original's developer file, read from the user folder otherwise): the
 // galaxies of the oracle's runs (`docs/12-oracle.md`).
+// `--trace` replays a window-event trace (`tools/winevent.py`, the
+// original's third argument) from the first pass of the opening menu: the
+// traces of the oracle's runs.
 #pragma once
 
 #include <cstdint>
@@ -45,7 +49,7 @@ namespace oa {
 // The usage line's options, after the program's name.
 inline constexpr std::string_view kUsageOptions =
     "[--data <install dir> | --setup] [--sharp] [--keys <k1,k2,...>] [--screenshot <file.bmp> [--frames N] "
-    "[--save-dir <dir>]] [--seed N]";
+    "[--save-dir <dir>]] [--seed N] [--trace <file.bin>]";
 
 struct CommandLine {
   std::optional<std::string> data_dir;
@@ -56,6 +60,7 @@ struct CommandLine {
   int frames = 2;
   std::optional<std::string> save_dir;
   std::optional<std::int32_t> seed;
+  std::optional<std::string> trace;
 };
 
 // Parses the arguments after the program name. Throws `std::runtime_error`

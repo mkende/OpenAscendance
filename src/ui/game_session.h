@@ -139,9 +139,18 @@ class GameSession {
   // The next-day commands (messages 7 and 8, `WinMgr_dispatch_messages`
   // 0x51290): the next star of the day where the player has to fight
   // (`Cosmos_next_contested_star` 0x20260), -1 for none, and the end of the
-  // day (`Cosmos_end_day` 0x203b4).
+  // day (`Cosmos_end_day` 0x203b4), which returns whether it ended the game
+  // (`Cosmos_check_game_over` 0x1fec4 set the ending and dropped the game
+  // events: the end-of-game screen follows).
   virtual int next_contested_star() { return -1; }
-  virtual void end_day() {}
+  virtual bool end_day() { return false; }
+  // `Game_load` of the game file `name` of the install (a tutorial's
+  // `<name>.tsv`, `LoadWnd_handle_event` 0x30988); returns false when it
+  // cannot be read.
+  virtual bool load_game_file(const std::string& /*name*/) { return false; }
+  // `srand` (the tutorials' `srand(0)`, `srand(time(NULL))` when one is
+  // left).
+  virtual void srand(std::uint32_t /*seed*/) {}
   // Whether game events wait to be shown (the window manager's queue,
   // `+0x475a`): the auto next turn waits for them.
   virtual bool has_game_events() const { return false; }

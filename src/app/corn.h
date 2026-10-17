@@ -32,6 +32,8 @@ struct GameOptions {
   // The seed of a `cosmos.txt` of 50 stars and 7 races; else that file is
   // read from `user_dir` when there.
   std::optional<std::int32_t> seed;
+  // A window-event trace replayed from the opening menu's first pass.
+  std::optional<std::filesystem::path> trace;
 };
 
 // Runs the game from `install` until the player quits; returns the exit

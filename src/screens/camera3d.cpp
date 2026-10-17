@@ -1,6 +1,7 @@
 #include "screens/camera3d.h"
 
 #include <cmath>
+#include <algorithm>
 #include <cstring>
 
 namespace oa {
@@ -66,6 +67,13 @@ void Camera3d::update_view() {
   view[11] = f32((d(c[2]) * m[8] + d(c[0]) * m[6]) + d(c[1]) * m[7]);
 }
 
+void Camera3d::update_view_offset(const Vec3& offset) {
+  const Vec3 saved = position;
+  position = {f32(d(offset[0]) + position[0]), f32(d(offset[1]) + position[1]), f32(d(offset[2]) + position[2])};
+  update_view();
+  position = saved;
+}
+
 void Camera3d::rotate_forward_y(float degrees) {
   if (degrees == 0.0F) {
     return;
@@ -83,6 +91,81 @@ Vec3 Camera3d::transform(const Vec3& p) const {
   return {f32(((d(m[2]) * p[2] + d(m[0]) * p[0]) + d(m[1]) * p[1]) + m[3]),
           f32(((d(m[6]) * p[2] + d(m[4]) * p[0]) + d(m[5]) * p[1]) + m[7]),
           f32(((d(m[10]) * p[2] + d(m[8]) * p[0]) + d(m[9]) * p[1]) + m[11])};
+}
+
+Vec3 transform_mat34(const std::array<float, 12>& m, const Vec3& p) {
+  Vec3 out{};
+  for (std::size_t i = 0; i < 3; ++i) {
+    const float* r = &m[4 * i];
+    out[i] = f32(((d(r[1]) * p[1] + d(r[0]) * p[0]) + d(r[2]) * p[2]) + r[3]);
+  }
+  return out;
+}
+
+Vec3 mul_mat3(const std::array<float, 9>& m, const Vec3& v) {
+  Vec3 out{};
+  for (std::size_t i = 0; i < 3; ++i) {
+    const float* r = &m[3 * i];
+    out[i] = f32((d(v[1]) * r[1] + d(v[0]) * r[0]) + d(v[2]) * r[2]);
+  }
+  return out;
+}
+
+void rotate_x(Vec3& v, float degrees) {
+  if (degrees == 0.0F) {
+    return;
+  }
+  const double radians = d(degrees) * d(0.017453292F);
+  const float c = f32(std::cos(radians));
+  const double s = std::sin(radians);
+  const float y = v[1];
+  v[1] = f32(d(y) * c - v[2] * s);
+  v[2] = f32(d(v[2]) * c + y * s);
+}
+
+void orthonormalize_keep_forward(std::array<float, 9>& b) {
+  // a x b, each component stored as a float.
+  const auto cross = [](const float* a, const float* c) -> Vec3 {
+    return {f32(d(a[1]) * c[2] - d(a[2]) * c[1]), f32(d(a[2]) * c[0] - d(a[0]) * c[2]),
+            f32(d(a[0]) * c[1] - d(a[1]) * c[0])};
+  };
+  const auto set_row = [&](std::size_t r, Vec3 v) {
+    game::normalize(v);
+    std::copy(v.begin(), v.end(), b.begin() + static_cast<std::ptrdiff_t>(3 * r));
+  };
+  set_row(2, {b[6], b[7], b[8]});
+  set_row(0, cross(&b[3], &b[6]));
+  set_row(1, cross(&b[6], &b[0]));
+}
+
+namespace {
+
+template <typename Rotate>
+void orient_rotate(std::array<float, 9>& m, float degrees, Rotate rotate) {
+  if (degrees == 0.0F) {
+    return;
+  }
+  for (const std::size_t r : {2U, 1U}) {
+    Vec3 v = {m[3 * r], m[3 * r + 1], m[3 * r + 2]};
+    rotate(v, degrees);
+    std::copy(v.begin(), v.end(), m.begin() + static_cast<std::ptrdiff_t>(3 * r));
+  }
+  orthonormalize_keep_forward(m);
+}
+
+}  // namespace
+
+void orient_rotate_y(std::array<float, 9>& basis, float degrees) { orient_rotate(basis, degrees, game::rotate_y); }
+
+void orient_rotate_x(std::array<float, 9>& basis, float degrees) { orient_rotate(basis, degrees, rotate_x); }
+
+double angle_between(const Vec3& a, const Vec3& b) {
+  // The radian-to-degree factor (0x85fc4).
+  constexpr float kRadToDeg = 57.29578F;
+  float t = f32((d(a[1]) * b[1] + d(a[0]) * b[0]) + d(a[2]) * b[2]);
+  t = f32(t / game::length(a));
+  const double c = t / game::length(b);
+  return std::acos(c) * d(kRadToDeg);
 }
 
 std::array<std::uint8_t, Camera3d::kSize> Camera3d::serialize() const {

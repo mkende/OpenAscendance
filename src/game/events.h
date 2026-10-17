@@ -47,7 +47,10 @@ struct GameEvent {
   std::int32_t b = 0;
 };
 
-// The event queue (WinMgr +0x4758 capacity, +0x475a count).
+// The event queue (WinMgr +0x475a count, +0x475c read index, +0x475e
+// records): the window manager shows the event at the read index, one per
+// main-loop pass; the queue empties when the read index reaches the count,
+// so the events already shown still take room until then.
 class EventQueue {
  public:
   static constexpr std::size_t kCapacity = 32;
@@ -60,14 +63,35 @@ class EventQueue {
     events_.push_back({code, a, b});
     return true;
   }
+  // The queued events, those already shown included.
   const std::vector<GameEvent>& events() const { return events_; }
-  bool empty() const { return events_.empty(); }
-  // Removes and returns every queued event, oldest first (the UI shows them
-  // in that order).
-  std::vector<GameEvent> take() { return std::exchange(events_, {}); }
+  // Whether no event waits to be shown (the original's count is 0).
+  bool empty() const { return read_ == events_.size(); }
+  // The next event to show; the queue must not be empty.
+  const GameEvent& front() const { return events_.at(read_); }
+  // Marks the next event shown (`WinMgr_show_game_events` 0x50f84): the
+  // queue empties once every event is.
+  void pop() {
+    if (++read_ >= events_.size()) {
+      clear();
+    }
+  }
+  // Drops every event (the count set to 0 by `Cosmos_check_game_over`
+  // 0x1fec4 and the loads).
+  void clear() {
+    events_.clear();
+    read_ = 0;
+  }
+  // Removes and returns the events not shown yet, oldest first.
+  std::vector<GameEvent> take() {
+    std::vector<GameEvent> rest(events_.begin() + static_cast<std::ptrdiff_t>(read_), events_.end());
+    clear();
+    return rest;
+  }
 
  private:
   std::vector<GameEvent> events_;
+  std::size_t read_ = 0;
 };
 
 }  // namespace oa::game

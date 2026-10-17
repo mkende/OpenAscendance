@@ -9,7 +9,7 @@
 namespace oa {
 
 // TYPE 31: its shape in the player's colour on the text-window background.
-class RaceColorButton final : public GWindow {
+class RaceColorButton : public GWindow {
  public:
   using GWindow::GWindow;
 

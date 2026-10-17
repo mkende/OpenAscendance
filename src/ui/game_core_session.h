@@ -13,6 +13,8 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <span>
+#include <string>
 #include <vector>
 
 #include "assets/cfile.h"
@@ -66,13 +68,18 @@ class GameCoreSession final : public GameSession {
   game::Session* core() override { return &session_; }
 
   int next_contested_star() override;
-  void end_day() override;
+  bool end_day() override;
+  bool load_game_file(const std::string& name) override;
+  void srand(std::uint32_t seed) override { session_.rng.srand(seed); }
   bool has_game_events() const override { return !session_.events.empty(); }
   void set_current_screen(int screen) override { session_.screen = static_cast<std::int16_t>(screen); }
 
  private:
   // The bytes of save `slot`, nothing when it does not exist.
   std::optional<std::vector<std::uint8_t>> read_save(int slot) const;
+  // `Game_load` of the save bytes `data` (named `name` in the warnings);
+  // returns false when they are not a save.
+  bool load_bytes(std::span<const std::uint8_t> data, const std::string& name);
   // The host path save `slot` is read from, nothing when it does not exist.
   std::optional<std::filesystem::path> find_save(int slot) const;
 

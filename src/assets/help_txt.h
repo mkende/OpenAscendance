@@ -34,7 +34,8 @@
 namespace oa {
 
 struct HelpElement {
-  enum class Kind : std::uint8_t { kShape = 0, kText = 1 };
+  // kNone: an element hidden by the code (the special abilities window).
+  enum class Kind : std::uint8_t { kShape = 0, kText = 1, kNone = 2 };
 
   Kind kind = Kind::kShape;
   int shape_index = 0;  // `gwshare.txt` table

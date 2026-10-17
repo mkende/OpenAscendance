@@ -5,6 +5,8 @@ oa_add_module(oa_ui
     button_group.cpp
     digit_counter.cpp
     edit_field.cpp
+    # The game-event box (eventwnd.cpp).
+    event_wnd.cpp
     flic.cpp
     # The FLIC window (flicwin.cpp).
     flicwnd.cpp

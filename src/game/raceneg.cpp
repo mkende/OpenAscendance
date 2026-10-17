@@ -19,6 +19,21 @@ void add_attitude(Race& race, std::size_t other, std::int32_t delta) {
 
 bool alive(const Race& race) { return race.extinct != -1; }
 
+// `race.relation[i]` read with the negotiation window's signed third-party
+// index: -1 (no third party listed) reads the byte before the array, the
+// high byte of `attitude[6]`.
+std::uint8_t relation_at(const Race& race, std::int16_t i) {
+  if (i == -1) {
+    return static_cast<std::uint8_t>(static_cast<std::uint16_t>(race.attitude[6]) >> 8);
+  }
+  return race.relation.at(static_cast<std::size_t>(i));
+}
+
+// `race.attitude[i]` read the same way: -1 reads `ship_patience` (+0x1b0).
+std::int16_t attitude_at(const Race& race, std::int32_t i) {
+  return i == -1 ? race.ship_patience : race.attitude.at(static_cast<std::size_t>(i));
+}
+
 // Both races meet: relations 1, each attitude its own START_ATTITUDE.
 void meet(Race& a, Race& b) {
   a.relation[b.index] = kPeace;
@@ -81,7 +96,7 @@ void race_diplomacy_turn(Session& session, Race& race) {
 
 // 0x3fcb8
 std::vector<std::uint8_t> race_list_actions(const Session& session, const Race& player, RaceIndex alien,
-                                            RaceIndex third) {
+                                            std::int16_t third) {
   const Game& game = *session.game;
   const Race& a = game.cosmos.races.at(alien);
   const std::int32_t day = game.cosmos.day;
@@ -97,13 +112,14 @@ std::vector<std::uint8_t> race_list_actions(const Session& session, const Race& 
       actions.push_back(kDipTradeResearch);
     }
   };
-  const bool third_known = player.relation.at(third) != kNotMet;
+  const bool third_known = relation_at(player, third) != kNotMet;
+  const std::uint8_t third_relation = relation_at(a, third);
   switch (player.relation.at(alien)) {
     case kPeace:
       actions.push_back(kDipDeclareWar);
       actions.push_back(kDipProposeAlliance);
       trades();
-      if (third_known && a.relation[third] == kWar) {
+      if (third_known && third_relation == kWar) {
         actions.push_back(kDipOfferPeaceToOtherRace);
       }
       break;
@@ -114,14 +130,14 @@ std::vector<std::uint8_t> race_list_actions(const Session& session, const Race& 
       actions.push_back(kDipBreakAlliance);
       trades();
       actions.push_back(kDipHelpControlSystem);
-      if (third_known && a.relation[third] == kWar) {
+      if (third_known && third_relation == kWar) {
         actions.push_back(kDipOfferPeaceToOtherRace);
       }
-      if (third_known && a.relation[third] == kPeace) {
+      if (third_known && third_relation == kPeace) {
         actions.push_back(kDipDeclareWarOnOtherRace);
         actions.push_back(kDipProposeAllianceToOtherRace);
       }
-      if (third_known && a.relation[third] == kAlliance) {
+      if (third_known && third_relation == kAlliance) {
         actions.push_back(kDipBreakAllianceWithOtherRace);
       }
       break;
@@ -299,15 +315,18 @@ std::uint8_t race_respond_to_diplomatic_action(Session& session, Race& responder
     case kDipOfferPeaceToOtherRace:
       // The actor's ACCEPT_ALLIANCE and the responder's PROPOSE_PEACE
       // (original's choice).
-      return wrap_i16(a - x.accept_alliance) + responder.attitude[t] <= responder.propose_peace ? 13 : 12;
+      return wrap_i16(a - x.accept_alliance) + attitude_at(responder, arg) <= responder.propose_peace ? 13 : 12;
     case kDipBreakAlliance:
       return 14;
     case kDipDeclareWarOnOtherRace:
-      return wrap_i16(a - responder.attitude[t]) <= responder.start_attitude ? 16 : 15;
+      return wrap_i16(a - attitude_at(responder, arg)) <= responder.start_attitude ? 16 : 15;
     case kDipBreakAllianceWithOtherRace: {
-      if (wrap_i16(a - responder.attitude[t]) > 0) {
+      if (wrap_i16(a - attitude_at(responder, arg)) > 0) {
         const std::int32_t mine = wrap_i16(a - x.accept_alliance);
-        const std::int32_t theirs = wrap_i16(responder.attitude[t] - cosmos.races[t].accept_alliance);
+        // Without a third party (-1) the original reads a record before the
+        // races array; the remake takes 0 for its ACCEPT_ALLIANCE.
+        const std::int32_t theirs =
+            wrap_i16(attitude_at(responder, arg) - (arg == -1 ? 0 : cosmos.races.at(t).accept_alliance));
         if (mine != theirs && mine - theirs > -1) {
           return 17;
         }
@@ -316,7 +335,7 @@ std::uint8_t race_respond_to_diplomatic_action(Session& session, Race& responder
     }
     case kDipProposeAllianceToOtherRace:
       // Looks inverted (original): accepts only a disliked third race.
-      return responder.declare_war <= responder.attitude[t] - wrap_i16(a - x.accept_alliance) ? 20 : 19;
+      return responder.declare_war <= attitude_at(responder, arg) - wrap_i16(a - x.accept_alliance) ? 20 : 19;
     case kDipHelpControlSystem: {
       const Star& star = cosmos.stars.at(static_cast<std::size_t>(arg));
       if (race_count_ships_at_star(session, responder, kWar, star, nullptr) == 0) {
@@ -413,6 +432,12 @@ void race_apply_diplomatic_action(Session& session, Race& actor, RaceIndex targe
         break;
       }
       add_attitude(actor, target, 5);
+      if (arg == -1) {
+        // No third party listed (`race_list_actions` read stale bytes): the
+        // original's third race record lies before the races array, which
+        // the remake does not reproduce.
+        break;
+      }
       Race& r = cosmos.races[t];
       if (r.attitude[target] > r.accept_peace - 10) {
         add_attitude(actor, target, 5);
@@ -435,8 +460,11 @@ void race_apply_diplomatic_action(Session& session, Race& actor, RaceIndex targe
         add_attitude(actor, target, -10);
         break;
       }
-      Race& r = cosmos.races[t];
       add_attitude(actor, target, 10);
+      if (arg == -1) {
+        break;  // no third party: see OfferPeaceToOtherRace
+      }
+      Race& r = cosmos.races[t];
       b.relation[t] = kWar;
       r.relation[target] = kWar;
       add_attitude(b, t, -15);
@@ -450,8 +478,11 @@ void race_apply_diplomatic_action(Session& session, Race& actor, RaceIndex targe
         add_attitude(actor, target, -10);
         break;
       }
-      Race& r = cosmos.races[t];
       add_attitude(actor, target, 15);
+      if (arg == -1) {
+        break;  // no third party: see OfferPeaceToOtherRace
+      }
+      Race& r = cosmos.races[t];
       b.relation[t] = kPeace;
       r.relation[target] = kPeace;
       add_attitude(b, t, -5);
@@ -466,6 +497,9 @@ void race_apply_diplomatic_action(Session& session, Race& actor, RaceIndex targe
         break;
       }
       add_attitude(actor, target, 5);
+      if (arg == -1) {
+        break;  // no third party: see OfferPeaceToOtherRace
+      }
       Race& r = cosmos.races[t];
       if (r.attitude[target] > r.accept_alliance - 10) {
         add_attitude(actor, target, 5);

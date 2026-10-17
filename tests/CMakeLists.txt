@@ -28,10 +28,20 @@ add_executable(oa_tests
   star_map_test.cpp
   # The planet screen and its square dialog.
   planet_screen_test.cpp
+  # The end-of-game screen.
+  end_game_test.cpp
   # The research screen.
   research_screen_test.cpp
   # The planet status list.
   status_screen_test.cpp
+  # The species selection, negotiation and intelligence screens and the
+  # special abilities window.
+  diplomacy_screen_test.cpp
+  # The ship design screen and the Ships list.
+  ship_design_test.cpp
+  # The game events, the day and the trace replay through the user
+  # interface.
+  day_ui_test.cpp
   # The command line and the install choice.
   app_test.cpp
 )
@@ -48,6 +58,8 @@ add_executable(oa_game_tests
   game_test.cpp
   # The day against the oracle corpus.
   day_test.cpp
+  # The negotiation screen's dialogue.
+  negotiation_test.cpp
 )
 target_link_libraries(oa_game_tests PRIVATE oa_game Catch2::Catch2WithMain)
 catch_discover_tests(oa_game_tests)

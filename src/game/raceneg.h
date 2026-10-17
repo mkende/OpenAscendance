@@ -41,9 +41,11 @@ bool race_shares_star_with(const Cosmos& cosmos, const Race& race, RaceIndex oth
 void race_diplomacy_turn(Session& session, Race& race);
 
 // Returns the player's menu toward `alien` with `third` the selected third
-// race (`Race_list_actions` 0x3fcb8): kDipNone first, then the actions.
+// race, -1 for none (`Race_list_actions` 0x3fcb8): kDipNone first, then the
+// actions. With -1 the original reads the byte before the relations (the
+// high byte of `attitude[6]`), as the remake does.
 std::vector<std::uint8_t> race_list_actions(const Session& session, const Race& player, RaceIndex alien,
-                                            RaceIndex third);
+                                            std::int16_t third);
 
 // Returns the action `race` wants toward `other` and its argument (a race
 // index or a star index) (`Race_choose_diplomatic_action` 0x3feb4).

@@ -7,7 +7,6 @@
 
 #include "assets/text_lines.h"
 #include "core/error.h"
-#include "core/log.h"
 
 namespace oa {
 
@@ -172,8 +171,7 @@ void LoadWnd::pick(int row) {
       break;
     }
     case Mode::kTutorial:
-      // Tutorial_start_replay comes with the event replay.
-      log_warning("tutorial {} not supported yet", tutorials_[static_cast<std::size_t>(index)].name);
+      wm_.start_tutorial(tutorials_[static_cast<std::size_t>(index)].name);
       break;
   }
 }

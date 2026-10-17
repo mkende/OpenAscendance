@@ -11,7 +11,9 @@ opening menu and the intro with its subtitles and music, the window toolkit
 hotkeys, `ascend.cfg`) and the front-end screens (new game, species history,
 load/save lists); milestone 2 (in progress), the game screens over the game
 core: the star map (its new-game, species and diplomacy variants), the saves
-with their window state, the planet and research screens.
+with their window state, the planet and research screens; the diplomacy
+(milestone 6): species selection, negotiation, intelligence and the special
+abilities window.
 
 ## Layout
 
@@ -35,7 +37,8 @@ the functions they port with their `PATCH.EXE` address:
   player and window, `GameSession` (the game core as the screens see it)
   and `GameCoreSession` (it over `src/game`: saves, new game, the day).
 - `src/screens`: the screens (new game, species history, load/save and
-  tutorial lists, the star map, planets, research).
+  tutorial lists, the star map, planets, research, negotiation,
+  intelligence).
 - `src/app`: `main`, the command line and the install setup.
 
 ## Build

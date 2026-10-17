@@ -52,7 +52,7 @@ int ListBox::add_item(std::string text, int height, bool redraw) {
       set_scroll_bar(true);
     }
   }
-  items_.push_back(Item{std::move(text), 0});
+  items_.push_back(Item{std::move(text), 0, 0});
   if (redraw) {
     draw(kDrawNormal);
   }
@@ -62,6 +62,12 @@ int ListBox::add_item(std::string text, int height, bool redraw) {
 void ListBox::set_item_data(int index, int data) {
   if (index >= 0 && index < count()) {
     items_[static_cast<std::size_t>(index)].data = data;
+  }
+}
+
+void ListBox::set_item_object(int index, int object) {
+  if (index >= 0 && index < count()) {
+    items_[static_cast<std::size_t>(index)].object = object;
   }
 }
 

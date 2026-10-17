@@ -238,6 +238,8 @@ bool race_offended_by(Session& session, Race& victim, RaceIndex aggressor, const
   return true;
 }
 
+std::uint16_t race_ability_period(const Race& race) { return kAbilityPeriod.at(race.ability); }
+
 bool race_use_special_ability(Session& session, Race& race, bool use) {
   Cosmos& cosmos = session.game->cosmos;
   Research& research = session.game->research;

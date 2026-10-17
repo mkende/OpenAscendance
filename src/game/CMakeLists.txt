@@ -11,6 +11,8 @@ oa_add_module(oa_game
     cosmos.cpp
     float_math.cpp
     galaxy.cpp
+    # The negotiation screen's dialogue (NegWnd's logic).
+    negotiation.cpp
     new_game.cpp
     planet.cpp
     # The player actions of the planet, research and planet-list screens.
@@ -21,6 +23,8 @@ oa_add_module(oa_game
     research.cpp
     save.cpp
     ship.cpp
+    # The ship design screen's rules (slot grid, hull cycle, refit cost).
+    ship_design.cpp
     ship_gizmo.cpp
     tables.cpp
   DEPS oa_core oa_assets)

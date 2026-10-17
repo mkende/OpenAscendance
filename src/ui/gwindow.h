@@ -103,6 +103,12 @@ class GWindow {
   void set_pane(const Pane& pane) { pane_ = pane; }
   bool shown() const { return shown_; }
   bool active() const { return active_; }
+  // Sets both the shown (`+0x35`) and active (`+0x39`) flags, as windows
+  // enabling or disabling their controls do (no event, no draw).
+  void set_enabled(bool on) {
+    shown_ = on;
+    active_ = on;
+  }
   bool mouse_focus() const { return mouse_focus_; }
   void set_mouse_focus(bool focus) { mouse_focus_ = focus; }
   int parent() const { return parent_; }

@@ -75,6 +75,7 @@ class Host {
   void set_pointer_shown(bool shown) { pointer_shown_ = shown; }
   // `GSystem_set_pointer`: the `MOUSE.SHP` frame drawn.
   void set_pointer_frame(int frame) { pointer_frame_ = frame; }
+  void warp_pointer(int x, int y) { input_.warp(x, y); }
   // The last frame shown, with the pointer.
   const Image8& shown_frame() const { return frame_; }
 
@@ -188,7 +189,8 @@ void run(const GameOptions& options, const GameFiles& files) {
                                             return host.input().poll();
                                           },
                                           .present = [&] { host.present(gs); },
-                                          .shown_frame = [&]() -> const Image8& { return host.shown_frame(); }},
+                                          .shown_frame = [&]() -> const Image8& { return host.shown_frame(); },
+                                          .warp_pointer = [&](int x, int y) { host.warp_pointer(x, y); }},
                                factory);
   WinMgr& wm = *wm_holder;
   wm.setup_race_shapes();
@@ -199,6 +201,10 @@ void run(const GameOptions& options, const GameFiles& files) {
   gs.load_palette(files, "DATA\\game.pal", 0, 256);
   gs.set_dac_range(0, 256);
   wm.set_screen(0, false);
+  if (options.trace) {
+    // main: Tutorial_start_replay of the third argument.
+    wm.start_replay(read_file(*options.trace), options.trace->filename().string(), false);
+  }
   host.set_pointer_shown(true);
 
   while (wm.running()) {

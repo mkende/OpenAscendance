@@ -49,8 +49,10 @@ void BattleControl::open(Session& session, Star& star) {
 
 void BattleControl::close(Session& session) { session.screen = previous_screen_; }
 
-void BattleControl::act(Session& session, BattleAction action) {
-  do_action(session, action, false);
+void BattleControl::act(Session& session, BattleAction action, bool check) {
+  if (check) {
+    do_action(session, action, false);
+  }
   pending_ = action;
 }
 
@@ -78,10 +80,17 @@ void BattleControl::finish(Session& session) {
   if (!pending_) {
     return;
   }
+  apply_pending(session);
+  run_turns(session);
+}
+
+void BattleControl::apply_pending(Session& session) {
+  if (!pending_) {
+    return;
+  }
   const BattleAction action = *pending_;
   pending_.reset();
   do_action(session, action, true);
-  run_turns(session);
 }
 
 void BattleControl::finish_all(Session& session) {
@@ -111,6 +120,7 @@ void BattleControl::run_turns(Session& session) {
 }
 
 bool BattleControl::new_round(Session& session) {
+  ++rounds_;
   Cosmos& cosmos = session.game->cosmos;
   bool again = false;
   if (auto_) {

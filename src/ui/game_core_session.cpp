@@ -8,6 +8,7 @@
 #include "core/byte_reader.h"
 #include "core/error.h"
 #include "core/log.h"
+#include "game/cosmos.h"
 #include "game/galaxy.h"
 #include "game/save.h"
 
@@ -173,14 +174,20 @@ bool GameCoreSession::save(int slot) {
 
 bool GameCoreSession::load(int slot) {
   const std::optional<std::vector<std::uint8_t>> data = read_save(slot);
-  if (!data) {
-    return false;
-  }
+  return data && load_bytes(*data, file_name(slot));
+}
+
+bool GameCoreSession::load_game_file(const std::string& name) {
+  const std::optional<std::vector<std::uint8_t>> data = files_.try_load(name);
+  return data && load_bytes(*data, name);
+}
+
+bool GameCoreSession::load_bytes(std::span<const std::uint8_t> data, const std::string& name) {
   game::SaveImage image;
   try {
-    image = game::parse_save(*data);
+    image = game::parse_save(data);
   } catch (const DataError& e) {
-    log_warning("{}: {}", file_name(slot), e.what());
+    log_warning("{}: {}", name, e.what());
     return false;
   }
   game::load_game(session_, image);
@@ -217,14 +224,12 @@ void GameCoreSession::begin_game(const NewGameSettings& settings) {
 
 int GameCoreSession::atmosphere() const { return static_cast<int>(session_.game->cosmos.atmosphere); }
 
-int GameCoreSession::next_contested_star() {
-  // `Cosmos_next_contested_star` comes with the day of the game core.
-  return -1;
-}
+int GameCoreSession::next_contested_star() { return game::cosmos_next_contested_star(session_); }
 
-void GameCoreSession::end_day() {
-  // Until `Cosmos_end_day` lands in the game core: the day counter only.
-  ++session_.game->cosmos.day;
+bool GameCoreSession::end_day() {
+  const bool playing = session_.game->cosmos.ending == 0;
+  game::cosmos_end_day(session_);
+  return playing && session_.game->cosmos.ending != 0;
 }
 
 }  // namespace oa

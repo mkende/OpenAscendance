@@ -71,4 +71,8 @@ bool race_offended_by(Session& session, Race& victim, RaceIndex aggressor, const
 // applies it (`Race_use_special_ability` 0x3efc8).
 bool race_use_special_ability(Session& session, Race& race, bool use);
 
+// Returns the days the race's special ability needs to recharge, 0 for a
+// passive one (`u16[21]` 0x86768 by `Race::ability`).
+std::uint16_t race_ability_period(const Race& race);
+
 }  // namespace oa::game

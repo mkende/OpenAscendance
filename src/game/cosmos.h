@@ -74,7 +74,9 @@ void cosmos_free_ship(Session& session, Ship& ship);
 void cosmos_flood_controlled_lanes(Session& session, Star& star);
 
 // Sets the ending and score when the game is over (`Cosmos_check_game_over`
-// 0x1fec4); returns whether it is.
+// 0x1fec4), dropping the queued game events; returns whether it is. (The
+// original then posts the change to the end-of-game screen 9, which the
+// user interface does when `cosmos_end_day` sets the ending.)
 bool cosmos_check_game_over(Session& session);
 
 // Returns the next star not yet visited today where the player and a race

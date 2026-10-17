@@ -124,7 +124,11 @@ int main(int argc, char** argv) {
                          .screenshot = {},
                          .frames = options.frames,
                          .user_dir = {},
-                         .seed = options.seed};
+                         .seed = options.seed,
+                         .trace = {}};
+    if (options.trace) {
+      game.trace = *options.trace;
+    }
     if (options.screenshot) {
       game.screenshot = *options.screenshot;
       if (options.save_dir) {

@@ -20,4 +20,6 @@ oa_add_module(oa_assets
     text_lines.cpp
     tokens.cpp
     windows_txt.cpp
+    # The window-event traces (winmgr.cpp's recorder and replay).
+    winevent.cpp
   DEPS oa_core)

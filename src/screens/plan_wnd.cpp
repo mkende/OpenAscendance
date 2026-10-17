@@ -7,6 +7,7 @@
 #include <stdexcept>
 
 #include "core/c_format.h"
+#include "core/error.h"
 #include "game/address.h"
 #include "game/float_math.h"
 #include "game/planet.h"
@@ -15,6 +16,8 @@
 #include "game/race_ai.h"
 #include "game/research.h"
 #include "game/ship.h"
+#include "game/ship_design.h"
+#include "screens/ship_des_wnd.h"
 #include "ui/help_wnd.h"
 
 namespace oa {
@@ -53,6 +56,8 @@ constexpr int kStringNone = 0x1c;
 constexpr int kStringPlural = 0x1d;
 constexpr int kStringOk = 0x1e;
 constexpr int kStringNameColony = 0x1f;
+constexpr int kStringNameShip = 0x22;
+constexpr int kStringRenameShip = 0x23;
 constexpr int kStringColonySingular = 0x20;
 constexpr int kStringColonyPlural = 0x21;
 constexpr int kStringNoProject = 0x24;
@@ -226,9 +231,13 @@ bool PlanWnd::handle_event(int type, int a, int b) {
       if (design_square_ != kNoSquare) {
         finish_ship_design();
       }
-      // The "Name Your Ship" input box that follows an accepted design
-      // comes with the design screen.
       draw(kDrawNormal);
+      if (name_ship_ != nullptr) {
+        std::string name = name_of(name_ship_->name);
+        wm_.input_box(wm_.static_string(name_title_), name, kInputLength);
+        game::ship_set_name(*name_ship_, name);
+        name_ship_ = nullptr;
+      }
       return false;
     }
     case kEventKey:
@@ -502,21 +511,34 @@ void PlanWnd::ship_design(std::uint16_t square, bool refit) {
   } else {
     design_square_ = dynamic_cast<const PlSquareWnd&>(dialog()).square();
   }
-  design_refit_ = refit;
-  // `ShipDesWnd_open` (0x48e8c) sets up the design screen, not written yet:
-  // coming back from it counts as a cancelled design.
+  game::Ship& ship = s.game->cosmos.ships.at(static_cast<std::size_t>(game::planet_square_ship(s, p, square)));
+  design_window().open(&ship, refit ? ShipDesWnd::kRefit : ShipDesWnd::kNewDesign, false);
   wm_.post_message(kMessageChangeScreen, kScreenShipDesign, 1);
+}
+
+ShipDesWnd& PlanWnd::design_window() const {
+  auto* design = dynamic_cast<ShipDesWnd*>(wm_.find_window("SHIPDESSCREEN"));
+  if (design == nullptr) {
+    throw DataError("windows.txt: no SHIPDESSCREEN");
+  }
+  return *design;
 }
 
 void PlanWnd::finish_ship_design() {
   game::Session& s = *session();
   game::Planet& p = *planet();
-  // Without the design screen's result the design is cancelled: a new ship
-  // is destroyed and its square emptied, a refit left as it was.
-  if (!design_refit_) {
-    const game::ShipIndex ship = game::planet_square_ship(s, p, design_square_);
-    game::ship_destroy(s, s.game->cosmos.ships.at(static_cast<std::size_t>(ship)));
-    game::planet_set_square_item(s, p, design_square_, game::kNoItem, game::SquareMode::kRemove);
+  const ShipDesWnd& design = design_window();
+  // The design screen forgets its ship when left without a change: a new
+  // ship is then destroyed, a refit left as it was.
+  name_ship_ = design.ship();
+  name_title_ = kStringNameShip;
+  if (name_ship_ == nullptr) {
+    if (design.mode() == ShipDesWnd::kNewDesign) {
+      game::ship_design_abandon(s, p, design_square_);
+    }
+  } else if (design.mode() == ShipDesWnd::kRefit) {
+    name_title_ = kStringRenameShip;
+    game::ship_design_accept_refit(s, p, design_square_, *name_ship_, design.refit_cost(s));
   }
   design_square_ = kNoSquare;
 }

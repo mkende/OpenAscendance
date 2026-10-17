@@ -344,6 +344,9 @@ bool cosmos_check_game_over(Session& session) {
   }
   cosmos.ending = ending;
   cosmos.score = score * 100 / 600;
+  // The window manager's game-event count set to 0 (the end-of-game screen
+  // follows).
+  session.events.clear();
   return true;
 }
 
