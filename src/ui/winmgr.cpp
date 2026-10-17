@@ -201,25 +201,39 @@ std::string upper(std::string_view s) {
   return out;
 }
 
-// Copies the pixels of `pane` of `screen` (`save_screen_under` 0x4f618).
-Image8 save_under(const Image8& screen, const Pane& pane) {
-  Image8 out(pane.x1 - pane.x0 + 1, pane.y1 - pane.y0 + 1);
-  for (int y = pane.y0; y <= pane.y1; ++y) {
-    for (int x = pane.x0; x <= pane.x1; ++x) {
-      if (screen.contains(x, y)) {
-        out.set(x - pane.x0, y - pane.y0, screen.at(x, y));
+// The size of the shared work buffer (`save_screen_under` asserts the
+// rectangle fits).
+constexpr std::size_t kScratchBytes = game::Session::kScratchSize;
+
+// Copies the screen under `pane` into the start of `buffer`
+// (`save_screen_under` 0x4f618): `vfx_pane_copy` to a VFX window over the
+// buffer whose maximum coordinates (the window's +4 and +8, not its size)
+// are `x1 - x0` and `y1 - y0`, so the whole pane, its rows one after the
+// other; the assertion only bounds `(x1 - x0) * (y1 - y0)`.
+void save_under(const Image8& screen, const Pane& pane, std::span<std::uint8_t> buffer) {
+  const int w = pane.x1 - pane.x0 + 1;
+  const int h = pane.y1 - pane.y0 + 1;
+  if (static_cast<std::size_t>(w) * static_cast<std::size_t>(h) > buffer.size()) {
+    throw std::logic_error(std::format("{}x{} pixels under a modal window", w, h));
+  }
+  for (int y = 0; y < h; ++y) {
+    for (int x = 0; x < w; ++x) {
+      if (screen.contains(pane.x0 + x, pane.y0 + y)) {
+        buffer[static_cast<std::size_t>(y * w + x)] = screen.at(pane.x0 + x, pane.y0 + y);
       }
     }
   }
-  return out;
 }
 
-// `restore_screen_under` (0x4f6c0).
-void restore_under(Image8& screen, const Pane& pane, const Image8& saved) {
-  for (int y = pane.y0; y <= pane.y1; ++y) {
-    for (int x = pane.x0; x <= pane.x1; ++x) {
-      if (screen.contains(x, y)) {
-        screen.set(x, y, saved.at(x - pane.x0, y - pane.y0));
+// Copies the start of `buffer` back under `pane` (`restore_screen_under`
+// 0x4f6c0), the same layout.
+void restore_under(Image8& screen, const Pane& pane, std::span<const std::uint8_t> buffer) {
+  const int w = pane.x1 - pane.x0 + 1;
+  const int h = pane.y1 - pane.y0 + 1;
+  for (int y = 0; y < h; ++y) {
+    for (int x = 0; x < w; ++x) {
+      if (screen.contains(pane.x0 + x, pane.y0 + y)) {
+        screen.set(pane.x0 + x, pane.y0 + y, buffer[static_cast<std::size_t>(y * w + x)]);
       }
     }
   }
@@ -684,6 +698,7 @@ void WinMgr::set_screen(int screen, bool push) {
     history_count_ = std::min(history_count_ + 1, kHistory);
   }
   current_ = screen;
+  gesture_window_ = 0;
   services_.game.set_current_screen(screen);
   if (screen == kScreenOpening && first_opening_ && services_.game.resume_exists()) {
     services_.game.load_resume();
@@ -1322,7 +1337,7 @@ void WinMgr::check_replay_abort() {
   const int y = replay_state_.y;
   InputState now = services_.poll_input();
   bool keep = true;
-  if (now.key_event || (now.left_changed && now.left_down) || (now.right_changed && now.right_down)) {
+  if (now.key_event || now.back || (now.left_changed && now.left_down) || (now.right_changed && now.right_down)) {
     replaying_ = false;
     int result = 0;
     if (!modal_) {
@@ -1343,9 +1358,12 @@ void WinMgr::check_replay_abort() {
     }
   }
   if (keep) {
-    // The replayed pointer stays; the rest is the real input's.
+    // The replayed pointer stays; the rest is the real input's (but the
+    // remake's Back and gestures, the player's).
     replay_state_ = now;
     replay_state_.moved = false;
+    replay_state_.back = false;
+    replay_state_.gesture = {};
     replay_state_.x = x;
     replay_state_.y = y;
   }
@@ -1373,7 +1391,16 @@ void WinMgr::end_modal(int result) {
   modal_result_ = result;
 }
 
-int WinMgr::do_modal(GWindow& dialog) {
+std::span<std::uint8_t> WinMgr::scratch_buffer(bool remake_window) {
+  game::Session* core = services_.game.core();
+  if (remake_window || core == nullptr || core->scratch.size() < kScratchBytes) {
+    own_scratch_.resize(kScratchBytes);
+    return own_scratch_;
+  }
+  return core->scratch;
+}
+
+int WinMgr::do_modal(GWindow& dialog, bool remake_window) {
   if (modal_) {
     throw std::logic_error("nested modal loop");
   }
@@ -1391,9 +1418,9 @@ int WinMgr::do_modal(GWindow& dialog) {
   modal_flags_.fill(true);
   broadcast(kEventHide, 0, 0, true);
   const Pane under = dialog.pane();
-  std::optional<Image8> saved;
-  if (save_under_) {
-    saved = save_under(screen(), under);
+  const bool saved = save_under_;
+  if (saved) {
+    save_under(screen(), under, scratch_buffer(remake_window));
   }
   add_to_screen(dialog.id(), current_);
   for (GWindow* child : dialog.children()) {
@@ -1419,7 +1446,7 @@ int WinMgr::do_modal(GWindow& dialog) {
   remove_from_screen(dialog.id(), current_);
   hot_ = -1;
   if (saved) {
-    restore_under(screen(), under, *saved);
+    restore_under(screen(), under, scratch_buffer(remake_window));
   }
   broadcast(kEventShow, 0, 0, true);
   save_under_ = true;
@@ -1478,10 +1505,10 @@ int WinMgr::input_box(std::string_view title, std::string& buffer, int max_lengt
   // The frame under the box, saved and restored here (not by do_modal).
   const Pane under{p.x0 - 8, p.y0 - 8, p.x1 + 8, p.y1 + 7};
   save_under_ = false;
-  const Image8 saved = save_under(screen(), under);
+  save_under(screen(), under, scratch_buffer(false));
   vfx_shape_draw(screen(), under, shared_shapes(kHelpShapes).at(kInputBoxFrame), 0, 0);
   const int result = do_modal(box_ref);
-  restore_under(screen(), under, saved);
+  restore_under(screen(), under, scratch_buffer(false));
   buffer = edit_ref.text();
   release_window(button_id);
   release_window(edit_id);
@@ -1594,6 +1621,10 @@ void WinMgr::process_input(const InputState& input) {
       broadcast_event(kEventRightClick, in.x, in.y);
     }
   }
+  if (in.back) {
+    system_back();
+  }
+  route_view_gesture(in.gesture);
   while (!messages_.empty()) {
     dispatch_messages();
   }
@@ -1619,6 +1650,44 @@ void WinMgr::process_input(const InputState& input) {
     }
   } while (services_.ticks() - last_pass_tick_ < kPassTicks);
   last_pass_tick_ = services_.ticks();
+}
+
+void WinMgr::system_back() {
+  if (modal_) {
+    end_modal(-1);
+  } else if (current_ == kScreenOpening) {
+    post_message(kMessageQuit, 0, 0);
+  } else {
+    services_.sound.play_sfx(kExitSound);
+    go_back();
+  }
+}
+
+void WinMgr::route_view_gesture(const ViewGesture& gesture) {
+  if (gesture.started) {
+    gesture_window_ = 0;
+    if (!modal_ && !help_mode_ && current_ >= 0) {
+      const Screen& s = screen_record(current_);
+      for (auto it = s.slots.rbegin(); it != s.slots.rend(); ++it) {
+        const GWindow* w = window(*it);
+        if (w != nullptr && w->shown() && w->takes_view_gesture(gesture.x, gesture.y)) {
+          gesture_window_ = *it;
+          break;
+        }
+      }
+    }
+  }
+  if (GWindow* w = gesture_window_ != 0 && !modal_ ? window(gesture_window_) : nullptr) {
+    if (gesture.dx != 0 || gesture.dy != 0) {
+      w->view_drag(gesture.dx, gesture.dy);
+    }
+    if (gesture.zoom != 1.0F) {
+      w->view_pinch(gesture.zoom);
+    }
+  }
+  if (!gesture.active) {
+    gesture_window_ = 0;
+  }
 }
 
 void WinMgr::refresh_screen() {

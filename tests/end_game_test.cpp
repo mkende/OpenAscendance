@@ -1,11 +1,14 @@
 // The end-of-game screen (screen 9): the ending texts and the screen of the
 // oracle's `exp/endgame_dest` run (the shipped day-820 game with every other
-// species marked extinct, then Next Turn: ending 2, `end-dest.txt`).
+// species marked extinct, then Next Turn: ending 2, `end-dest.txt`), and the
+// endings 2..5 reached by a day of play (`tests/oracle/cov/endev`).
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <format>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include <SDL3/SDL_keycode.h>
 
@@ -15,6 +18,7 @@
 #include "game/new_game.h"
 #include "game_data.h"
 #include "game_oracle.h"
+#include "replay_rig.h"
 #include "screen_shots.h"
 #include "screens/end_game_wnd.h"
 #include "ui_rig.h"
@@ -104,6 +108,26 @@ TEST_CASE("The game ending on a new day shows the end-of-game screen", "[endgame
   // Esc goes back to the star map.
   rig.key(SDLK_ESCAPE);
   CHECK(rig.wm.current_screen() == kScreenStarMap);
+}
+
+TEST_CASE("the original's endings 2..5 reached by a day of play", "[content][oracle][endev]") {
+  OA_REQUIRE_GAME_FILES(files);
+  // `tests/oracle/cov/endev/cases.txt`: the edited day-820 games of
+  // `end_save.py`, then Next Turn (`unit`, `ctrl`: after the Capelons accept
+  // the player's alliance); the end-of-game screen, the star map, a save.
+  // `dest_hostile`, `capt_peaceful`: the game loaded after a new game of that
+  // atmosphere (the score's factor).
+  std::vector<ReplayRun> runs;
+  for (const char* name : {"dest", "capt", "unit", "ctrl", "dest_hostile", "capt_peaceful"}) {
+    const std::string save = std::string(name).substr(0, 4);
+    runs.push_back({.run = std::format("cov/endev/{}_patch", name), .resume = std::format("cov/endev/{}.GAM", save),
+                    .shots = {}});
+    runs.push_back({.run = std::format("cov/endev/{}_antag", name),
+                    .variant = game::Variant::kAntagonizer,
+                    .resume = std::format("cov/endev/{}.GAM", save),
+                    .shots = {}});
+  }
+  replay_oracle_runs(files, runs);
 }
 
 }  // namespace oa::test

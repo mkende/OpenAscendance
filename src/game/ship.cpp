@@ -96,6 +96,7 @@ void ship_init(Session& session, Ship& ship, std::uint8_t hull) {
   ship.hit_points = 1;
   ship.destination_kind = ShipOrder::kNothing;
   ship.destination = kNone;
+  ship.stale_destination = 0;
   ship.power = ship.shield;
   ship.max_hit_points = ship.hit_points;
   for (GizmoSlot& slot : ship.slots) {
@@ -231,6 +232,7 @@ void ship_enter_orbit(Session& session, Ship& ship, Planet& planet) {
     }
     ship.destination_kind = ShipOrder::kNothing;
     ship.destination = kNone;
+    ship.stale_destination = 0;
   }
 }
 

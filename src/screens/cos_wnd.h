@@ -36,6 +36,8 @@ class CosWnd final : public GWindow {
   // The zoom limits (degrees of field of view, 0x80fb4 / 0x80fb8).
   static constexpr float kMinFov = 20.0F;
   static constexpr float kMaxFov = 60.0F;
+  // The turn of a view drag, in degrees per screen pixel.
+  static constexpr float kDragDegrees = 0.5F;
 
   // `CosWnd_build_items` (0x24450): the display items of the current
   // galaxy (also after the new-game screen's new galaxies).
@@ -103,6 +105,14 @@ class CosWnd final : public GWindow {
   void load_state(std::span<const std::uint8_t> in) override;
   // Begin New Game: `CosWnd_reset_camera`.
   void new_game() override { reset_camera(); }
+  // The remake's gestures on the map (strictly inside its rectangle): a
+  // drag turns the galaxy as the rotation buttons do, about the vertical
+  // axis for a horizontal drag and the horizontal axis for a vertical one,
+  // `kDragDegrees` per pixel (the galaxy follows the finger); a pinch
+  // zooms within the field of view's limits.
+  bool takes_view_gesture(int x, int y) const override;
+  void view_drag(int dx, int dy) override;
+  void view_pinch(float ratio) override;
 
   const Camera3d& camera() const { return camera_; }
   float fov() const { return fov_; }
@@ -133,6 +143,8 @@ class CosWnd final : public GWindow {
   void project_items();
   // `CosWnd_rotate_step` (0x23874): about the y axis or the x axis.
   void rotate_step(bool y_axis, float degrees);
+  // Its turn by `angle` degrees (the rotation speed applied).
+  void turn(bool y_axis, float angle);
   // `CosWnd_zoom_step` (0x238b8): `dir` -1 in, 1 out.
   void zoom_step(int dir);
   // `CosWnd_update_hover` (0x24068), window-relative.

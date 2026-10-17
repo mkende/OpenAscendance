@@ -12,7 +12,25 @@ constexpr std::uint64_t kVblankUs = 1'000'000 / Clock::kVblankHz;
 
 Clock::Clock(bool virtual_time) : virtual_(virtual_time), start_ns_(virtual_time ? 0 : SDL_GetTicksNS()) {}
 
-std::uint64_t Clock::micros() const { return virtual_ ? virtual_us_ : (SDL_GetTicksNS() - start_ns_) / 1000; }
+std::uint64_t Clock::system_ns() const {
+  return (suspended_at_ns_ != 0 ? suspended_at_ns_ : SDL_GetTicksNS()) - start_ns_;
+}
+
+std::uint64_t Clock::micros() const { return virtual_ ? virtual_us_ : system_ns() / 1000; }
+
+void Clock::suspend() {
+  if (!virtual_ && suspended_at_ns_ == 0) {
+    suspended_at_ns_ = SDL_GetTicksNS();
+  }
+}
+
+void Clock::resume() {
+  if (suspended_at_ns_ != 0) {
+    // The start moves by the time spent suspended.
+    start_ns_ += SDL_GetTicksNS() - suspended_at_ns_;
+    suspended_at_ns_ = 0;
+  }
+}
 
 std::uint32_t Clock::ticks() const { return static_cast<std::uint32_t>(micros() / (1'000'000 / kTickHz)); }
 

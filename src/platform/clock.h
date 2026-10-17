@@ -33,10 +33,21 @@ class Clock {
 
   bool is_virtual() const { return virtual_; }
 
+  // Stops the clock while the program is in the background (a remake
+  // addition): the time until `resume` does not count. Nothing for a
+  // virtual clock or when already so.
+  void suspend();
+  void resume();
+
  private:
+  // The system's time, in nanoseconds since the start, but the background.
+  std::uint64_t system_ns() const;
+
   bool virtual_;
   std::uint64_t start_ns_ = 0;
   std::uint64_t virtual_us_ = 0;
+  // Since when the clock is suspended (the system's ticks), 0 when it runs.
+  std::uint64_t suspended_at_ns_ = 0;
 };
 
 }  // namespace oa

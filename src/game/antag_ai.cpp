@@ -990,6 +990,7 @@ void antag_race_ai_ship_orders(Session& session, Race& race, Ship& ship) {
   if (ship.owner == session.player_race && !session.autoplay) {
     ship.destination_kind = ShipOrder::kNothing;
     ship.destination = kNone;
+    ship.stale_destination = 0;
     return;
   }
   // Re-planning: a ship in a system heading for a star leaves the count of
@@ -1001,6 +1002,7 @@ void antag_race_ai_ship_orders(Session& session, Race& race, Ship& ship) {
     }
     ship.destination_kind = ShipOrder::kNothing;
     ship.destination = kNone;
+    ship.stale_destination = 0;
   }
   if (ship.destination_kind != ShipOrder::kNothing) {
     return;

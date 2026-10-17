@@ -1,5 +1,6 @@
 // The gizmo effects (`shipgiz.cpp`, `docs/08-combat.md` "Using a gizmo").
 #include <cmath>
+#include <cstdio> // DBGTMP
 #include <utility>
 #include <vector>
 
@@ -109,6 +110,7 @@ void consume_action_gizmo(Session& session, Ship& ship) {
 std::uint8_t ship_take_damage(Session& session, Ship& ship, bool apply, std::int32_t damage, RaceIndex attacker) {
   Cosmos& cosmos = session.game->cosmos;
   std::uint8_t result = 0;
+  if (apply) std::fprintf(stderr, "DBG take_damage ship=%d dmg=%d shield=%d hp=%d pw=%d\n", (int)ship_index(cosmos, ship), damage, ship.shield, ship.hit_points, ship.power); // DBGTMP
   std::int32_t hull = 0;
   std::int32_t absorbed = (ship.battle_flags & kShipInvulnerable) ? 0 : damage;
   if (ship.shield < absorbed) {

@@ -16,6 +16,17 @@ enum class EventType : std::uint8_t {
   // A character of the system's text input: its printable ASCII code in
   // `character` (and `key`).
   kText,
+  // A finger on the touch screen (`finger`, at `x`, `y`, at `time_ms`);
+  // `kFingerCancel`: the system took the touch back (no tap).
+  kFingerDown,
+  kFingerMove,
+  kFingerUp,
+  kFingerCancel,
+  // The system's Back (Android's Back button and gesture).
+  kBack,
+  // The program sent to the background and back (scripted runs only: the
+  // system's lifecycle events, `--keys background`).
+  kBackground,
 };
 
 enum class MouseButton : std::uint8_t { kNone, kLeft, kRight, kMiddle };
@@ -42,6 +53,11 @@ struct InputEvent {
   int x = 0;
   int y = 0;
   MouseButton button = MouseButton::kNone;
+  // A mouse event made from a finger (`TouchMapper`), not by a mouse.
+  bool touch = false;
+  // A finger's id, and the time of a finger event in milliseconds.
+  std::uint64_t finger = 0;
+  std::uint64_t time_ms = 0;
 };
 
 }  // namespace oa

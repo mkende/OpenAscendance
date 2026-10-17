@@ -289,8 +289,11 @@ class WinMgr final : public WindowStateIo {
 
   // `WinMgr_do_modal` (0x50708): runs `dialog` (a registered window) and its
   // children over the current screen until message 6 (or Esc, or a click on
-  // an exit corner) ends the loop; returns the result.
-  int do_modal(GWindow& dialog);
+  // an exit corner) ends the loop; returns the result. The screen under the
+  // dialog is kept in the game core's shared work buffer
+  // (`game::Session::scratch`, which the day can read), but for the
+  // remake's own windows (`remake_window`), which keep it apart.
+  int do_modal(GWindow& dialog, bool remake_window = false);
   // Ends the running modal loop with `result` (message 6).
   void end_modal(int result);
   // `WinMgr_message_box` (0x50adc): `text` in a box with an OK button, run
@@ -310,6 +313,12 @@ class WinMgr final : public WindowStateIo {
   // messages, the music picker and the wait until 3 ticks have passed since
   // the previous pass.
   void process_input(const InputState& input);
+  // The system's Back (a remake addition, Android's Back button and
+  // gesture): what a click on an exit corner does (the modal loop ended
+  // with -1, else the exit sound and the previous screen), and Exit to DOS
+  // on the opening menu, which has no exit corners.
+  void system_back();
+
   // `WinMgr_refresh_screen` (0x5049c): advances the pending fade.
   void refresh_screen();
   // One pass of the main loop (`main` 0x1c424, `WinMgr_run_modal_loop`
@@ -341,6 +350,11 @@ class WinMgr final : public WindowStateIo {
   std::uint32_t replay_pass() const { return replay_pass_; }
 
  private:
+  // The buffer `do_modal` and the input box save the screen under their
+  // window into (`0xc8c2c`): the game core's `game::Session::scratch`, or
+  // `own_scratch_` for the remake's own windows or without a game core.
+  std::span<std::uint8_t> scratch_buffer(bool remake_window);
+
   struct Screen {
     std::array<int, kScreenWindows> slots{};  // window ids, 0 = free; slot 31 on top
     int count = 0;
@@ -392,6 +406,10 @@ class WinMgr final : public WindowStateIo {
   // Message 8: the auto next turn toggled, or the next contested star's
   // event.
   void auto_turn_message();
+  // The remake's view gestures: the window under a gesture's start that
+  // takes it gets its drags and pinches (none in a modal loop or help
+  // mode).
+  void route_view_gesture(const ViewGesture& gesture);
   // `WinMgr_show_game_events` (0x50f84): the next queued game event in
   // `EVENTWIN`, run modally, then the screen its answer leads to.
   void show_game_events();
@@ -444,6 +462,9 @@ class WinMgr final : public WindowStateIo {
   // Whether `do_modal` saves and restores the screen under the dialog
   // (`0x86a44`; the input box does its own).
   bool save_under_ = true;
+  // The buffer of the screen under a modal window when there is no game
+  // core, or for the remake's own windows.
+  std::vector<std::uint8_t> own_scratch_;
   float rotation_speed_ = 1.0F;
   bool fade_pending_ = false;
   int fade_step_ = 0;
@@ -473,6 +494,8 @@ class WinMgr final : public WindowStateIo {
   float saved_rotation_speed_ = 1.0F;
   // `0xfa340`: a game event box is being prepared.
   bool showing_event_ = false;
+  // The window a view gesture goes to (a remake addition), 0 for none.
+  int gesture_window_ = 0;
 };
 
 }  // namespace oa

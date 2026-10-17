@@ -76,6 +76,32 @@ inline RawAddress square_address(const Session& s, std::int32_t i) {
   return cosmos_address(s) + kSquaresOffset + static_cast<RawAddress>(i) * kSquareSize;
 }
 
+// Returns the raw pointer the ship's order holds (+0x5e): its star (order
+// 1) or planet (2, 3), 0 for a point in space (7), the stale pointer for no
+// order (0); 0 for the battle-only orders 4..6 (never given).
+inline RawAddress destination_address(const Session& s, const Ship& ship) {
+  switch (ship.destination_kind) {
+    case ShipOrder::kNothing:
+      return ship.stale_destination;
+    case ShipOrder::kGoStar:
+      return star_address(s, ship.destination);
+    case ShipOrder::kColonize:
+    case ShipOrder::kOrbitPlanet:
+      return planet_address(s, ship.destination);
+    default:
+      return 0;
+  }
+}
+
+// Drops the ship's order by clearing its code only, as `Race_battle_turn`
+// 0x3c6d8 (an order fulfilled) and the System Display's actions
+// (`BatControlWnd_handle` 0x10b24) do: the pointer stays (`Ship`
+// `stale_destination`).
+inline void ship_clear_order_code(const Session& s, Ship& ship) {
+  ship.stale_destination = destination_address(s, ship);
+  ship.destination_kind = ShipOrder::kNothing;
+}
+
 // Returns the index of the record at `raw` in an array (`offset`, `size`,
 // `count`), nothing when `raw` is not the start of one of its records.
 inline std::optional<std::int32_t> record_at(const Session& s, RawAddress raw, RawAddress offset, RawAddress size,

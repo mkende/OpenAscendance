@@ -200,7 +200,7 @@ void show_remake_help(WinMgr& wm, std::string_view topic) {
   help->open_topic(kHelpFile, std::span(reinterpret_cast<const std::uint8_t*>(kHelpText.data()), kHelpText.size()),
                    topic);
   if (!wm.in_modal()) {
-    wm.do_modal(*help);
+    wm.do_modal(*help, true);
   }
 }
 

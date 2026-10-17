@@ -51,6 +51,17 @@ add_executable(oa_tests
   # The remake's options: the opening menu's button, the options screen,
   # options.cfg.
   options_test.cpp
+  # Ship gizmos used in the System Display (oracle runs on edited saves).
+  gizmo_battle_test.cpp
+  # Ship gizmos used on lanes and planets, the passive gizmos, galaxy moves.
+  gizmo_galaxy_test.cpp
+  # The species' special abilities.
+  ability_test.cpp
+  # The game-event codes.
+  event_codes_test.cpp
+  # The touch screen, the view gestures, Back and the background (remake
+  # additions).
+  touch_test.cpp
 )
 target_link_libraries(oa_tests PRIVATE oa_core oa_assets oa_gfx oa_audio oa_platform oa_ui oa_screens oa_game oa_app
   Catch2::Catch2WithMain SDL3::Headers)

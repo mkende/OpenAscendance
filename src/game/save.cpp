@@ -342,18 +342,16 @@ void ship_location(IO& io, T& ship) {
 }
 
 // The ship's order target: a star index for 1, a planet index for 2 and 3,
-// the raw (cleared on load) pointer for 0 and 7; 4..6 are battle-only.
+// the raw pointer for 0 and 7 (`Ship::stale_destination`, cleared by
+// `load_game`); 4..6 are battle-only.
 template <typename IO, typename T>
 void ship_destination(IO& io, T& ship) {
   switch (ship.destination_kind) {
     case ShipOrder::kNothing:
     case ShipOrder::kGoSpace:
+      io.u32(ship.stale_destination);
       if constexpr (IO::kReading) {
-        std::int32_t raw = 0;
-        io.i32(raw);
         ship.destination = kNone;
-      } else {
-        io.i32(0);
       }
       break;
     case ShipOrder::kGoStar:
@@ -764,7 +762,10 @@ void load_game(Session& session, const SaveImage& image) {
   }
   cosmos.ship_count = static_cast<std::int16_t>(image.ships.size());
   for (const auto& [slot, ship] : image.ships) {
-    cosmos.ships[static_cast<std::size_t>(slot)] = ship;
+    Ship& loaded = cosmos.ships[static_cast<std::size_t>(slot)];
+    loaded = ship;
+    // `Ship_serialize` 0x46294 clears the pointer of orders 0 and 7.
+    loaded.stale_destination = 0;
   }
   cosmos.race_count = static_cast<std::int16_t>(image.races.size());
   for (std::size_t i = 0; i < image.races.size(); ++i) {

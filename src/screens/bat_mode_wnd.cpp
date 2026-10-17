@@ -374,7 +374,11 @@ void BatModeWnd::zoom(int step) {
   }
   s = f32(d(s) * d(kZoomUnit) * wm_.rotation_speed());
   s = f32(1.0 + d(s));
-  distance_ = f32(d(distance_) * s);
+  set_distance(f32(d(distance_) * s));
+}
+
+void BatModeWnd::set_distance(float distance) {
+  distance_ = distance;
   if (!(distance_ >= camera_.focal)) {
     distance_ = camera_.focal;
   } else if (distance_ > default_distance_) {
@@ -384,12 +388,33 @@ void BatModeWnd::zoom(int step) {
   update_clip_planes();
 }
 
-void BatModeWnd::rotate_step(int degrees) {
+void BatModeWnd::rotate_step(int degrees) { orbit(f32(static_cast<double>(degrees) * wm_.rotation_speed())); }
+
+void BatModeWnd::orbit(float angle) {
   // Camera_reset 0x1baf0 (an orbit step): the position, then the basis,
   // turned about the vertical axis.
-  const float angle = f32(static_cast<double>(degrees) * wm_.rotation_speed());
   game::rotate_y(camera_.position, angle);
   orient_rotate_y(camera_.rotation, angle);
+}
+
+bool BatModeWnd::takes_view_gesture(int x, int y) const {
+  return state_ != State::kAnimating && x >= pane_.x0 && x <= pane_.x1 && y >= pane_.y0 && y <= pane_.y1;
+}
+
+void BatModeWnd::view_drag(int dx, int /*dy*/) {
+  if (dx == 0 || state_ == State::kAnimating) {
+    return;
+  }
+  orbit(static_cast<float>(dx) * kDragDegrees);
+  refresh();
+}
+
+void BatModeWnd::view_pinch(float ratio) {
+  if (!(ratio > 0.0F) || state_ == State::kAnimating) {
+    return;
+  }
+  set_distance(distance_ / ratio);
+  refresh();
 }
 
 void BatModeWnd::center_on_item(int i) {

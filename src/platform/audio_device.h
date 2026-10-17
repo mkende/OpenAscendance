@@ -18,6 +18,9 @@ class AudioDevice {
   AudioDevice(const AudioDevice&) = delete;
   AudioDevice& operator=(const AudioDevice&) = delete;
 
+  // Pauses or resumes the output (the program in the background).
+  void set_paused(bool paused);
+
  private:
   Mixer& mixer_;
   SDL_AudioStream* stream_ = nullptr;

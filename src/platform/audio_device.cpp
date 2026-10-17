@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "assets/pcm.h"
+#include "core/log.h"
 
 namespace oa {
 
@@ -35,6 +36,12 @@ AudioDevice::AudioDevice(Mixer& mixer) : mixer_(mixer) {
     throw std::runtime_error(std::format("SDL_OpenAudioDeviceStream: {}", error));
   }
   SDL_ResumeAudioStreamDevice(stream_);
+}
+
+void AudioDevice::set_paused(bool paused) {
+  if (!(paused ? SDL_PauseAudioStreamDevice(stream_) : SDL_ResumeAudioStreamDevice(stream_))) {
+    log_warning("cannot {} the sound: {}", paused ? "pause" : "resume", SDL_GetError());
+  }
 }
 
 AudioDevice::~AudioDevice() {

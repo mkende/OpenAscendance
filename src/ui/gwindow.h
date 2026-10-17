@@ -94,6 +94,15 @@ class GWindow {
   // (`NewGameWnd_handle_event` 0x4dd5c): nothing for most windows.
   virtual void new_game() {}
 
+  // The remake's view gestures (`ViewGesture`, not in the original): whether
+  // a drag or pinch starting at screen point (x, y) turns or zooms this
+  // window's 3D view (none for most windows), then the drags (in screen
+  // pixels) and pinches (the ratio of the fingers' distances, above 1
+  // apart) of that gesture.
+  virtual bool takes_view_gesture(int /*x*/, int /*y*/) const { return false; }
+  virtual void view_drag(int /*dx*/, int /*dy*/) {}
+  virtual void view_pinch(float /*ratio*/) {}
+
   // The `windows.txt` TYPE (-1 for a window made by the code).
   int type() const { return type_; }
   int id() const { return id_; }

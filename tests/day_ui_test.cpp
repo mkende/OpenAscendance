@@ -35,6 +35,7 @@
 #include "gfx/gsystem.h"
 #include "platform/clock.h"
 #include "platform/input.h"
+#include "replay_rig.h"
 #include "ui/event_wnd.h"
 #include "ui/game_core_session.h"
 #include "ui/winmgr.h"
@@ -221,31 +222,6 @@ std::vector<std::uint8_t> without_stale_header(std::vector<std::uint8_t> save) {
   return save;
 }
 
-// The bytes of a save with its stale list slots cleared: the stars' lane
-// and planet lists and the races' AI targets past their counts (the
-// tutorials' games hold their author's process's pointers there, which the
-// original writes back as they were), and the header's stale bytes.
-// `foreign_cosmos`: the cosmos address of the stale pointers of another
-// process (`game::parse_save`).
-std::vector<std::uint8_t> without_stale_slots(const std::vector<std::uint8_t>& save,
-                                              std::optional<game::RawAddress> foreign_cosmos = std::nullopt) {
-  game::SaveImage image = game::parse_save(save, foreign_cosmos);
-  for (game::Star& star : image.stars) {
-    for (std::size_t i = static_cast<std::size_t>(star.lane_count); i < star.lanes.size(); ++i) {
-      star.lanes[i] = game::kNone;
-    }
-    for (std::size_t i = static_cast<std::size_t>(star.planet_count); i < star.planets.size(); ++i) {
-      star.planets[i] = game::kNone;
-    }
-  }
-  for (game::Race& race : image.races) {
-    for (std::size_t i = static_cast<std::size_t>(race.target_count); i < race.targets.size(); ++i) {
-      race.targets[i] = game::kNone;
-    }
-  }
-  return without_stale_header(game::serialize_save(image));
-}
-
 // A run of the corpus (`tests/oracle/corpus/cases.txt`).
 struct CorpusRun {
   std::string run;
@@ -323,11 +299,11 @@ bool replay_run(const GameFiles& files, const CorpusRun& c, int max_passes) {
         mine.resize(theirs.size());
       }
       if (foreign) {
-        mine = without_stale_slots(mine, game::kPatchCosmosAddress);
-        theirs = without_stale_slots(theirs, game::kPatchCosmosAddress);
+        mine = test::without_stale_slots(mine, game::kPatchCosmosAddress);
+        theirs = test::without_stale_slots(theirs, game::kPatchCosmosAddress);
       } else if (c.tutorial) {
-        mine = without_stale_slots(mine);
-        theirs = without_stale_slots(theirs);
+        mine = test::without_stale_slots(mine);
+        theirs = test::without_stale_slots(theirs);
         if (c.turning_view) {
           mine = without_camera(std::move(mine));
           theirs = without_camera(std::move(theirs));
@@ -520,6 +496,39 @@ TEST_CASE("Next Turn: the contested systems' prompt, Next Day or Go to System; t
   CHECK(g.box().event()->code == game::EventCode::kRemainingMoves);
   CHECK(g.rig.wm.current_screen() == 16);
   CHECK(cosmos.day == day + 1);
+}
+
+TEST_CASE("a modal window's screen lands in the buffer the Lush Growth Bomb writes into",
+          "[day][screens][content][oracle]") {
+  OA_REQUIRE_GAME_FILES(files);
+  // `tests/oracle/cov/orch/lush_*.txt` on `lush_save.py`'s save: Pulveran
+  // I's bomb completes on day 821 on its out-of-bounds square, byte 62245 of
+  // the shared work buffer. Without a modal window that byte is `logo.gif`'s
+  // (`lush_plain`: research item 26 granted); after the help box of Next
+  // Turn it is a pixel of the star map under the box (`lush_help`: none).
+  std::vector<test::ReplayRun> runs;
+  for (const char* name : {"lush_help", "lush_plain"}) {
+    runs.push_back({.run = std::format("cov/orch/{}_patch", name), .resume = "cov/orch/lush.GAM", .shots = {}});
+    runs.push_back({.run = std::format("cov/orch/{}_antag", name),
+                    .variant = game::Variant::kAntagonizer,
+                    .resume = "cov/orch/lush.GAM",
+                    .shots = {}});
+  }
+  test::replay_oracle_runs(files, runs);
+}
+
+TEST_CASE("a dropped order's pointer stays in the saves", "[day][screens][content][oracle]") {
+  OA_REQUIRE_GAME_FILES(files);
+  // `tests/oracle/cov/orch/stale_order.txt` on `m5fx/fx_32.GAM`: in the
+  // day-820 battle at Feculon, Frigate 1 ordered to the lane end to Sophia,
+  // then using its Lane Blocker on another lane end: the order's code is
+  // cleared, Sophia's address stays (03.SAV after leaving the System
+  // Display, 04.SAV the next day).
+  test::replay_oracle_runs(files, {{.run = "cov/orch/stale_order_patch", .resume = "m5fx/fx_32.GAM", .shots = {}},
+                                   {.run = "cov/orch/stale_order_antag",
+                                    .variant = game::Variant::kAntagonizer,
+                                    .resume = "m5fx/fx_32.GAM",
+                                    .shots = {}}});
 }
 
 TEST_CASE("the end of the game: screen 9, the game events dropped", "[screens][content]") {

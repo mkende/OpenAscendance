@@ -23,7 +23,9 @@
 // clicks the left button at (X, Y) (press and release on two passes),
 // "rclick:X:Y" the right one, "shiftclick:X:Y" a left click with Shift held
 // (help mode: Shift down, move, press, release, Shift up),
-// "drag:X1:Y1:X2:Y2" drags with the left button, "move:X:Y" moves the mouse.
+// "drag:X1:Y1:X2:Y2" drags with the left button, "move:X:Y" moves the mouse;
+// "back" is the system's Back (Android's), "background" sends the program to
+// the background and back as the system does (its lifecycle events).
 // `--screenshot` runs headless (SDL's dummy video and audio drivers, a
 // virtual clock) until N frames have been shown (default 2; a frame is shown
 // at each main-loop pass and at each vertical blank a fade waits for), saves

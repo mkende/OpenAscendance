@@ -14,17 +14,22 @@
 #include <deque>
 #include <filesystem>
 #include <format>
+#include <functional>
+#include <fstream>
 #include <optional>
 #include <random>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "assets/gif.h"
 #include "assets/shp.h"
 #include "audio/mixer.h"
 #include "audio/sound_system.h"
+#include "core/install.h"
 #include "core_session.h"
 #include "game/new_game.h"
+#include "game/save.h"
 #include "gfx/gsystem.h"
 #include "platform/clock.h"
 #include "platform/input.h"
@@ -65,33 +70,35 @@ inline std::optional<std::filesystem::path> oracle_run_path(const std::string& r
   return path;
 }
 
-// The program replaying a trace: the start-up galaxy of `cosmos.txt` (50
-// stars, 7 races, `seed`), the windows, the opening menu, the pointer drawn
-// into the shown frame (the Alt+G screenshots show it) and moved by the
-// replay.
+// The program replaying a trace, as `PATCH.EXE` (`variant` Standard) or
+// `ANTAG.EXE` (Antagonizer, the variant of its new games): the start-up
+// galaxy of `cosmos.txt` (50 stars, 7 races, `seed`), the windows, the
+// opening menu, the pointer drawn into the shown frame (the Alt+G
+// screenshots show it) and moved by the replay.
 struct ReplayProgram {
   // `install_saves`: the install's `01.SAV` and `RESUME.GAM` are seen (the
   // oracle's `--keep-saves`).
-  ReplayProgram(const GameFiles& f, std::int32_t seed, const std::filesystem::path& dir, bool install_saves)
+  ReplayProgram(const GameFiles& f, std::int32_t seed, const std::filesystem::path& dir, bool install_saves,
+                game::Variant variant = game::Variant::kStandard)
       : files(f),
         gs([this] { clock.wait_vblank(); }),
         sound(f, &mixer),
         session(f, dir, install_saves),
         pointer_shapes(f.load("DATA\\MOUSE.SHP"), "DATA\\MOUSE.SHP"),
-        wm((start(seed), UiServices{.files = f,
-                                    .gsystem = gs,
-                                    .sound = sound,
-                                    .game = session,
-                                    .user_dir = dir,
-                                    .now_us = [this] { return clock.micros(); },
-                                    .ticks = [this] { return clock.ticks(); },
-                                    .idle = [this] { clock.idle(); },
-                                    .show_pointer = [this](bool shown) { pointer = shown; },
-                                    .set_pointer_frame = [this](int fr) { pointer_frame = fr; },
-                                    .poll_input = [this]() -> const InputState& { return input.poll(); },
-                                    .present = [this] { present(); },
-                                    .shown_frame = [this]() -> const Image8& { return frame; },
-                                    .warp_pointer = [this](int x, int y) { input.warp(x, y); }}),
+        wm((start(seed, variant), UiServices{.files = f,
+                                             .gsystem = gs,
+                                             .sound = sound,
+                                             .game = session,
+                                             .user_dir = dir,
+                                             .now_us = [this] { return clock.micros(); },
+                                             .ticks = [this] { return clock.ticks(); },
+                                             .idle = [this] { clock.idle(); },
+                                             .show_pointer = [this](bool shown) { pointer = shown; },
+                                             .set_pointer_frame = [this](int fr) { pointer_frame = fr; },
+                                             .poll_input = [this]() -> const InputState& { return input.poll(); },
+                                             .present = [this] { present(); },
+                                             .shown_frame = [this]() -> const Image8& { return frame; },
+                                             .warp_pointer = [this](int x, int y) { input.warp(x, y); }}),
            full_factory()) {
     wm.setup_race_shapes();
     gs.load_palette(files, "DATA\\game.pal", 0, 256);
@@ -99,12 +106,16 @@ struct ReplayProgram {
     wm.set_screen(0, false);
   }
 
-  void start(std::int32_t seed) {
+  void start(std::int32_t seed, game::Variant variant) {
+    session.set_new_game_variant(variant);
     const game::CosmosTxt txt{.stars = 50, .races = 7, .seed = seed, .species = {}};
     session.start(0, &txt);
   }
 
   void present() {
+    if (on_present) {
+      on_present();
+    }
     frame = gs.screen();
     if (pointer) {
       const InputState& s = input.state();
@@ -138,6 +149,8 @@ struct ReplayProgram {
   Image8 frame;
   bool pointer = true;
   int pointer_frame = 0;
+  // Called at every shown frame, modal loops included (a test's probe).
+  std::function<void()> on_present;
   WinMgr wm;
 };
 
@@ -179,9 +192,58 @@ inline std::vector<std::uint8_t> without_stale_save_header(std::vector<std::uint
   return save;
 }
 
+// The bytes of a save with its stale list slots cleared: the stars' lane
+// and planet lists and the races' AI targets past their counts (the
+// tutorials' games hold their author's process's pointers there, which the
+// original writes back as they were), and the header's stale bytes.
+// `foreign_cosmos`: the cosmos address of the stale pointers of another
+// process (`game::parse_save`).
+inline std::vector<std::uint8_t> without_stale_slots(const std::vector<std::uint8_t>& save,
+                                                     std::optional<game::RawAddress> foreign_cosmos = std::nullopt) {
+  game::SaveImage image = game::parse_save(save, foreign_cosmos);
+  for (game::Star& star : image.stars) {
+    for (std::size_t i = static_cast<std::size_t>(star.lane_count); i < star.lanes.size(); ++i) {
+      star.lanes[i] = game::kNone;
+    }
+    for (std::size_t i = static_cast<std::size_t>(star.planet_count); i < star.planets.size(); ++i) {
+      star.planets[i] = game::kNone;
+    }
+  }
+  for (game::Race& race : image.races) {
+    for (std::size_t i = static_cast<std::size_t>(race.target_count); i < race.targets.size(); ++i) {
+      race.targets[i] = game::kNone;
+    }
+  }
+  return without_stale_save_header(game::serialize_save(image));
+}
+
+// Writes `bytes` to `path`.
+inline void write_file(const std::filesystem::path& path, const std::vector<std::uint8_t>& bytes) {
+  std::ofstream(path, std::ios::binary)
+      .write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+}
+
+// Returns the save `bytes` of a `PATCH.EXE` game as the remake's save of the
+// same game played under `variant` (its trailer), unchanged when it already
+// is one of that variant's.
+inline std::vector<std::uint8_t> as_variant_save(const std::vector<std::uint8_t>& bytes, game::Variant variant) {
+  game::SaveImage image = game::parse_save(bytes);
+  if (image.cosmos_address != game::kPatchCosmosAddress || variant == game::Variant::kStandard) {
+    return bytes;
+  }
+  image.variant = variant;
+  return game::serialize_save(image);
+}
+
 // An oracle run to replay.
 struct ReplayRun {
   std::string run;  // under OA_ORACLE
+  // The original's executable: `PATCH.EXE` or `ANTAG.EXE` (Antagonizer).
+  // `ANTAG.EXE` plays the `PATCH.EXE` saves it loads (`keep_saves`,
+  // `resume`) under its own rules but writes their stale list slots back:
+  // the remake loads them with the variant's trailer and the saves are
+  // compared without those slots.
+  game::Variant variant = game::Variant::kStandard;
   std::int32_t seed = 1;
   bool keep_saves = false;
   // A save under OA_ORACLE installed as `RESUME.GAM` (the oracle's
@@ -203,10 +265,21 @@ inline bool replay_oracle_run(const GameFiles& files, const ReplayRun& c, int ma
   }
   INFO(c.run);
   ReplayDir dir;
+  const bool antag = c.variant != game::Variant::kStandard;
+  bool foreign = antag && c.keep_saves;
   if (resume) {
-    std::filesystem::copy_file(*resume, dir.path / "RESUME.GAM");
+    const std::vector<std::uint8_t> bytes = read_file(*resume);
+    foreign = foreign || (antag && game::parse_save(bytes).cosmos_address == game::kPatchCosmosAddress);
+    write_file(dir.path / "RESUME.GAM", as_variant_save(bytes, c.variant));
   }
-  ReplayProgram program(files, c.seed, dir.path, c.keep_saves);
+  if (antag && c.keep_saves) {
+    for (const char* name : {"01.SAV", "RESUME.GAM"}) {
+      if (name != std::string_view("RESUME.GAM") || !resume) {
+        write_file(dir.path / name, as_variant_save(read_file(*files.install().find(name)), c.variant));
+      }
+    }
+  }
+  ReplayProgram program(files, c.seed, dir.path, c.keep_saves && !antag, c.variant);
   CHECK(program.replay(read_file(*trace), max_passes));
   if (const char* dump = std::getenv("OA_DUMP_DIR"); dump != nullptr && *dump != '\0') {
     const std::filesystem::path to = std::filesystem::path(dump) / c.run;
@@ -220,8 +293,19 @@ inline bool replay_oracle_run(const GameFiles& files, const ReplayRun& c, int ma
     if (name.ends_with(".SAV") || name == "RESUME.GAM") {
       INFO(name);
       REQUIRE(std::filesystem::exists(ours));
-      CHECK(first_byte_difference(without_stale_save_header(read_file(ours)),
-                                  without_stale_save_header(read_file(entry.path()))) == -1);
+      std::vector<std::uint8_t> mine = read_file(ours);
+      std::vector<std::uint8_t> theirs = read_file(entry.path());
+      if (antag) {
+        // The remake's variant trailer (`game/save.h`), absent from the
+        // original's file.
+        REQUIRE(mine.size() == theirs.size() + 8);
+        mine.resize(theirs.size());
+      }
+      if (foreign) {
+        mine = without_stale_slots(mine, game::kPatchCosmosAddress);
+        theirs = without_stale_slots(theirs, game::kPatchCosmosAddress);
+      }
+      CHECK(first_byte_difference(without_stale_save_header(mine), without_stale_save_header(theirs)) == -1);
     } else if (name.ends_with(".GIF") &&
                (c.shots.empty() || std::find(c.shots.begin(), c.shots.end(), name) != c.shots.end())) {
       INFO(name);
@@ -234,6 +318,22 @@ inline bool replay_oracle_run(const GameFiles& files, const ReplayRun& c, int ma
     }
   }
   return true;
+}
+
+// Replays the oracle runs `runs` (those whose name contains OA_REPLAY_RUN
+// when it is set), skipping the test when none is there.
+inline void replay_oracle_runs(const GameFiles& files, const std::vector<ReplayRun>& runs) {
+  int found = 0;
+  const char* only = std::getenv("OA_REPLAY_RUN");
+  for (const ReplayRun& run : runs) {
+    if (only != nullptr && run.run.find(only) == std::string::npos) {
+      continue;
+    }
+    found += replay_oracle_run(files, run) ? 1 : 0;
+  }
+  if (found == 0) {
+    SKIP("OA_ORACLE is not set to work/oracle with the runs");
+  }
 }
 
 }  // namespace oa::test

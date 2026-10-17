@@ -416,7 +416,7 @@ bool race_battle_turn_with(Session& session, Race& race, Star& star, BattleActio
       }
       const StarIndex dest = ship.destination;
       if (dest == here) {
-        ship.destination_kind = ShipOrder::kNothing;
+        ship_clear_order_code(session, ship);
         if (ship.owner != session.player_race || session.autoplay) {
           rules.ship_orders(session, race, ship);
         }
@@ -450,7 +450,7 @@ bool race_battle_turn_with(Session& session, Race& race, Star& star, BattleActio
     case ShipOrder::kColonize: {
       Planet& planet = cosmos.planets[static_cast<std::size_t>(ship.destination)];
       if (planet.owner != kNoOwner) {
-        ship.destination_kind = ShipOrder::kNothing;
+        ship_clear_order_code(session, ship);
       } else if (ship.location_kind == ShipLocation::kOrbit) {
         if (ship.location == ship.destination) {
           // Colonises at once (the destination index is kept).
@@ -465,7 +465,7 @@ bool race_battle_turn_with(Session& session, Race& race, Star& star, BattleActio
           ship.power -= 1;
           power = static_cast<std::int16_t>(power - 1);
           star.owner_mask |= self_bit;
-          ship.destination_kind = ShipOrder::kNothing;
+          ship_clear_order_code(session, ship);
         } else {
           planet_undock_ship(session, cosmos.planets[static_cast<std::size_t>(ship.location)], ship);
         }
@@ -477,7 +477,7 @@ bool race_battle_turn_with(Session& session, Race& race, Star& star, BattleActio
     }
     case ShipOrder::kOrbitPlanet:
       if (ship.location_kind == ShipLocation::kOrbit) {
-        ship.destination_kind = ShipOrder::kNothing;
+        ship_clear_order_code(session, ship);
         if (session.screen != 16) {
           session.post_event(EventCode::kEnteredOrbit, ship_index(cosmos, ship), ship.destination);
         }
@@ -485,7 +485,7 @@ bool race_battle_turn_with(Session& session, Race& race, Star& star, BattleActio
         set_action(ship, 0, 0, kTargetPlanet, planet_address(session, ship.destination));
         action = ship_action(cosmos, ship);
       } else {
-        ship.destination_kind = ShipOrder::kNothing;
+        ship_clear_order_code(session, ship);
       }
       break;
     case ShipOrder::kGoSpace:
@@ -493,7 +493,7 @@ bool race_battle_turn_with(Session& session, Race& race, Star& star, BattleActio
         ship.target_kind = kTargetPoint;
         action = ship_action(cosmos, ship);
       } else {
-        ship.destination_kind = ShipOrder::kNothing;
+        ship_clear_order_code(session, ship);
       }
       break;
     default:

@@ -54,6 +54,26 @@ saves are compatible with the original's.
 
 - **Extended** (planned): the classic game with fixes and improvements.
 
+## Touch screens and Android
+
+The game runs in full screen in landscape. The mouse pointer is replaced by
+your finger:
+
+- **Tap**: a click (the left mouse button).
+- **Long press**: the right mouse button, held until you lift your finger
+  (for example, a long press on a rotation button keeps the view turning;
+  tap the button again to stop it).
+- **Drag** on the galaxy map or a star system: turns the view.
+- **Pinch** on them: zooms in or out.
+- **Back** (button or gesture): closes the current dialog or goes back to
+  the previous screen, like the original's exit corners; on the opening
+  menu, it quits.
+
+The game in progress is saved when the app goes to the background, so that
+"Return to Current Game" goes on from there even if Android closed the app
+meanwhile. With a mouse, dragging on the galaxy map or a star system turns
+it too.
+
 ## Building and contributing
 
 See [BUILD.md](BUILD.md) to learn how to build, run and test Open

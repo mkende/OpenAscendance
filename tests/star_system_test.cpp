@@ -25,24 +25,6 @@
 #include "ui/list_box.h"
 
 namespace oa {
-namespace {
-
-// Replays the oracle runs `runs`, skipping the test when none is there.
-void replay_runs(const GameFiles& files, const std::vector<test::ReplayRun>& runs) {
-  int found = 0;
-  const char* only = std::getenv("OA_REPLAY_RUN");
-  for (const test::ReplayRun& run : runs) {
-    if (only != nullptr && run.run.find(only) == std::string::npos) {
-      continue;
-    }
-    found += test::replay_oracle_run(files, run) ? 1 : 0;
-  }
-  if (found == 0) {
-    SKIP("OA_ORACLE is not set to work/oracle with the runs");
-  }
-}
-
-}  // namespace
 
 TEST_CASE("the star-system view of the original", "[star_system][screens][content][oracle]") {
   OA_REQUIRE_GAME_FILES(files);
@@ -50,8 +32,8 @@ TEST_CASE("the star-system view of the original", "[star_system][screens][conten
   // back on the star map (SCR007), the view's camera in RESUME.GAM.
   // star_system_views: the camera buttons, a planet hovered, selected,
   // opened, the toggles, the camera kept for the star (`tests/oracle`).
-  replay_runs(files, {{.run = "main_screens", .seed = 1234, .shots = {"SCR006.GIF", "SCR007.GIF"}},
-                      {.run = "m5/star_system_views", .seed = 1234, .shots = {}}});
+  test::replay_oracle_runs(files, {{.run = "main_screens", .seed = 1234, .shots = {"SCR006.GIF", "SCR007.GIF"}},
+                                   {.run = "m5/star_system_views", .seed = 1234, .shots = {}}});
 }
 
 TEST_CASE("a battle of the original played through the System Display", "[star_system][screens][content][oracle]") {
@@ -64,13 +46,13 @@ TEST_CASE("a battle of the original played through the System Display", "[star_s
   // Repeat Move, with the stack bytes the original leaves in their action
   // blocks; abandon_skip: a ship abandoned, Auto's effects skipped by Space,
   // Enter and a right click.
-  replay_runs(files, {{.run = "m5/battle_ui", .keep_saves = true, .shots = {}},
-                      {.run = "m5/move_point", .keep_saves = true, .shots = {}},
-                      {.run = "m5/move_point2", .keep_saves = true, .shots = {}},
-                      {.run = "m5/move_planet", .keep_saves = true, .shots = {}},
-                      {.run = "m5/move_lane", .keep_saves = true, .shots = {}},
-                      {.run = "m5/repeat_pass", .keep_saves = true, .shots = {}},
-                      {.run = "m5/abandon_skip", .keep_saves = true, .shots = {}}});
+  test::replay_oracle_runs(files, {{.run = "m5/battle_ui", .keep_saves = true, .shots = {}},
+                                   {.run = "m5/move_point", .keep_saves = true, .shots = {}},
+                                   {.run = "m5/move_point2", .keep_saves = true, .shots = {}},
+                                   {.run = "m5/move_planet", .keep_saves = true, .shots = {}},
+                                   {.run = "m5/move_lane", .keep_saves = true, .shots = {}},
+                                   {.run = "m5/repeat_pass", .keep_saves = true, .shots = {}},
+                                   {.run = "m5/abandon_skip", .keep_saves = true, .shots = {}}});
 }
 
 TEST_CASE("the original's battle effects played frame by frame", "[star_system][screens][content][oracle]") {
@@ -89,7 +71,7 @@ TEST_CASE("the original's battle effects played frame by frame", "[star_system][
   for (const char* run : {"m5fx/fx_stale_a", "m5fx/fx_stale_b"}) {
     runs.push_back({.run = run, .resume = "m5fx/fx_stale.GAM", .shots = {}});
   }
-  replay_runs(files, runs);
+  test::replay_oracle_runs(files, runs);
 }
 
 namespace {

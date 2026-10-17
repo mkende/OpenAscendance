@@ -219,6 +219,12 @@ struct Ship {
   std::array<GizmoSlot, kShipSlots> slots{};         // +0xab
   std::int32_t slot_count = 0;                       // +0x15a 5, 10, 15, 25
   std::int32_t gizmo_count = 0;                      // +0x15e
+  // +0x5e as a raw pointer while `destination_kind` is 0 (or 7): what the
+  // last order left there. Most ways of dropping an order clear only the
+  // code (`ship_clear_order_code`), so the pointer of the order's star or
+  // planet stays and the saves write it (`Ship_serialize` 0x46294, cleared
+  // on load); the others write 0.
+  RawAddress stale_destination = 0;
 };
 
 // Relation of a race toward another (`Race::relation`).

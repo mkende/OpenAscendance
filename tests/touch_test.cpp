@@ -1,0 +1,471 @@
+// The remake's controls for touch screens and Android (not in the
+// original): the touch screen as the mouse (`platform/touch.h`), the view
+// drags and pinches of the star map and the System Display, the system's
+// Back (`WinMgr::system_back`), and the game kept in `resume.gam` when the
+// system sends the program to the background (`app/corn.h`), resumed from
+// there by the next start (OA_DATA install for the screens and the app).
+
+#include <catch2/catch_test_macros.hpp>
+
+#include <SDL3/SDL_events.h>
+#include <SDL3/SDL_hints.h>
+#include <SDL3/SDL_init.h>
+#include <SDL3/SDL_keycode.h>
+
+#include <array>
+#include <cstdint>
+#include <filesystem>
+#include <vector>
+
+#include "app/command_line.h"
+#include "app/corn.h"
+#include "core_session.h"
+#include "game/save.h"
+#include "game_data.h"
+#include "platform/display.h"
+#include "platform/input.h"
+#include "platform/touch.h"
+#include "screens/bat_mode_wnd.h"
+#include "screens/cos_wnd.h"
+#include "test_dirs.h"
+#include "ui/game_core_session.h"
+#include "ui_rig.h"
+
+namespace oa {
+namespace {
+
+InputEvent finger(EventType type, std::uint64_t id, int x, int y, std::uint64_t ms) {
+  return InputEvent{.type = type, .x = x, .y = y, .finger = id, .time_ms = ms};
+}
+
+TEST_CASE("touch: a tap is a left click where the finger was put, after the pointer moved there", "[platform]") {
+  Input input;
+  TouchMapper touch(input);
+  touch.feed(finger(EventType::kFingerDown, 1, 100, 200, 0));
+  const InputState& s = input.poll();
+  CHECK(s.x == 100);
+  CHECK(s.y == 200);
+  CHECK(s.moved);
+  CHECK(!s.left_changed);
+  touch.feed(finger(EventType::kFingerMove, 1, 103, 198, 50));
+  touch.feed(finger(EventType::kFingerUp, 1, 104, 197, 120));
+  touch.update(130);
+  input.poll();
+  CHECK(s.left_down);
+  CHECK(s.left_changed);
+  CHECK(s.x == 100);
+  CHECK(!s.right_down);
+  input.poll();
+  CHECK(!s.left_down);
+  CHECK(s.left_changed);
+  CHECK(!s.gesture.started);
+}
+
+TEST_CASE("touch: a long press holds the right button until the finger is lifted", "[platform]") {
+  Input input;
+  TouchMapper touch(input);
+  touch.feed(finger(EventType::kFingerDown, 7, 300, 300, 1000));
+  touch.update(1000 + TouchMapper::kLongPress - 1);
+  const InputState& s = input.poll();
+  CHECK(!s.right_down);
+  touch.update(1000 + TouchMapper::kLongPress);
+  input.poll();
+  CHECK(s.right_down);
+  CHECK(s.right_changed);
+  input.poll();
+  CHECK(s.right_down);
+  touch.feed(finger(EventType::kFingerUp, 7, 300, 300, 2500));
+  input.poll();
+  CHECK(!s.right_down);
+  CHECK(!s.left_down);
+  CHECK(!s.left_changed);
+}
+
+TEST_CASE("touch: a moving finger drags the view without a click; two fingers pinch", "[platform]") {
+  Input input;
+  TouchMapper touch(input);
+  touch.feed(finger(EventType::kFingerDown, 1, 200, 200, 0));
+  touch.feed(finger(EventType::kFingerMove, 1, 230, 190, 40));
+  const InputState& s = input.poll();
+  CHECK(s.gesture.started);
+  CHECK(s.gesture.active);
+  CHECK(s.gesture.x == 200);
+  CHECK(s.gesture.y == 200);
+  CHECK(s.gesture.dx == 30);
+  CHECK(s.gesture.dy == -10);
+  touch.feed(finger(EventType::kFingerMove, 1, 235, 192, 60));
+  touch.update(5000);  // moved: never a long press
+  input.poll();
+  CHECK(!s.gesture.started);
+  CHECK(s.gesture.dx == 5);
+  CHECK(s.gesture.dy == 2);
+  touch.feed(finger(EventType::kFingerUp, 1, 235, 192, 5000));
+  input.poll();
+  CHECK(!s.gesture.active);
+  input.poll();
+  CHECK(!s.left_changed);
+  CHECK(!s.right_changed);
+
+  // A pinch: the fingers 100 then 200 pixels apart.
+  touch.feed(finger(EventType::kFingerDown, 2, 300, 100, 6000));
+  touch.feed(finger(EventType::kFingerDown, 3, 400, 100, 6010));
+  touch.feed(finger(EventType::kFingerMove, 3, 500, 100, 6100));
+  input.poll();
+  CHECK(s.gesture.started);
+  CHECK(s.gesture.x == 350);
+  CHECK(s.gesture.zoom == 2.0F);
+  touch.feed(finger(EventType::kFingerUp, 2, 300, 100, 6200));
+  touch.feed(finger(EventType::kFingerUp, 3, 500, 100, 6210));
+  input.poll();
+  CHECK(!s.gesture.active);
+  input.poll();
+  CHECK(!s.left_changed);
+  CHECK(!s.left_down);
+}
+
+TEST_CASE("mouse: the left button moved past a few pixels drags the view; the press stays a click", "[platform]") {
+  Input input;
+  input.feed(InputEvent{.type = EventType::kMouseDown, .x = 50, .y = 60, .button = MouseButton::kLeft});
+  input.feed(InputEvent{.type = EventType::kMouseMove, .x = 52, .y = 61});
+  const InputState& s = input.poll();
+  CHECK(s.left_down);
+  CHECK(s.left_changed);
+  CHECK(!s.gesture.started);
+  input.feed(InputEvent{.type = EventType::kMouseMove, .x = 60, .y = 58});
+  input.poll();
+  CHECK(s.gesture.started);
+  CHECK(s.gesture.x == 50);
+  CHECK(s.gesture.dx == 10);
+  CHECK(s.gesture.dy == -2);
+  input.feed(InputEvent{.type = EventType::kMouseUp, .x = 60, .y = 58, .button = MouseButton::kLeft});
+  input.poll();
+  CHECK(!s.gesture.active);
+  CHECK(!s.left_down);
+}
+
+TEST_CASE("the 4:3 letterbox: centred, clear of the display cutout", "[platform]") {
+  // A foldable's inner screen (near square) and outer one (tall), both ways.
+  CHECK(letterbox(2208, 1840, {}) == PictureRect{0, 92, 2208, 1656});
+  CHECK(letterbox(1840, 2208, {}) == PictureRect{0, 414, 1840, 1380});
+  CHECK(letterbox(2092, 1080, {}) == PictureRect{326, 0, 1440, 1080});
+  CHECK(letterbox(1080, 2092, {}) == PictureRect{0, 641, 1080, 810});
+  // A camera hole in the top band: the picture below it.
+  CHECK(letterbox(2208, 1840, {0, 120, 0, 0}) == PictureRect{0, 152, 2208, 1656});
+  // On the left of a tall screen held sideways: in the black bar already.
+  CHECK(letterbox(2092, 1080, {100, 0, 0, 0}) == PictureRect{376, 0, 1440, 1080});
+  // A cutout leaving almost nothing is ignored.
+  CHECK(letterbox(640, 480, {0, 400, 0, 0}) == PictureRect{0, 0, 640, 480});
+}
+
+// Sends SDL event `e` and returns the display's last input event.
+std::optional<InputEvent> through(Display& display, SDL_Event e) {
+  REQUIRE(SDL_PushEvent(&e));
+  std::optional<InputEvent> last;
+  while (const std::optional<InputEvent> in = display.poll()) {
+    last = in;
+  }
+  return last;
+}
+
+TEST_CASE("a resized window: the letterbox and the pointer and fingers mapping follow at once", "[platform]") {
+  SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
+  struct Quit {
+    ~Quit() { SDL_Quit(); }
+  } quit;
+  Display display("touch test", 1, Scaling::kSharp);
+  for (const auto& [w, h] :
+       std::array<std::pair<int, int>, 5>{{{2208, 1840}, {1840, 2208}, {2092, 1080}, {1080, 2092}, {640, 480}}}) {
+    INFO(w << "x" << h);
+    display.set_window_size(w, h);
+    while (display.poll()) {
+    }
+    const PictureRect p = display.picture();
+    REQUIRE(p == letterbox(w, h, {}));
+    SDL_Event e{};
+    e.type = SDL_EVENT_MOUSE_MOTION;
+    e.motion.x = p.x + p.w / 2;
+    e.motion.y = p.y + p.h / 2;
+    std::optional<InputEvent> in = through(display, e);
+    REQUIRE(in);
+    CHECK(in->type == EventType::kMouseMove);
+    CHECK(in->x == 320);
+    CHECK(in->y == 240);
+    // The picture's bottom-right pixel, and left of the picture.
+    e.motion.x = p.x + p.w - 0.5F;
+    e.motion.y = p.y + p.h - 0.5F;
+    in = through(display, e);
+    CHECK(in->x == 639);
+    CHECK(in->y == 479);
+    e.motion.x = p.x - 1;
+    in = through(display, e);
+    CHECK(in->x < 0);
+
+    e = SDL_Event{};
+    e.type = SDL_EVENT_FINGER_DOWN;
+    e.tfinger.fingerID = 5;
+    e.tfinger.x = (p.x + p.w / 4) / static_cast<float>(w);
+    e.tfinger.y = (p.y + p.h * 3 / 4) / static_cast<float>(h);
+    in = through(display, e);
+    REQUIRE(in);
+    CHECK(in->type == EventType::kFingerDown);
+    CHECK(in->x == 160);
+    CHECK(in->y == 360);
+    CHECK(in->finger == 5);
+  }
+}
+
+// A game begun as the oracle's runs (`cosmos.txt` of 50 stars, 7 races),
+// on the star map, under the window manager.
+struct GameRig {
+  GameRig(const GameFiles& files, const std::filesystem::path& dir)
+      : session(files, dir, false), rig((start(), files), &session, dir), touch(rig.input) {
+    wait(40);
+    click(318, 295);  // FRESHGAME
+    wait(60);
+    click(594, 452);  // Begin New Game
+    wait(60);
+    click(320, 240);  // the species history
+    wait(60);
+  }
+
+  void start() {
+    const game::CosmosTxt txt{.stars = 50, .races = 7, .seed = 1234, .species = {}};
+    session.start(0, &txt);
+  }
+  void wait(int passes) {
+    for (int i = 0; i < passes; ++i) {
+      rig.pass();
+    }
+  }
+  void click(int x, int y) {
+    rig.move(x, y);
+    rig.click(x, y);
+  }
+  // A finger dragged from (x0, y0) by (dx, dy) in `steps` moves, a pass
+  // each.
+  void finger_drag(int x0, int y0, int dx, int dy, int steps) {
+    touch.feed(finger(EventType::kFingerDown, 1, x0, y0, 0));
+    rig.pass();
+    for (int i = 1; i <= steps; ++i) {
+      touch.feed(finger(EventType::kFingerMove, 1, x0 + dx * i / steps, y0 + dy * i / steps, 10));
+      rig.pass();
+    }
+    touch.feed(finger(EventType::kFingerUp, 1, x0 + dx, y0 + dy, 20));
+    wait(3);
+  }
+  // A pinch about (x, y) from `from` to `to` pixels apart.
+  void pinch(int x, int y, int from, int to) {
+    touch.feed(finger(EventType::kFingerDown, 1, x - from / 2, y, 0));
+    touch.feed(finger(EventType::kFingerDown, 2, x + from / 2, y, 0));
+    rig.pass();
+    touch.feed(finger(EventType::kFingerMove, 1, x - to / 2, y, 10));
+    touch.feed(finger(EventType::kFingerMove, 2, x + to / 2, y, 10));
+    rig.pass();
+    touch.feed(finger(EventType::kFingerUp, 1, x - to / 2, y, 20));
+    touch.feed(finger(EventType::kFingerUp, 2, x + to / 2, y, 20));
+    wait(3);
+  }
+
+  CosWnd& map() { return dynamic_cast<CosWnd&>(*rig.wm.find_window("COSMOSWnd")); }
+  // The visible star nearest to the camera, and the farthest.
+  int nearest_star(bool farthest = false) {
+    const CosWnd::Item* best = nullptr;
+    for (const CosWnd::Item& it : map().items()) {
+      if (it.kind == CosWnd::ItemKind::kStar && !it.clipped &&
+          (best == nullptr || (farthest ? it.depth > best->depth : it.depth < best->depth))) {
+        best = &it;
+      }
+    }
+    REQUIRE(best != nullptr);
+    return best->index;
+  }
+  // The projected item of star `star` on the map.
+  const CosWnd::Item& star_item(int star) {
+    for (const CosWnd::Item& it : map().items()) {
+      if (it.kind == CosWnd::ItemKind::kStar && it.index == star) {
+        return it;
+      }
+    }
+    FAIL("star not on the map");
+    throw;
+  }
+
+  GameCoreSession session;
+  test::UiRig rig;
+  TouchMapper touch;
+};
+
+TEST_CASE("the star map turns with a drag (the galaxy follows it) and zooms with a pinch", "[screens][content]") {
+  OA_REQUIRE_GAME_FILES(files);
+  test::TempDir dir("oa_touch");
+  GameRig r(files, dir.path);
+  REQUIRE(r.rig.wm.current_screen() == 1);
+  const game::Session& s = *r.session.core();
+  const int home = s.game->cosmos.races[s.player_race].home;
+  const int near = r.nearest_star();
+  const int far = r.nearest_star(true);
+  const std::int16_t near_x = r.star_item(near).x;
+  const std::int16_t far_x = r.star_item(far).x;
+  const CosWnd::Item& item = r.star_item(home);
+
+  // From the home star (explored): a finger never clicks it (the system
+  // stays shut). The galaxy turns about its vertical axis, its near side
+  // following the finger.
+  r.finger_drag(r.map().pane().x0 + item.x, r.map().pane().y0 + item.y, 20, 0, 2);
+  CHECK(r.rig.wm.current_screen() == 1);
+  CHECK(r.map().camera().orientation != std::array<float, 9>{1, 0, 0, 0, 1, 0, 0, 0, 1});
+  CHECK(r.star_item(near).x > near_x);
+  CHECK(r.star_item(far).x < far_x);
+  const std::array<float, 9> turned = r.map().camera().orientation;
+  const std::int16_t near_y = r.star_item(r.nearest_star()).y;
+  const int near2 = r.nearest_star();
+
+  // A vertical drag with the mouse, from an empty corner of the map: the
+  // press is the original's click (nothing there), the moves turn it.
+  r.rig.move(20, 20);
+  r.rig.pass(InputEvent{.type = EventType::kMouseDown, .x = 20, .y = 20, .button = MouseButton::kLeft});
+  for (int y = 26; y <= 30; y += 2) {
+    r.rig.move(20, y);
+  }
+  r.rig.pass(InputEvent{.type = EventType::kMouseUp, .x = 20, .y = 30, .button = MouseButton::kLeft});
+  CHECK(r.rig.wm.current_screen() == 1);
+  CHECK(r.map().camera().orientation != turned);
+  CHECK(r.star_item(near2).y > near_y);
+
+  // Pinches: the field of view within the zoom's limits.
+  const float fov = r.map().fov();
+  r.pinch(240, 240, 100, 120);
+  CHECK(r.map().fov() == fov / 1.2F);
+  r.pinch(240, 240, 20, 400);
+  CHECK(r.map().fov() == CosWnd::kMinFov);
+  r.pinch(240, 240, 400, 20);
+  CHECK(r.map().fov() == CosWnd::kMaxFov);
+
+  // The window state round-trips the camera as it is.
+  std::vector<std::uint8_t> state(0xbe);
+  REQUIRE(r.map().save_state(state));
+  const std::array<float, 9> orientation = r.map().camera().orientation;
+  r.map().load_state(state);
+  CHECK(r.map().camera().orientation == orientation);
+  CHECK(r.map().fov() == CosWnd::kMaxFov);
+}
+
+TEST_CASE("the System Display orbits with a horizontal drag and zooms with a pinch within its limits",
+          "[screens][content]") {
+  OA_REQUIRE_GAME_FILES(files);
+  test::TempDir dir("oa_touch");
+  GameRig r(files, dir.path);
+  const game::Session& s = *r.session.core();
+  const CosWnd::Item& home = r.star_item(s.game->cosmos.races[s.player_race].home);
+  r.click(r.map().pane().x0 + home.x, r.map().pane().y0 + home.y);
+  r.wait(10);
+  REQUIRE(r.rig.wm.current_screen() == 16);
+  auto& view = dynamic_cast<BatModeWnd&>(*r.rig.wm.find_window("BatModeWnd"));
+  const Pane p = view.pane();
+  const int cx = (p.x0 + p.x1) / 2;
+  const int cy = (p.y0 + p.y1) / 2;
+  const float distance = view.distance();
+  const auto position = view.camera().position;
+
+  // A vertical drag: no other rotation in the original.
+  r.finger_drag(cx, cy - 40, 0, 80, 4);
+  CHECK(view.camera().position == position);
+  r.finger_drag(cx - 40, cy, 80, 0, 4);
+  CHECK(view.camera().position != position);
+  CHECK(view.distance() == distance);
+  CHECK(r.rig.wm.current_screen() == 16);
+
+  r.pinch(cx, cy, 100, 400);
+  CHECK(view.distance() < distance);
+  r.pinch(cx, cy, 20, 400);
+  r.pinch(cx, cy, 20, 400);
+  CHECK(view.distance() == view.camera().focal);
+  r.pinch(cx, cy, 400, 20);
+  r.pinch(cx, cy, 400, 20);
+  CHECK(view.distance() >= distance);  // the default distance, the farthest
+}
+
+TEST_CASE("Back: an exit corner's action, Exit to DOS on the opening menu", "[screens][content]") {
+  OA_REQUIRE_GAME_FILES(files);
+  test::TempDir dir("oa_touch");
+  GameRig r(files, dir.path);
+  REQUIRE(r.rig.wm.current_screen() == 1);
+  r.click(r.map().pane().x0 + 1, r.map().pane().y0 + 1);  // nothing there
+  r.rig.key('s', SDL_KMOD_LALT);
+  r.wait(3);
+  REQUIRE(r.rig.wm.current_screen() != 1);
+  r.rig.pass(InputEvent{.type = EventType::kBack});
+  r.wait(2);
+  CHECK(r.rig.wm.current_screen() == 1);
+  CHECK(r.rig.wm.running());
+
+  r.rig.wm.set_screen(0, false);
+  r.rig.pass(InputEvent{.type = EventType::kBack});
+  r.wait(1);
+  CHECK(!r.rig.wm.running());
+}
+
+// Returns the save `bytes` without its clusters' content: `Cosmos_load`
+// reads them into a local buffer only, so that a save after a load writes
+// the clusters of the galaxy made at the program's start.
+std::vector<std::uint8_t> without_clusters(const std::vector<std::uint8_t>& bytes) {
+  game::SaveImage image = game::parse_save(bytes);
+  for (game::Cluster& c : image.clusters) {
+    c = {};
+  }
+  return game::serialize_save(image);
+}
+
+// Runs the program headless over the user folder `dir` with the
+// `--keys` steps `keys`, until `frames` frames were shown.
+void run_app(const Install& install, const std::filesystem::path& dir, std::string_view keys, int frames) {
+  const std::vector<std::string_view> args{"--keys", keys};
+  const CommandLine line = parse_command_line(args);
+  const GameOptions options{.settings = {},
+                            .settings_file = dir / "options.cfg",
+                            .keys = line.keys,
+                            .screenshot = dir / "shot.bmp",
+                            .frames = frames,
+                            .user_dir = dir,
+                            .seed = 1234,
+                            .trace = {}};
+  REQUIRE(run_game(options, install) == 0);
+}
+
+TEST_CASE("sent to the background mid-game, the game is kept in resume.gam and resumed from it", "[app][content]") {
+  const std::optional<Install> install = test::game_install();
+  if (!install) {
+    SKIP("OA_DATA is not set to an Ascendancy install");
+  }
+  test::TempDir dir("oa_resume");
+  const std::filesystem::path resume = dir.path / "RESUME.GAM";
+  // A new game (New Game on the remake's menu), the map turned by a drag,
+  // then the background. The run ends on its last frame, without the
+  // original's exit (which saves resume.gam too).
+  run_app(*install, dir.path,
+          "-40,click:318:282,-60,click:594:452,-60,click:320:240,-60,drag:15:460:200:400,-5,background,-20", 2000);
+  REQUIRE(std::filesystem::exists(resume));
+  const std::vector<std::uint8_t> saved = test::read_file(resume);
+  {
+    // Saved after the drag: the opening menu reads the turned map back.
+    const GameFiles files(*install);
+    GameCoreSession session(files, dir.path, false);
+    const test::UiRig rig(files, &session, dir.path);
+    REQUIRE(session.has_game());
+    const auto& map = dynamic_cast<const CosWnd&>(*rig.wm.find_window("COSMOSWnd"));
+    CHECK(map.camera().orientation != std::array<float, 9>{1, 0, 0, 0, 1, 0, 0, 0, 1});
+  }
+
+  // The next start reads it on the opening menu; Return to Current Game
+  // (the menu's fourth button) goes on from it: kept again, it is the same.
+  std::filesystem::remove(dir.path / "shot.bmp");
+  run_app(*install, dir.path, "-40,background,-5", 600);
+  const bool same_on_menu = without_clusters(test::read_file(resume)) == without_clusters(saved);
+  CHECK(same_on_menu);
+  run_app(*install, dir.path, "-40,click:318:317,-60,background,-5", 1500);
+  const bool same_on_map = without_clusters(test::read_file(resume)) == without_clusters(saved);
+  CHECK(same_on_map);
+}
+
+}  // namespace
+}  // namespace oa

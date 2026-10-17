@@ -67,10 +67,11 @@ struct Session {
   std::uint32_t stale_dip_arg = 0;
   // The shared work buffer 0xc8c2c (ANTAG 0xd8da0, both 0x35e34 bytes after
   // the cosmos), kScratchSize bytes: `main` 0x1c424 loads `logo.gif` into
-  // it at startup (`program_start`); later users are `Cosmos_compute_hops`
-  // (its first n(n-1) bytes), the species history text and the screen under
-  // each modal window (`save_screen_under` 0x4f618, the user interface's to
-  // copy here). The day reads it only through the out-of-bounds square of a
+  // it at startup (`program_start`); later users are the screen under each
+  // modal window (`save_screen_under` 0x4f618, `WinMgr::do_modal`), and
+  // `Cosmos_compute_hops` (its first n(n-1) bytes) and the species history
+  // and end-of-game texts, not modelled (below the offsets the day reads).
+  // The day reads it only through the out-of-bounds square of a
   // planet-wide project (`planet_daily_update`).
   static constexpr std::size_t kScratchSize = 160000;
   std::vector<std::uint8_t> scratch;

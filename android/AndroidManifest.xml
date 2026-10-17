@@ -39,6 +39,7 @@
             android:resizeableActivity="true"
             android:configChanges="layoutDirection|locale|fontScale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|density|keyboard|keyboardHidden|navigation"
             android:preferMinimalPostProcessing="true"
+            android:enableOnBackInvokedCallback="false"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

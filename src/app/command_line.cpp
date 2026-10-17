@@ -158,6 +158,10 @@ void parse_keys(std::string_view value, std::vector<InputEvent>& keys) {
     } else if (key.starts_with("move:")) {
       const std::vector<int> p = parse_coordinates(key, key.substr(5), 2);
       keys.push_back(InputEvent{.type = EventType::kMouseMove, .x = p[0], .y = p[1]});
+    } else if (key == "back") {
+      keys.push_back(InputEvent{.type = EventType::kBack});
+    } else if (key == "background") {
+      keys.push_back(InputEvent{.type = EventType::kBackground});
     } else if (key.starts_with('-')) {
       int frames = 1;
       if (key.size() > 1 && std::from_chars(key.data() + 1, key.data() + key.size(), frames).ec != std::errc{}) {

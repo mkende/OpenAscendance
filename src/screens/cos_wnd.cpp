@@ -1,5 +1,6 @@
 #include "screens/cos_wnd.h"
 
+#include <algorithm>
 #include <bit>
 #include <cmath>
 #include <cstring>
@@ -377,8 +378,11 @@ void CosWnd::project_items() {
 }
 
 void CosWnd::rotate_step(bool y_axis, float degrees) {
+  turn(y_axis, f32(static_cast<double>(degrees) * wm_.rotation_speed()));
+}
+
+void CosWnd::turn(bool y_axis, float angle) {
   drawn_count_ = 0;
-  const float angle = f32(static_cast<double>(degrees) * wm_.rotation_speed());
   if (y_axis) {
     orient_rotate(camera_.orientation, angle, game::rotate_y);
   } else {
@@ -394,6 +398,32 @@ void CosWnd::zoom_step(int dir) {
   fov_ = f32(static_cast<double>(dir) * wm_.rotation_speed() + fov_);
   set_projection();
   drawn_count_ = 0;
+}
+
+bool CosWnd::takes_view_gesture(int x, int y) const {
+  return x > pane_.x0 && x < pane_.x1 && y > pane_.y0 && y < pane_.y1;
+}
+
+void CosWnd::view_drag(int dx, int dy) {
+  if (dx != 0) {
+    turn(true, -static_cast<float>(dx) * kDragDegrees);
+  }
+  if (dy != 0) {
+    turn(false, static_cast<float>(dy) * kDragDegrees);
+  }
+  project_items();
+  draw(kDrawNormal);
+}
+
+void CosWnd::view_pinch(float ratio) {
+  if (!(ratio > 0.0F)) {
+    return;
+  }
+  fov_ = std::clamp(fov_ / ratio, kMinFov, kMaxFov);
+  set_projection();
+  drawn_count_ = 0;
+  project_items();
+  draw(kDrawNormal);
 }
 
 void CosWnd::draw_label(int background) {

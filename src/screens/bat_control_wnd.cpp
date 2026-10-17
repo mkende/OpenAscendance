@@ -205,7 +205,8 @@ void BatControlWnd::execute(int kind, int object, const StaleBlock& stale, const
   game::Cosmos& c = s->game->cosmos;
   if (selection_.kind == kObjectShip) {
     game::Ship& ship = c.ships[static_cast<std::size_t>(selection_.object)];
-    ship.destination_kind = game::ShipOrder::kNothing;
+    // The code only: a gizmo use leaves the order's pointer.
+    game::ship_clear_order_code(*s, ship);
     if (action_ == kActionMove) {
       game::Vec3 target_point{};
       game::RawAddress target = stale.target.value_or(ship.target);
@@ -216,6 +217,7 @@ void BatControlWnd::execute(int kind, int object, const StaleBlock& stale, const
         repeat_point_ = target_point;
         ship.destination_kind = game::ShipOrder::kGoSpace;
         ship.destination = 0;
+        ship.stale_destination = 0;
       } else if (kind == kObjectPlanet) {
         target_kind = game::kTargetPlanet;
         ship.destination_kind = game::ShipOrder::kOrbitPlanet;

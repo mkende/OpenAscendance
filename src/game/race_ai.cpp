@@ -635,6 +635,7 @@ void race_ai_ship_orders(Session& session, Race& race, Ship& ship) {
   if (ship.owner == session.player_race && !session.autoplay) {
     ship.destination_kind = ShipOrder::kNothing;
     ship.destination = 0;
+    ship.stale_destination = 0;
     return;
   }
   if (ship.destination_kind != ShipOrder::kNothing) {

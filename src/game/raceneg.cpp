@@ -677,6 +677,7 @@ void race_on_player_ship_arrival(Session& session, Race& player, Ship& ship, Sta
   } else {
     ship.destination_kind = ShipOrder::kNothing;
     ship.destination = 0;
+    ship.stale_destination = 0;
     code =
         (star.explored_mask & bit(session.player_race)) == 0 ? EventCode::kSystemDiscovered : EventCode::kShipArrived;
   }

@@ -1,6 +1,7 @@
 #include "platform/input.h"
 
 #include <algorithm>
+#include <cstdlib>
 
 #include "core/image.h"
 #include "platform/bios_keys.h"
@@ -23,7 +24,9 @@ void Input::feed(const InputEvent& event) {
       break;
     case EventType::kMouseMove:
     case EventType::kMouseDown:
-    case EventType::kMouseUp:
+    case EventType::kMouseUp: {
+      const int from_x = mouse_x_;
+      const int from_y = mouse_y_;
       // The MOUSE module keeps the pointer on the screen (MOUSE_init(640, 480)).
       mouse_x_ = std::clamp(event.x, 0, kScreenWidth - 1);
       mouse_y_ = std::clamp(event.y, 0, kScreenHeight - 1);
@@ -31,11 +34,56 @@ void Input::feed(const InputEvent& event) {
           (event.button == MouseButton::kLeft || event.button == MouseButton::kRight)) {
         buttons_.push_back({event.button, event.type == EventType::kMouseDown});
       }
+      if (!event.touch) {
+        track_mouse_drag(event, from_x, from_y);
+      }
+      break;
+    }
+    case EventType::kBack:
+      back_ = true;
       break;
     case EventType::kQuit:
+    case EventType::kFingerDown:
+    case EventType::kFingerMove:
+    case EventType::kFingerUp:
+    case EventType::kFingerCancel:
+    case EventType::kBackground:
       break;
   }
 }
+
+void Input::track_mouse_drag(const InputEvent& event, int from_x, int from_y) {
+  if (event.type == EventType::kMouseDown && event.button == MouseButton::kLeft) {
+    mouse_left_ = true;
+    press_x_ = mouse_x_;
+    press_y_ = mouse_y_;
+  } else if (event.type == EventType::kMouseUp && event.button == MouseButton::kLeft) {
+    mouse_left_ = false;
+    if (mouse_dragging_) {
+      mouse_dragging_ = false;
+      end_gesture();
+    }
+  } else if (event.type == EventType::kMouseMove && mouse_left_) {
+    if (mouse_dragging_) {
+      drag_gesture(mouse_x_ - from_x, mouse_y_ - from_y);
+    } else if (std::abs(mouse_x_ - press_x_) > kMouseDragSlop || std::abs(mouse_y_ - press_y_) > kMouseDragSlop) {
+      mouse_dragging_ = true;
+      begin_gesture(press_x_, press_y_);
+      drag_gesture(mouse_x_ - press_x_, mouse_y_ - press_y_);
+    }
+  }
+}
+
+void Input::begin_gesture(int x, int y) { gesture_ = ViewGesture{.started = true, .active = true, .x = x, .y = y}; }
+
+void Input::drag_gesture(int dx, int dy) {
+  gesture_.dx += dx;
+  gesture_.dy += dy;
+}
+
+void Input::zoom_gesture(float ratio) { gesture_.zoom *= ratio; }
+
+void Input::end_gesture() { gesture_.active = false; }
 
 const InputState& Input::poll() {
   InputState& s = state_;
@@ -86,6 +134,14 @@ const InputState& Input::poll() {
     s.right_down = right;
     s.right_changed = true;
   }
+
+  s.back = back_;
+  back_ = false;
+  s.gesture = gesture_;
+  gesture_.started = false;
+  gesture_.dx = 0;
+  gesture_.dy = 0;
+  gesture_.zoom = 1.0F;
   return s;
 }
 

@@ -3,6 +3,7 @@
 // Simplified from SilentHeritage's platform/display.h.
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -19,10 +20,30 @@ enum class Scaling : std::uint8_t {
   kSharp,   // nearest neighbour: the original pixels
 };
 
+// Where the 640x480 picture goes in the window's output, in pixels.
+struct PictureRect {
+  float x = 0;
+  float y = 0;
+  float w = 0;
+  float h = 0;
+
+  bool operator==(const PictureRect&) const = default;
+};
+
+// Returns the place of the picture in an output of `width` x `height`
+// pixels whose edges (left, top, right, bottom) lose `cutout` pixels to the
+// display cutout: the largest 4:3 rectangle in what is left, centred there
+// (the whole output when the cutout leaves less than a quarter of the
+// picture's size).
+PictureRect letterbox(int width, int height, const std::array<int, 4>& cutout);
+
 // The game window. The indexed frame is converted through the palette and
-// scaled to the window keeping its 4:3 aspect ratio (black bars). Only one
-// display may exist; it initializes and shuts down SDL video. The system
-// pointer is hidden over the window: the game draws its own.
+// scaled to the window keeping its 4:3 aspect ratio (black bars), clear of
+// the display cutout on Android, where the window is always the full screen
+// without the system bars. Only one display may exist; it initializes and
+// shuts down SDL video. The system pointer is hidden over the window: the
+// game draws its own. Fingers come as finger events (no mouse events made
+// of them, `TouchMapper` does), Android's Back as `kBack`.
 class Display {
  public:
   // Opens a resizable window `scale` times the original size. Throws
@@ -39,6 +60,14 @@ class Display {
   // key) toggles fullscreen, as in DOSBox: its key down, repeats and release
   // never reach the caller.
   std::optional<InputEvent> poll();
+
+  // The picture's place in the output now (`letterbox`), recomputed as soon
+  // as the window or its display changes (resized, folded, rotated, moved to
+  // another display or scale): the last frame is then shown again at once,
+  // and the pointer and fingers mapped through the new place.
+  PictureRect picture() const;
+  // Resizes the window (a window, not the full screen).
+  void set_window_size(int width, int height);
 
   bool fullscreen() const;
   void set_fullscreen(bool fullscreen);

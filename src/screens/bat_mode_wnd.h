@@ -41,6 +41,8 @@ class BatModeWnd final : public GWindow {
   static constexpr std::size_t kRaceHaze = 32;
   // The serialized state (`BatModeWnd_serialize` 0x19e2c).
   static constexpr std::size_t kStateSize = 0x1a08;
+  // The orbit of a view drag, in degrees per screen pixel.
+  static constexpr float kDragDegrees = 0.5F;
 
   // The messages of the child buttons, the window's timers and the
   // `BatControlWnd`.
@@ -135,6 +137,14 @@ class BatModeWnd final : public GWindow {
   void load_state(std::span<const std::uint8_t> in) override;
   // Begin New Game: every star's camera forgotten.
   void new_game() override { star_visited_.fill(0); }
+  // The remake's gestures on the view (inside its rectangle, not while an
+  // animation plays): a horizontal drag orbits the camera as the rotation
+  // buttons do, `kDragDegrees` per pixel (the system follows the finger;
+  // the original has no other rotation); a pinch zooms within the
+  // original's limits.
+  bool takes_view_gesture(int x, int y) const override;
+  void view_drag(int dx, int dy) override;
+  void view_pinch(float ratio) override;
 
   // `BatModeWnd_build_scene` (0x187ec).
   void build_scene();
@@ -206,6 +216,11 @@ class BatModeWnd final : public GWindow {
   void update_clip_planes();
   void zoom(int step);
   void rotate_step(int degrees);
+  // The orbit step by `angle` degrees (the rotation speed applied), and the
+  // camera at `distance` from the target (kept between the focal length
+  // and the default distance, as `zoom`).
+  void orbit(float angle);
+  void set_distance(float distance);
   // `BatModeWnd_project_scene` (0x17430).
   void project_scene();
   // `DrawList_draw` (0x15948) of `list`.

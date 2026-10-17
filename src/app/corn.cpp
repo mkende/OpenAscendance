@@ -2,6 +2,7 @@
 
 #include <SDL3/SDL_hints.h>
 #include <SDL3/SDL_init.h>
+#include <SDL3/SDL_timer.h>
 
 #include <ctime>
 #include <deque>
@@ -21,7 +22,9 @@
 #include "platform/audio_device.h"
 #include "platform/clock.h"
 #include "platform/input.h"
+#include "platform/lifecycle.h"
 #include "platform/screenshot.h"
+#include "platform/touch.h"
 #include "screens/options_wnd.h"
 #include "screens/screens.h"
 #include "ui/game_core_session.h"
@@ -47,8 +50,9 @@ struct SdlQuitGuard {
   SdlQuitGuard& operator=(const SdlQuitGuard&) = delete;
 };
 
-// The SDL host of the game: the window, the clock, the input and the sound
-// output, and the software mouse pointer (the MOUSE module's).
+// The SDL host of the game: the window, the clock, the input (the touch
+// screen as the mouse) and the sound output, and the software mouse pointer
+// (the MOUSE module's), not drawn while the fingers move it.
 class Host final : public DisplayControl {
  public:
   Host(const GameOptions& options, const GameFiles& files)
@@ -56,7 +60,12 @@ class Host final : public DisplayControl {
         headless_(options.screenshot.has_value()),
         display_(edition::kName, 2, options.settings.scaling),
         clock_(headless_),
+        touch_(input_),
         pending_(options.keys.begin(), options.keys.end()) {
+#ifdef SDL_PLATFORM_ANDROID
+    // No pointer until a mouse moves.
+    touch_pointer_ = true;
+#endif
     if (!headless_) {
       if (options.settings.fullscreen) {
         display_.set_fullscreen(true);
@@ -90,18 +99,63 @@ class Host final : public DisplayControl {
   const Image8& shown_frame() const { return frame_; }
 
   // Reads the system's input events, and the next scripted step when
-  // `scripted` (one per main-loop pass).
+  // `scripted` (one per main-loop pass). The lifecycle events are handled
+  // meanwhile (`LifecycleWatch`).
   void pump(bool scripted) {
     while (const std::optional<InputEvent> e = display_.poll()) {
-      if (e->type == EventType::kQuit) {
-        quit_ = true;
-      } else {
-        input_.feed(*e);
-      }
+      take(*e);
     }
     if (scripted && !pending_.empty()) {
-      input_.feed(pending_.front());
+      const InputEvent e = pending_.front();
       pending_.pop_front();
+      if (e.type == EventType::kBackground) {
+        LifecycleWatch::simulate_background();
+        // Its events now (as on Android, during the poll).
+        while (const std::optional<InputEvent> polled = display_.poll()) {
+          take(*polled);
+        }
+      } else {
+        take(e);
+      }
+    }
+    touch_.update(SDL_GetTicks());
+  }
+
+  // A lifecycle event: the game kept in `resume.gam` by `save` as the
+  // program goes to the background (where Android may kill it without
+  // notice), runs low on memory or ends; the clock and the sound stopped
+  // while in the background.
+  void lifecycle(LifecycleEvent e, const std::function<void()>& save) {
+    log_info("lifecycle: {}", lifecycle_event_name(e));
+    switch (e) {
+      case LifecycleEvent::kWillEnterBackground:
+      case LifecycleEvent::kDidEnterBackground:
+        if (!saved_) {
+          save();
+          saved_ = true;
+        }
+        clock_.suspend();
+        if (audio_) {
+          audio_->set_paused(true);
+        }
+        break;
+      case LifecycleEvent::kLowMemory:
+      case LifecycleEvent::kTerminating:
+        // In the foreground the game goes on: saved again at the next
+        // event.
+        if (!saved_) {
+          save();
+        }
+        break;
+      case LifecycleEvent::kWillEnterForeground:
+        break;
+      case LifecycleEvent::kDidEnterForeground:
+        clock_.resume();
+        if (audio_) {
+          audio_->set_paused(false);
+        }
+        saved_ = false;
+        break;
     }
   }
 
@@ -109,7 +163,7 @@ class Host final : public DisplayControl {
   // the frame and throws `ScreenshotTaken` once it is the last.
   void present(const GSystem& gs) {
     frame_ = gs.screen();
-    if (pointer_shown_) {
+    if (pointer_shown_ && !touch_pointer_) {
       const InputState& s = input_.state();
       vfx_shape_draw(frame_, GSystem::kScreenPane, pointer_->at(static_cast<std::size_t>(pointer_frame_)), s.x, s.y);
     }
@@ -123,11 +177,36 @@ class Host final : public DisplayControl {
   }
 
  private:
+  // One input event: the quit noted, fingers through the touch mapper.
+  void take(const InputEvent& e) {
+    switch (e.type) {
+      case EventType::kQuit:
+        quit_ = true;
+        break;
+      case EventType::kFingerDown:
+      case EventType::kFingerMove:
+      case EventType::kFingerUp:
+      case EventType::kFingerCancel:
+        touch_pointer_ = true;
+        touch_.feed(e);
+        break;
+      case EventType::kMouseMove:
+      case EventType::kMouseDown:
+      case EventType::kMouseUp:
+        touch_pointer_ = false;
+        input_.feed(e);
+        break;
+      default:
+        input_.feed(e);
+        break;
+    }
+  }
   const GameOptions& options_;
   bool headless_;
   Display display_;
   Clock clock_;
   Input input_;
+  TouchMapper touch_;
   Mixer mixer_;
   std::unique_ptr<AudioDevice> audio_;
   std::unique_ptr<ShapeTable> pointer_;
@@ -137,6 +216,12 @@ class Host final : public DisplayControl {
   bool pointer_shown_ = false;
   int pointer_frame_ = 0;
   bool quit_ = false;
+  // Whether the last pointer input came from a finger (the pointer is then
+  // not drawn).
+  bool touch_pointer_ = false;
+  // Whether `resume.gam` holds the game as it is (saved by a lifecycle
+  // event, the program not back in the foreground since).
+  bool saved_ = false;
 };
 
 // `main` 0x1c424 from `GSystem_init` on.
@@ -231,11 +316,32 @@ void run(const GameOptions& options, const GameFiles& files) {
   }
   host.set_pointer_shown(true);
 
+  // The original's exit (below), also when the system sends the program to
+  // the background or ends it (a remake addition): from now on, once
+  // `resume.gam` was read.
+  const auto save_on_exit = [&] {
+    wm.save_config();
+    if (!game.save_resume()) {
+      log_warning("resume.gam not saved");
+    }
+  };
+  std::optional<LifecycleWatch> watch;
+  if (!options.user_dir.empty()) {
+    watch.emplace([&](LifecycleEvent e) {
+      // Called from SDL (C code): nothing may be thrown through it.
+      try {
+        host.lifecycle(e, save_on_exit);
+      } catch (const std::exception& error) {
+        log_error("{}: {}", lifecycle_event_name(e), error.what());
+      }
+    });
+  }
+
   while (wm.running()) {
     wm.run_pass();
   }
-  wm.save_config();
-  game.save_resume();
+  watch.reset();
+  save_on_exit();
 }
 
 }  // namespace
