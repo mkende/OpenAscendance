@@ -25,7 +25,7 @@ Running
 On the first start, the game asks for the folder of your Ascendancy
 install (the one holding COB.CFG and the ASCEND00..02.COB archives) and
 remembers it. The game keeps its own files in
-~/Library/Application Support/@PREF_ORG@/@NAME@/, never in the install.
+~/Library/Application Support/@NAME@/, never in the install.
 The project's page describes the command-line options:
 
     "/Applications/@NAME@.app/Contents/MacOS/@EXECUTABLE@" --setup

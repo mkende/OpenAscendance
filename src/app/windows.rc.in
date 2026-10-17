@@ -20,7 +20,7 @@ BEGIN
   BEGIN
     BLOCK "040904B0"
     BEGIN
-      VALUE "CompanyName", "@OA_PREF_ORG@"
+      VALUE "CompanyName", "@OA_NAME@"
       VALUE "FileDescription", "@OA_NAME@"
       VALUE "FileVersion", "@OA_VERSION@"
       VALUE "InternalName", "@OA_EXECUTABLE@"

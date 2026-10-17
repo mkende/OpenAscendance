@@ -86,7 +86,7 @@ public repositories.
 
 ### 4. Android developer verification
 
-Register the package `io.github.openascendance` with the release key's
+Register the package `io.github.mkende.openascendance` with the release key's
 SHA-256 fingerprint in the Play Console (Android developer verification),
 needed for packages installed outside Google Play on certified devices.
 

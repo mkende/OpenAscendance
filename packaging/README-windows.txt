@@ -13,7 +13,7 @@ On the first start, the game asks for the folder of your Ascendancy
 install (the one holding COB.CFG and the ASCEND00..02.COB archives) and
 remembers it; `--setup` asks again, `--data <folder>` gives it on the
 command line. The game keeps its own files in
-%APPDATA%\@PREF_ORG@\@NAME@\, never in the install. BUILD.md, on the
+%APPDATA%\@NAME@\, never in the install. BUILD.md, on the
 project's page, describes the other options.
 
 The program is not signed yet: Windows SmartScreen may show "Windows

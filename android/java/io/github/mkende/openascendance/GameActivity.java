@@ -1,4 +1,4 @@
-package io.github.openascendance;
+package io.github.mkende.openascendance;
 
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
