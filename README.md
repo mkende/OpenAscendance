@@ -78,8 +78,7 @@ original buttons are a little shorter to make room). Its screen sets:
 
 - **Game variant**: the rules and opponents of the next new game, Standard
   (Ascendancy 1.6.5) or Antagonizer (the Antagonizer edition's). A game keeps
-  its variant in its saves; the new-game screen names a variant other than
-  Standard under its summary.
+  its variant in its saves.
 - **Display**: a window or the full screen (Alt+Enter also switches).
 - **Scaling**: smooth or sharp pixels.
 - **Music** and **Sound effects**: on or off (also Alt+M and Alt+N).

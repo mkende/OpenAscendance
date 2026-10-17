@@ -488,7 +488,10 @@ TEST_CASE("the end of the game: screen 9, the game events dropped", "[screens][c
 TEST_CASE("tutorials replayed to their end leave the original's game", "[screens][content][oracle]") {
   OA_REQUIRE_GAME_FILES(files);
   int found = 0;
-  for (const std::string name : {"beginnew", "galactic", "planet"}) {
+  // Not yet: "battle" (one ship's System Display move ends elsewhere than
+  // the original's, `work/oracle/tutorials/battle`), "species" (the oracle
+  // run does not end cleanly), "tutintro" (no oracle run).
+  for (const std::string name : {"beginnew", "galactic", "planet", "ship"}) {
     found += replay_run(files, {.run = "tutorials/" + name, .tutorial = true}, 400000) ? 1 : 0;
   }
   if (found == 0) {
