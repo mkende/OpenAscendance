@@ -233,11 +233,7 @@ std::optional<Install> run_install_setup(const std::vector<std::string>& problem
 // folder remembered being the copy.
 std::optional<Install> run_install_setup(const std::vector<std::string>& problems,
                                          const std::filesystem::path& config_file) {
-  const char* internal = SDL_GetAndroidInternalStoragePath();
-  if (internal == nullptr) {
-    throw std::runtime_error(std::format("no internal storage: {}", SDL_GetError()));
-  }
-  const std::filesystem::path copy_dir = std::filesystem::path(internal) / "install";
+  const std::filesystem::path copy_dir = android_install_dir();
   std::string lead = problem_text(problems);
   for (;;) {
     constexpr Choice kChoose[] = {{1, "Choose folder..."}, {0, "Quit"}};
@@ -269,6 +265,14 @@ std::optional<Install> run_install_setup(const std::vector<std::string>& problem
     }
     lead = std::format("{} is not an Ascendancy install: {}.\n\n", *uri, problem);
   }
+}
+
+std::filesystem::path android_install_dir() {
+  const char* internal = SDL_GetAndroidInternalStoragePath();
+  if (internal == nullptr) {
+    throw std::runtime_error(std::format("no internal storage: {}", SDL_GetError()));
+  }
+  return std::filesystem::path(internal) / "install";
 }
 
 #endif

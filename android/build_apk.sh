@@ -3,23 +3,34 @@
 # SilentHeritage's): CMake for the native library, javac, d8, aapt2,
 # zipalign, apksigner. The package holds the native library of every ABI
 # (arm64-v8a for phones and tablets, x86_64 for Chromebooks and emulators)
-# and no game file: the install setup copies them from the folder of the
-# player's install on the first start (app/install_setup.h).
+# and, for the OpenAscendance edition, no game file: the install setup
+# copies them from the folder of the player's install on the first start
+# (app/install_setup.h).
 #
 #   build/android/OpenAscendance-debug.apk     signed with the debug key
 #   build/android/OpenAscendance-unsigned.apk  with --unsigned: aligned,
 #       ready for apksigner (android/sign_apk.sh signs the release's with
 #       the release key)
 #
+# With --edition=ascendancy, the package is the local debugging build of the
+# Ascendancy edition (CMake option OA_EDITION, io.github.mkende.ascendancy),
+# build/android/Ascendancy-debug.apk (or -unsigned.apk), with the game files
+# of the OA_DATA install embedded, copied into the app's storage on the first
+# start (app/install_bundle.h). It contains the original game's files: never
+# distribute it. It is refused when the CI environment variable is set (never
+# built in a workflow).
+#
 # The package is reproducible: the same sources, SDK, NDK and JDK, and
 # SOURCE_DATE_EPOCH, give the same unsigned package.
 #
-# Usage: android/build_apk.sh [--unsigned]
+# Usage: android/build_apk.sh [--edition=open|ascendancy] [--unsigned]
 # Environment (defaults in brackets):
 #   ANDROID_HOME  the Android SDK (required; ANDROID_SDK_ROOT is accepted
 #                 too), holding platforms/android-36 and build-tools/36.1.0
 #   ANDROID_NDK_HOME  the NDK [$ANDROID_HOME/ndk/29.0.14206865]
 #   JAVA_HOME     a JDK 17+ [the JDK of the javac in PATH]
+#   OA_DATA       the original install embedded in the Ascendancy package
+#                 (required by it only)
 #   OA_KEYSTORE   the debug keystore, created if missing (a standard Android
 #                 debug key) [debug.keystore at the project's root,
 #                 git-ignored]
@@ -32,17 +43,31 @@
 #   OA_CMAKE_ARGS extra arguments of the native library's CMake configuration
 set -euo pipefail
 
+edition=open
 signed=true
 for arg in "$@"; do
   case "${arg}" in
+    --edition=open | --edition=ascendancy) edition="${arg#--edition=}" ;;
     --unsigned) signed=false ;;
     *)
-      echo "usage: $0 [--unsigned]" >&2
+      echo "usage: $0 [--edition=open|ascendancy] [--unsigned]" >&2
       exit 1
       ;;
   esac
 done
-readonly signed
+readonly edition signed
+if [[ -n "${CI:-}" && "${edition}" == ascendancy ]]; then
+  echo "build_apk.sh: the Ascendancy edition is a local build only, never built in CI" >&2
+  exit 1
+fi
+# Whether the game files are embedded, and the package's name.
+embedded=false
+apk_name=OpenAscendance
+if [[ "${edition}" == ascendancy ]]; then
+  embedded=true
+  apk_name=Ascendancy
+fi
+readonly embedded apk_name
 
 readonly root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
@@ -59,6 +84,7 @@ if [[ -z "${JAVA_HOME:-}" ]] && command -v javac > /dev/null; then
 fi
 export JAVA_HOME="${JAVA_HOME:-}"
 export PATH="${JAVA_HOME}/bin:${PATH}"
+readonly data="${OA_DATA:-}"
 readonly keystore="${OA_KEYSTORE:-${root}/debug.keystore}"
 readonly version_code="${OA_VERSION_CODE:-1}"
 readonly version_name="${OA_VERSION_NAME:-0.0.0-dev}"
@@ -77,14 +103,24 @@ readonly out="${root}/build/android"
 readonly native="${out}/native"
 readonly stage="${out}/stage"
 
-for f in "${platform_jar}" "${build_tools}/aapt2" "${ndk}/build/cmake/android.toolchain.cmake" \
-  "${JAVA_HOME}/bin/javac"; do
+required=("${platform_jar}" "${build_tools}/aapt2" "${ndk}/build/cmake/android.toolchain.cmake"
+  "${JAVA_HOME}/bin/javac")
+tools=(cmake ninja zip git)
+if [[ "${embedded}" == true ]]; then
+  if [[ -z "${data}" ]]; then
+    echo "build_apk.sh: set OA_DATA to the original install (edition ${edition})" >&2
+    exit 1
+  fi
+  required+=("${data}/COB.CFG")
+  tools+=(rsync)
+fi
+for f in "${required[@]}"; do
   if [[ ! -e "${f}" ]]; then
     echo "build_apk.sh: missing ${f}" >&2
     exit 1
   fi
 done
-for tool in cmake ninja zip git; do
+for tool in "${tools[@]}"; do
   if ! command -v "${tool}" > /dev/null; then
     echo "build_apk.sh: ${tool} not found" >&2
     exit 1
@@ -102,7 +138,7 @@ fi
 for abi in "${abis[@]}"; do
   cmake -S "${root}" -B "${native}-${abi}" -G Ninja \
     -DCMAKE_TOOLCHAIN_FILE="${root}/cmake/android.cmake" -DOA_ANDROID_NDK="${ndk}" -DOA_ANDROID_ABI="${abi}" \
-    -DCMAKE_BUILD_TYPE=Release -DOA_BUILD_TESTS=OFF -DOA_SANITIZE=OFF -DOA_VERSION="${version_name}" \
+    -DCMAKE_BUILD_TYPE=Release -DOA_BUILD_TESTS=OFF -DOA_SANITIZE=OFF -DOA_VERSION="${version_name}" -DOA_EDITION="${edition}" \
     ${cmake_args[@]+"${cmake_args[@]}"}
   source "${native}-${abi}/edition.sh"
   ninja -C "${native}-${abi}" "${edition_executable}"
@@ -127,7 +163,41 @@ for abi in "${abis[@]}"; do
   stored+=("lib/${abi}/libmain.so")
 done
 
-# 3. Resources: the committed ones (the launcher icons rendered by
+# 3. The game files of the Ascendancy edition (app/install_bundle.h): the
+# install without the DOS programs, the sound drivers and their
+# configuration, Windows' desktop.ini files and the player's state (the
+# saves, RESUME.GAM, ASCEND.CFG's options: a fresh package starts with none;
+# the game writes its own in the app's storage), and their index (sizes and
+# paths). The patterns ignore case.
+deflated=(classes.dex)
+if [[ "${embedded}" == true ]]; then
+  # Prints rsync pattern $1 matching any case.
+  any_case() {
+    local result= c i
+    for ((i = 0; i < ${#1}; i++)); do
+      c="${1:i:1}"
+      if [[ "${c}" =~ [A-Za-z] ]]; then
+        result+="[${c^^}${c,,}]"
+      else
+        result+="${c}"
+      fi
+    done
+    echo "${result}"
+  }
+  excludes=()
+  for pattern in desktop.ini '*.exe' '*.dig' '*.dll' '*.mdi' '*.lst' '*.ini' '*.log' '*.sav' '*.gam' ascend.cfg; do
+    excludes+=("--exclude=$(any_case "${pattern}")")
+  done
+  mkdir -p "${stage}/assets/bundle"
+  rsync -a "${excludes[@]}" "${data}/" "${stage}/assets/bundle/"
+  {
+    echo "OA-BUNDLE 1"
+    (cd "${stage}/assets/bundle" && find . -type f -printf '%s %P\n' | LC_ALL=C sort -k2)
+  } > "${stage}/assets/bundle_index.txt"
+  mapfile -t -O 1 deflated < <(cd "${stage}" && find assets -type f | LC_ALL=C sort)
+fi
+
+# 4. Resources: the committed ones (the launcher icons rendered by
 # packaging/icon/render_icons.sh) and the product's name. The manifest's
 # package (the Java package) becomes the applicationId.
 cp -r "${android}/res/." "${stage}/res/"
@@ -140,14 +210,15 @@ printf '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <string name="a
   --version-code "${version_code}" --version-name "${version_name}" \
   "${stage}/res.zip"
 
-# 4. The package: classes.dex and the native libraries (loaded from the APK
-# in place: extractNativeLibs="false", hence stored uncompressed), added in a
-# fixed order with SOURCE_DATE_EPOCH as their time and no extra attributes,
-# aligned and signed (unless --unsigned).
+# 5. The package: classes.dex, the game files if any (compressed: they are
+# copied out, not read in place) and the native libraries (loaded from the
+# APK in place: extractNativeLibs="false", hence stored uncompressed), added
+# in a fixed order with SOURCE_DATE_EPOCH as their time and no extra
+# attributes, aligned and signed (unless --unsigned).
 (
   cd "${stage}"
-  touch -d "@${SOURCE_DATE_EPOCH}" classes.dex "${stored[@]}"
-  TZ=UTC zip -q -X unsigned.apk classes.dex
+  touch -d "@${SOURCE_DATE_EPOCH}" "${deflated[@]}" "${stored[@]}"
+  TZ=UTC zip -q -X unsigned.apk "${deflated[@]}"
   TZ=UTC zip -q -X -0 unsigned.apk "${stored[@]}"
 )
 "${build_tools}/zipalign" -f -P 16 4 "${stage}/unsigned.apk" "${stage}/aligned.apk"
@@ -157,11 +228,11 @@ if [[ "${signed}" == true ]]; then
     "${JAVA_HOME}/bin/keytool" -genkeypair -keystore "${keystore}" -storepass android -keypass android \
       -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
   fi
-  apk="${out}/OpenAscendance-debug.apk"
+  apk="${out}/${apk_name}-debug.apk"
   "${build_tools}/apksigner" sign --ks "${keystore}" --ks-pass pass:android --key-pass pass:android \
     --ks-key-alias androiddebugkey --out "${apk}" "${stage}/aligned.apk"
 else
-  apk="${out}/OpenAscendance-unsigned.apk"
+  apk="${out}/${apk_name}-unsigned.apk"
   mv "${stage}/aligned.apk" "${apk}"
 fi
 rm -rf "${stage}"

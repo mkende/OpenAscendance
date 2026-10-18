@@ -23,6 +23,17 @@
 #include "core/error.h"
 #include "core/log.h"
 
+#ifdef SDL_PLATFORM_ANDROID
+#include <SDL3/SDL_iostream.h>
+#include <SDL3/SDL_stdinc.h>
+
+#include <format>
+#include <fstream>
+#include <memory>
+
+#include "app/install_bundle.h"
+#endif
+
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -67,6 +78,67 @@ std::optional<oa::Install> desktop_install(const oa::CommandLine& options) {
     oa::log_warning("{}", p);
   }
   return oa::run_install_setup(start.problems, config);
+}
+
+#ifdef SDL_PLATFORM_ANDROID
+
+// Copies asset `path` of the bundle to host file `to` (an `oa::BundleCopier`).
+void copy_bundle_asset(const std::string& path, const std::filesystem::path& to) {
+  const std::string asset = std::format("{}/{}", oa::kBundleDir, path);
+  const std::unique_ptr<SDL_IOStream, decltype(&SDL_CloseIO)> in(SDL_IOFromFile(asset.c_str(), "rb"), SDL_CloseIO);
+  if (!in) {
+    throw oa::DataError(std::format("cannot open the asset {}: {}", asset, SDL_GetError()));
+  }
+  std::ofstream out(to, std::ios::binary | std::ios::trunc);
+  std::vector<char> buffer(std::size_t{1} << 20);
+  for (;;) {
+    const std::size_t n = SDL_ReadIO(in.get(), buffer.data(), buffer.size());
+    if (n == 0) {
+      break;
+    }
+    out.write(buffer.data(), static_cast<std::streamsize>(n));
+  }
+  if (SDL_GetIOStatus(in.get()) == SDL_IO_STATUS_ERROR) {
+    throw oa::DataError(std::format("cannot read the asset {}: {}", asset, SDL_GetError()));
+  }
+  if (!out) {
+    throw std::runtime_error(std::format("cannot write {}", to.string()));
+  }
+}
+
+// Returns the install embedded in the package (app/install_bundle.h), copied
+// into the app's storage on the first start; nothing when the package embeds
+// none (the OpenAscendance edition: the install setup provides the files).
+std::optional<oa::Install> bundled_install() {
+  std::size_t size = 0;
+  void* data = SDL_LoadFile(std::string(oa::kBundleIndexName).c_str(), &size);
+  if (data == nullptr) {
+    return std::nullopt;
+  }
+  const std::string index(static_cast<const char*>(data), size);
+  SDL_free(data);
+  const std::filesystem::path dir = oa::android_install_dir();
+  if (oa::update_bundle_copy(index, copy_bundle_asset, dir)) {
+    oa::log_info("game files copied from the package to {}", dir.string());
+  }
+  oa::InstallCheck check = oa::check_install_folder(dir);
+  if (!check.install) {
+    throw oa::DataError(check.problem);
+  }
+  return std::move(check.install);
+}
+
+#endif
+
+// Returns the install the game runs from: on Android, the one embedded in
+// the package if any; else `desktop_install`'s.
+std::optional<oa::Install> startup_install(const oa::CommandLine& options) {
+#ifdef SDL_PLATFORM_ANDROID
+  if (std::optional<oa::Install> bundled = bundled_install()) {
+    return bundled;
+  }
+#endif
+  return desktop_install(options);
 }
 
 // Windows: the executable is a windowed program (no console window of its
@@ -115,7 +187,7 @@ int main(int argc, char** argv) {
   try {
     const std::vector<std::string_view> args(argv + 1, argv + argc);
     const oa::CommandLine options = oa::parse_command_line(args);
-    const std::optional<oa::Install> install = desktop_install(options);
+    const std::optional<oa::Install> install = startup_install(options);
     if (!install) {
       return 0;
     }

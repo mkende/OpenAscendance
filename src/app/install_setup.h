@@ -6,6 +6,8 @@
 // (app/android_documents.h) and the copy is the install remembered.
 #pragma once
 
+#include <SDL3/SDL_platform_defines.h>
+
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -23,6 +25,13 @@ namespace oa {
 // when the choice cannot be remembered.
 std::optional<Install> run_install_setup(const std::vector<std::string>& problems,
                                          const std::filesystem::path& config_file);
+
+#ifdef SDL_PLATFORM_ANDROID
+// Returns the folder of the app's storage holding the copy of the game files
+// (of the setup, or of the package's bundle: app/install_bundle.h); throws
+// `std::runtime_error` when there is no internal storage.
+std::filesystem::path android_install_dir();
+#endif
 
 // Returns the player's SDL preference directory (which holds INSTALL.CFG);
 // throws `std::runtime_error` when SDL has none.

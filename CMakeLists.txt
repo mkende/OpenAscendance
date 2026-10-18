@@ -14,13 +14,37 @@ endif()
 option(OA_BUILD_TESTS "Build the unit tests" ON)
 option(OA_SANITIZE "Use ASan/UBSan in debug builds (Linux only)" ON)
 
-# The product: its name (window title, messages), executable, application id
-# (SDL's, the Android package, the macOS bundle, the Linux .desktop file) and
-# SDL per-user folder, in the generated header core/edition.h and, for the
-# packaging scripts, edition.sh in the build directory.
-set(OA_NAME "OpenAscendance")
-set(OA_EXECUTABLE open_ascendance)
-set(OA_APP_ID io.github.mkende.openascendance)
+# The edition built: its product name (window title, messages), executable,
+# application id (SDL's, the Android package, the macOS bundle, the Linux
+# .desktop file) and SDL per-user folder (named after the product), in the
+# generated header core/edition.h and, for the packaging scripts, edition.sh
+# in the build directory.
+#   open        OpenAscendance, the distributed edition: reads the player's
+#               own install of the original game.
+#   ascendancy  Ascendancy: a local build for debugging, with the original
+#               game files embedded (Android package, android/build_apk.sh).
+#               It contains copyrighted files and uses the original's name:
+#               never distribute it. The embedded files never include the
+#               player's state (saves, ASCEND.CFG).
+set(OA_EDITION open CACHE STRING
+  "The edition built: open (OpenAscendance) or ascendancy (local debugging build, original files embedded)")
+set_property(CACHE OA_EDITION PROPERTY STRINGS open ascendancy)
+if(OA_EDITION STREQUAL "open")
+  set(OA_NAME "OpenAscendance")
+  set(OA_EXECUTABLE open_ascendance)
+  set(OA_APP_ID io.github.mkende.openascendance)
+elseif(OA_EDITION STREQUAL "ascendancy")
+  set(OA_NAME "Ascendancy")
+  set(OA_EXECUTABLE ascendancy)
+  set(OA_APP_ID io.github.mkende.ascendancy)
+else()
+  message(FATAL_ERROR "OA_EDITION must be open or ascendancy, not '${OA_EDITION}'")
+endif()
+# The Ascendancy edition is never built by the workflows (.github), whose
+# builds may be published.
+if(OA_EDITION STREQUAL "ascendancy" AND DEFINED ENV{CI})
+  message(FATAL_ERROR "OA_EDITION=ascendancy is a local build only, never built in CI")
+endif()
 # Empty: the per-user folder is just "<app>" (SDL_GetPrefPath skips an empty org).
 set(OA_PREF_ORG "")
 # The version of the build, MAJOR.MINOR.PATCH with an optional -suffix: the

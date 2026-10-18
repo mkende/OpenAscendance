@@ -6,6 +6,8 @@ oa_add_module(oa_app
     corn.cpp
     # The remembered source of the game files and the start-up choice.
     install_source.cpp
+    # The copy of the game files embedded in the Ascendancy edition's package.
+    install_bundle.cpp
     # The install setup's dialogs.
     install_setup.cpp
   DEPS oa_core oa_assets oa_gfx oa_audio oa_platform oa_ui oa_screens)

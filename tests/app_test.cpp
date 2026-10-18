@@ -4,13 +4,16 @@
 
 #include <filesystem>
 #include <fstream>
+#include <string>
 #include <string_view>
 #include <vector>
 
 #include "app/command_line.h"
+#include "app/install_bundle.h"
 #include "app/install_source.h"
 #include "core/error.h"
 #include "game_data.h"
+#include "test_dirs.h"
 
 namespace oa {
 namespace {
@@ -101,6 +104,49 @@ TEST_CASE("start-up: --data, then the remembered folder, else the setup", "[app]
   CHECK(remembered.install);
   CHECK(remembered.problems.size() == 1);
   CHECK_FALSE(choose_startup_install(install->root(), true, std::nullopt).install);
+}
+
+TEST_CASE("bundle index: sizes and relative paths", "[app]") {
+  const std::vector<BundleFile> files = parse_bundle_index("OA-BUNDLE 1\n42 COB.CFG\n7 DATA/A.GIF\n");
+  REQUIRE(files.size() == 2);
+  CHECK(files[0].path == "COB.CFG");
+  CHECK(files[0].size == 42);
+  CHECK(files[1].path == "DATA/A.GIF");
+  CHECK(parse_bundle_index("OA-BUNDLE 1\n").empty());
+  CHECK_THROWS_AS(parse_bundle_index(""), DataError);
+  CHECK_THROWS_AS(parse_bundle_index("SH-BUNDLE 2\n1 A\n"), DataError);
+  CHECK_THROWS_AS(parse_bundle_index("OA-BUNDLE 1\nx A\n"), DataError);
+  CHECK_THROWS_AS(parse_bundle_index("OA-BUNDLE 1\n1\n"), DataError);
+  CHECK_THROWS_AS(parse_bundle_index("OA-BUNDLE 1\n1 ../A\n"), DataError);
+  CHECK_THROWS_AS(parse_bundle_index("OA-BUNDLE 1\n1 /A\n"), DataError);
+}
+
+TEST_CASE("bundle copy: made once, redone when incomplete or changed", "[app]") {
+  const test::TempDir tmp("oa_bundle_test");
+  const std::filesystem::path dest = tmp.path / "install";
+  int copies = 0;
+  std::string content = "abc";
+  const BundleCopier copy = [&](const std::string& path, const std::filesystem::path& to) {
+    ++copies;
+    std::ofstream(to, std::ios::binary) << (path == "COB.CFG" ? content : std::string("12345"));
+  };
+  const std::string index = "OA-BUNDLE 1\n3 COB.CFG\n5 SUB/B.DAT\n";
+  CHECK(update_bundle_copy(index, copy, dest));
+  CHECK(copies == 2);
+  CHECK(std::filesystem::file_size(dest / "SUB" / "B.DAT") == 5);
+  CHECK_FALSE(std::filesystem::exists(tmp.path / "install.tmp"));
+  CHECK_FALSE(update_bundle_copy(index, copy, dest));
+  CHECK(copies == 2);
+  std::filesystem::remove(dest / "SUB" / "B.DAT");
+  CHECK(update_bundle_copy(index, copy, dest));
+  CHECK(copies == 4);
+  content = "abcd";
+  CHECK(update_bundle_copy("OA-BUNDLE 1\n4 COB.CFG\n", copy, dest));
+  CHECK_FALSE(std::filesystem::exists(dest / "SUB"));
+  // A file of another size than listed: the previous copy is kept.
+  CHECK_THROWS_AS(update_bundle_copy("OA-BUNDLE 1\n9 COB.CFG\n", copy, dest), DataError);
+  CHECK(std::filesystem::file_size(dest / "COB.CFG") == 4);
+  CHECK_FALSE(std::filesystem::exists(tmp.path / "install.tmp"));
 }
 
 }  // namespace
