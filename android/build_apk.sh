@@ -13,10 +13,11 @@
 #       the release key)
 #
 # With --edition=ascendancy, the package is the local debugging build of the
-# Ascendancy edition (CMake option OA_EDITION, io.github.mkende.ascendancy),
-# build/android/Ascendancy-debug.apk (or -unsigned.apk), with the game files
-# of the OA_DATA install embedded, copied into the app's storage on the first
-# start (app/install_bundle.h). It contains the original game's files: never
+# Ascendancy edition (CMake option OA_EDITION), build/android/Ascendancy-debug.apk
+# (or -unsigned.apk), with the game files of the OA_DATA install embedded,
+# copied into the app's storage on the first start (app/install_bundle.h).
+# It has OpenAscendance's application id: either package installs over the
+# other, and OpenAscendance then finds the copied game files. It contains the original game's files: never
 # distribute it. It is refused when the CI environment variable is set (never
 # built in a workflow).
 #

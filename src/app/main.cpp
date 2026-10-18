@@ -107,8 +107,10 @@ void copy_bundle_asset(const std::string& path, const std::filesystem::path& to)
 }
 
 // Returns the install embedded in the package (app/install_bundle.h), copied
-// into the app's storage on the first start; nothing when the package embeds
-// none (the OpenAscendance edition: the install setup provides the files).
+// into the app's storage on the first start and remembered as the install
+// setup's would be, so that OpenAscendance installed over this package finds
+// it; nothing when the package embeds none (the OpenAscendance edition: the
+// install setup provides the files).
 std::optional<oa::Install> bundled_install() {
   std::size_t size = 0;
   void* data = SDL_LoadFile(std::string(oa::kBundleIndexName).c_str(), &size);
@@ -125,6 +127,7 @@ std::optional<oa::Install> bundled_install() {
   if (!check.install) {
     throw oa::DataError(check.problem);
   }
+  oa::save_install_config(oa::user_dir() / oa::kInstallConfigName, dir);
   return std::move(check.install);
 }
 

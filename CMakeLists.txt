@@ -25,7 +25,10 @@ option(OA_SANITIZE "Use ASan/UBSan in debug builds (Linux only)" ON)
 #               game files embedded (Android package, android/build_apk.sh).
 #               It contains copyrighted files and uses the original's name:
 #               never distribute it. The embedded files never include the
-#               player's state (saves, ASCEND.CFG).
+#               player's state (saves, ASCEND.CFG). Its application id is
+#               OpenAscendance's: each package installs over the other, they
+#               share the app's storage (saves, options), and OpenAscendance
+#               installed over it finds the copied game files.
 set(OA_EDITION open CACHE STRING
   "The edition built: open (OpenAscendance) or ascendancy (local debugging build, original files embedded)")
 set_property(CACHE OA_EDITION PROPERTY STRINGS open ascendancy)
@@ -36,7 +39,7 @@ if(OA_EDITION STREQUAL "open")
 elseif(OA_EDITION STREQUAL "ascendancy")
   set(OA_NAME "Ascendancy")
   set(OA_EXECUTABLE ascendancy)
-  set(OA_APP_ID io.github.mkende.ascendancy)
+  set(OA_APP_ID io.github.mkende.openascendance)
 else()
   message(FATAL_ERROR "OA_EDITION must be open or ascendancy, not '${OA_EDITION}'")
 endif()
