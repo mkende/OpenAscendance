@@ -6,6 +6,7 @@
 #include <array>
 #include <cmath>
 #include <format>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -63,6 +64,14 @@ PictureRect letterbox(int width, int height, const std::array<int, 4>& cutout) {
   return r;
 }
 
+WindowRect pointer_confinement(const PictureRect& picture, float density) {
+  const int x0 = static_cast<int>(std::floor(picture.x / density));
+  const int y0 = static_cast<int>(std::floor(picture.y / density));
+  const int x1 = static_cast<int>(std::ceil((picture.x + picture.w) / density));
+  const int y1 = static_cast<int>(std::ceil((picture.y + picture.h) / density));
+  return WindowRect{.x = x0, .y = y0, .w = x1 - x0, .h = y1 - y0};
+}
+
 struct Display::Impl {
   SDL_Window* window = nullptr;
   SDL_Renderer* renderer = nullptr;
@@ -74,6 +83,8 @@ struct Display::Impl {
   std::optional<SDL_Keycode> toggle_key;
   // The picture's place in the output, in pixels.
   SDL_FRect picture{0, 0, kScreenWidth, kScreenHeight};
+  // The rectangle the system pointer is confined to, none when it is free.
+  std::optional<WindowRect> confinement;
   // The display cutout's safe insets (left, top, right, bottom), in pixels;
   // and the frames since they were read.
   std::array<int, 4> cutout{};
@@ -88,6 +99,29 @@ struct Display::Impl {
     }
     const PictureRect r = letterbox(w, h, cutout);
     picture = SDL_FRect{r.x, r.y, r.w, r.h};
+    confine();
+  }
+
+  // Confines the system pointer to the picture in the full screen, frees it
+  // in a window (where it may leave for the other programs). Android has no
+  // system pointer to confine.
+  void confine() {
+#ifndef SDL_PLATFORM_ANDROID
+    std::optional<WindowRect> rect;
+    if (fullscreen) {
+      rect = pointer_confinement(PictureRect{picture.x, picture.y, picture.w, picture.h},
+                                 SDL_GetWindowPixelDensity(window));
+    }
+    if (rect == confinement) {
+      return;
+    }
+    const SDL_Rect sdl_rect = rect ? SDL_Rect{rect->x, rect->y, rect->w, rect->h} : SDL_Rect{};
+    if (!SDL_SetWindowMouseRect(window, rect ? &sdl_rect : nullptr)) {
+      log_warning("cannot confine the pointer: {}", SDL_GetError());
+    }
+    // Not tried again until the rectangle changes.
+    confinement = rect;
+#endif
   }
 
   // Shows the texture (the last frame) in its place, on black.
@@ -225,6 +259,7 @@ void Display::set_fullscreen(bool fullscreen) {
     return;
   }
   impl_->fullscreen = fullscreen;
+  impl_->place();
 }
 
 Scaling Display::scaling() const { return impl_->scaling; }
@@ -263,6 +298,7 @@ std::optional<InputEvent> Display::poll() {
       case SDL_EVENT_WINDOW_LEAVE_FULLSCREEN:
         // Also when the window manager changes it.
         impl_->fullscreen = e.type == SDL_EVENT_WINDOW_ENTER_FULLSCREEN;
+        impl_->place();
         break;
       case SDL_EVENT_KEY_DOWN:
       case SDL_EVENT_KEY_UP:

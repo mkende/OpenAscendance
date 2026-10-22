@@ -14,8 +14,10 @@
 #include <SDL3/SDL_keycode.h>
 
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <filesystem>
+#include <tuple>
 #include <vector>
 
 #include "app/command_line.h"
@@ -177,6 +179,32 @@ TEST_CASE("the 4:3 letterbox: centred, clear of the display cutout", "[platform]
   CHECK(letterbox(2092, 1080, {100, 0, 0, 0}) == PictureRect{376, 0, 1440, 1080});
   // A cutout leaving almost nothing is ignored.
   CHECK(letterbox(640, 480, {0, 400, 0, 0}) == PictureRect{0, 0, 640, 480});
+}
+
+TEST_CASE("the full screen's pointer confinement: the picture's window units, reaching its every edge", "[platform]") {
+  CHECK(pointer_confinement(letterbox(1920, 1080, {}), 1) == WindowRect{240, 0, 1440, 1080});
+  // A Retina display: two pixels per window unit.
+  CHECK(pointer_confinement(letterbox(2880, 1800, {}), 2) == WindowRect{120, 0, 1200, 900});
+  // Partly covered units are in.
+  CHECK(pointer_confinement(letterbox(1366, 768, {}), 1.5F) == WindowRect{114, 0, 683, 512});
+  for (const auto& [w, h, density] : std::array<std::tuple<int, int, float>, 5>{
+           {{1920, 1080, 1}, {2880, 1800, 2}, {1366, 768, 1.5F}, {1280, 1024, 1.25F}, {3440, 1440, 1}}}) {
+    INFO(w << "x" << h << " @" << density);
+    const PictureRect p = letterbox(w, h, {});
+    const WindowRect r = pointer_confinement(p, density);
+    // The screen pixels of the rectangle's first and last units (as
+    // `Display` maps the mouse), clamped by `Input`.
+    const auto screen = [&](int unit, float origin, float size, int pixels) {
+      return static_cast<int>(std::floor((static_cast<float>(unit) * density - origin) * pixels / size));
+    };
+    CHECK(screen(r.x, p.x, p.w, kScreenWidth) <= 0);
+    CHECK(screen(r.x, p.x, p.w, kScreenWidth) >= -1);
+    CHECK(screen(r.x + r.w - 1, p.x, p.w, kScreenWidth) >= kScreenWidth - 1);
+    CHECK(screen(r.x + r.w - 1, p.x, p.w, kScreenWidth) <= kScreenWidth);
+    CHECK(screen(r.y, p.y, p.h, kScreenHeight) <= 0);
+    CHECK(screen(r.y + r.h - 1, p.y, p.h, kScreenHeight) >= kScreenHeight - 1);
+    CHECK(screen(r.y + r.h - 1, p.y, p.h, kScreenHeight) <= kScreenHeight);
+  }
 }
 
 // Sends SDL event `e` and returns the display's last input event.

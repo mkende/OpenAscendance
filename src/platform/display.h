@@ -37,12 +37,30 @@ struct PictureRect {
 // picture's size).
 PictureRect letterbox(int width, int height, const std::array<int, 4>& cutout);
 
+// A rectangle of the window, in its coordinates (the mouse's).
+struct WindowRect {
+  int x = 0;
+  int y = 0;
+  int w = 0;
+  int h = 0;
+
+  bool operator==(const WindowRect&) const = default;
+};
+
+// Returns the window rectangle covering the picture `picture` (output
+// pixels) of a window of `density` output pixels per window unit: its
+// partly covered units included, so that the mouse confined to it reaches
+// the picture's every edge pixel, and never more than one unit past them.
+WindowRect pointer_confinement(const PictureRect& picture, float density);
+
 // The game window. The indexed frame is converted through the palette and
 // scaled to the window keeping its 4:3 aspect ratio (black bars), clear of
 // the display cutout on Android, where the window is always the full screen
 // without the system bars. Only one display may exist; it initializes and
 // shuts down SDL video. The system pointer is hidden over the window: the
-// game draws its own. Fingers come as finger events (no mouse events made
+// game draws its own. In the full screen, the system pointer is confined to
+// the picture (`pointer_confinement`), so that it turns back at once at the
+// picture's edges, where the game's stops. Fingers come as finger events (no mouse events made
 // of them, `TouchMapper` does), Android's Back as `kBack`.
 class Display {
  public:
