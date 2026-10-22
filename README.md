@@ -54,7 +54,8 @@ Extended variant) are planned.
   edition's opponents and rule changes). The interface is only improved
   where it never changes the game: per-user saves outside the original's
   folder, scaling of the original 640x480 picture to any window size (smooth
-  or sharp pixels), full screen with Alt+Enter, music and sound toggles.
+  or sharp pixels), the full screen by default or a window (Alt+Enter
+  switches), music and sound toggles.
 
 - **Extended** (planned): the classic game with fixes and improvements.
 

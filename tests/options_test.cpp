@@ -177,12 +177,15 @@ TEST_CASE("a tutorial replays on the original opening menu", "[screens][content]
 TEST_CASE("options.cfg: the settings' text round-trips; bad lines are ignored", "[ui]") {
   const RemakeOptions defaults;
   CHECK(parse_options("") == defaults);
-  const RemakeOptions set{.variant = game::Variant::kAntagonizer, .fullscreen = true, .scaling = Scaling::kSharp};
-  CHECK(format_options(set) == "variant=antagonizer\nfullscreen=1\nscaling=sharp\n");
+  // The full screen by default; a file's window kept.
+  CHECK(defaults.fullscreen);
+  CHECK_FALSE(parse_options("fullscreen=0\n").fullscreen);
+  const RemakeOptions set{.variant = game::Variant::kAntagonizer, .fullscreen = false, .scaling = Scaling::kSharp};
+  CHECK(format_options(set) == "variant=antagonizer\nfullscreen=0\nscaling=sharp\n");
   CHECK(parse_options(format_options(set)) == set);
   CHECK(parse_options(format_options(defaults)) == defaults);
   CHECK(parse_options("# comment\r\n variant = antagonizer # Antagonizer\r\nwide=1\nfullscreen=yes\nscaling\n") ==
-        RemakeOptions{.variant = game::Variant::kAntagonizer, .fullscreen = false, .scaling = Scaling::kSmooth});
+        RemakeOptions{.variant = game::Variant::kAntagonizer, .fullscreen = true, .scaling = Scaling::kSmooth});
 
   TempDir dir("oa_options");
   const std::filesystem::path file = dir.path / kOptionsFile;

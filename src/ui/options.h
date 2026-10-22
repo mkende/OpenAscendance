@@ -6,7 +6,7 @@
 // `options.cfg` is text, one `key=value` per line (`#` starts a comment):
 //
 //     variant=standard        # or antagonizer: the variant of new games
-//     fullscreen=0            # or 1
+//     fullscreen=1            # or 0: a window
 //     scaling=smooth          # or sharp
 //
 // Unknown keys and bad values are ignored with a warning, so that a file of
@@ -26,7 +26,7 @@ inline constexpr std::string_view kOptionsFile = "options.cfg";
 
 struct RemakeOptions {
   game::Variant variant = game::Variant::kStandard;
-  bool fullscreen = false;
+  bool fullscreen = true;
   Scaling scaling = Scaling::kSmooth;
 
   bool operator==(const RemakeOptions&) const = default;
