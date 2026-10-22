@@ -114,7 +114,7 @@ TEST_CASE("touch: a moving finger drags the view without a click; two fingers pi
   // A pinch: the fingers 100 then 200 pixels apart.
   touch.feed(finger(EventType::kFingerDown, 2, 300, 100, 6000));
   touch.feed(finger(EventType::kFingerDown, 3, 400, 100, 6010));
-  touch.feed(finger(EventType::kFingerMove, 3, 500, 100, 6100));
+  touch.feed(finger(EventType::kFingerMove, 3, 500, 100, 6000 + TouchMapper::kPinchDelay + 10));
   input.poll();
   CHECK(s.gesture.started);
   CHECK(s.gesture.x == 350);
@@ -126,6 +126,124 @@ TEST_CASE("touch: a moving finger drags the view without a click; two fingers pi
   input.poll();
   CHECK(!s.left_changed);
   CHECK(!s.left_down);
+}
+
+TEST_CASE("touch: a pinch zooms once a third finger can no longer join it", "[platform]") {
+  Input input;
+  TouchMapper touch(input);
+  touch.feed(finger(EventType::kFingerDown, 1, 300, 100, 0));
+  touch.feed(finger(EventType::kFingerDown, 2, 400, 100, 20));
+  touch.feed(finger(EventType::kFingerMove, 2, 450, 100, 40));
+  const InputState& s = input.poll();
+  CHECK(!s.gesture.started);
+  CHECK(s.gesture.zoom == 1.0F);
+  touch.update(20 + TouchMapper::kPinchDelay);
+  input.poll();
+  CHECK(s.gesture.started);
+  CHECK(s.gesture.x == 350);
+  CHECK(s.gesture.zoom == 1.5F);
+  touch.feed(finger(EventType::kFingerMove, 2, 600, 100, 200));
+  input.poll();
+  CHECK(s.gesture.zoom == 2.0F);
+  touch.feed(finger(EventType::kFingerUp, 1, 300, 100, 300));
+  touch.feed(finger(EventType::kFingerUp, 2, 600, 100, 300));
+  input.poll();
+  CHECK(!s.gesture.active);
+
+  // Lifted before the delay: still a pinch.
+  touch.feed(finger(EventType::kFingerDown, 3, 300, 100, 1000));
+  touch.feed(finger(EventType::kFingerDown, 4, 400, 100, 1000));
+  touch.feed(finger(EventType::kFingerMove, 4, 500, 100, 1030));
+  touch.feed(finger(EventType::kFingerUp, 3, 300, 100, 1050));
+  touch.feed(finger(EventType::kFingerUp, 4, 500, 100, 1050));
+  input.poll();
+  CHECK(s.gesture.started);
+  CHECK(!s.gesture.active);
+  CHECK(s.gesture.zoom == 2.0F);
+  input.poll();
+  CHECK(!s.left_changed);
+}
+
+// Puts three fingers down around (cx, cy), `radius` pixels from it, at
+// `ms` and the next 2 milliseconds.
+void three_fingers(TouchMapper& touch, int cx, int cy, int radius, std::uint64_t ms) {
+  touch.feed(finger(EventType::kFingerDown, 1, cx - radius, cy, ms));
+  touch.feed(finger(EventType::kFingerDown, 2, cx + radius, cy, ms + 1));
+  touch.feed(finger(EventType::kFingerDown, 3, cx, cy + radius, ms + 2));
+}
+
+// Moves the three fingers of `three_fingers` to `radius` pixels from the
+// centre.
+void move_three(TouchMapper& touch, int cx, int cy, int radius, std::uint64_t ms) {
+  touch.feed(finger(EventType::kFingerMove, 1, cx - radius, cy, ms));
+  touch.feed(finger(EventType::kFingerMove, 2, cx + radius, cy, ms));
+  touch.feed(finger(EventType::kFingerMove, 3, cx, cy + radius, ms));
+}
+
+TEST_CASE("touch: three fingers coming together are Back, once, without clicks, drags or zooms", "[platform]") {
+  Input input;
+  TouchMapper touch(input);
+  const InputState& s = input.poll();
+  // Not together enough yet.
+  three_fingers(touch, 320, 240, 150, 0);
+  move_three(touch, 320, 240, 100, 50);
+  touch.update(1000);  // no long press either
+  input.poll();
+  CHECK(!s.back);
+  // Together: Back, once.
+  int backs = 0;
+  for (const int radius : {80, 60, 40, 20}) {
+    move_three(touch, 320, 240, radius, 1100);
+    input.poll();
+    backs += s.back ? 1 : 0;
+    CHECK(!s.left_changed);
+    CHECK(!s.right_changed);
+    CHECK(s.gesture.zoom == 1.0F);
+    CHECK(s.gesture.dx == 0);
+    CHECK(s.gesture.dy == 0);
+  }
+  CHECK(backs == 1);
+  for (const std::uint64_t id : {1, 2, 3}) {
+    touch.feed(finger(EventType::kFingerUp, id, 320, 240, 1200));
+  }
+  input.poll();
+  CHECK(!s.back);
+  CHECK(!s.left_changed);
+  CHECK(!s.right_changed);
+
+  // A finger lifted first: nothing, until a new touch, which taps again.
+  three_fingers(touch, 320, 240, 150, 2000);
+  touch.feed(finger(EventType::kFingerUp, 3, 320, 390, 2050));
+  touch.feed(finger(EventType::kFingerMove, 1, 310, 240, 2100));
+  touch.feed(finger(EventType::kFingerMove, 2, 330, 240, 2100));
+  touch.feed(finger(EventType::kFingerUp, 1, 310, 240, 2150));
+  touch.feed(finger(EventType::kFingerUp, 2, 330, 240, 2150));
+  input.poll();
+  CHECK(!s.back);
+  CHECK(s.gesture.zoom == 1.0F);
+  touch.feed(finger(EventType::kFingerDown, 4, 100, 100, 3000));
+  touch.feed(finger(EventType::kFingerUp, 4, 100, 100, 3050));
+  input.poll();
+  CHECK(s.left_changed);
+  CHECK(!s.back);
+
+  // A pinch then a third finger: the pinch ends, the fingers together are
+  // Back.
+  touch.feed(finger(EventType::kFingerDown, 5, 100, 240, 4000));
+  touch.feed(finger(EventType::kFingerDown, 6, 500, 240, 4000));
+  touch.update(4000 + TouchMapper::kPinchDelay);
+  input.poll();
+  input.poll();
+  CHECK(s.gesture.active);
+  touch.feed(finger(EventType::kFingerDown, 7, 300, 400, 4200));
+  input.poll();
+  CHECK(!s.gesture.active);
+  touch.feed(finger(EventType::kFingerMove, 5, 250, 260, 4300));
+  touch.feed(finger(EventType::kFingerMove, 6, 350, 260, 4300));
+  touch.feed(finger(EventType::kFingerMove, 7, 300, 300, 4300));
+  input.poll();
+  CHECK(s.back);
+  CHECK(s.gesture.zoom == 1.0F);
 }
 
 TEST_CASE("mouse: the left button moved past a few pixels drags the view; the press stays a click", "[platform]") {
@@ -603,6 +721,59 @@ TEST_CASE("Back: an exit corner's action, Exit to DOS on the opening menu", "[sc
   r.rig.wm.set_screen(0, false);
   r.rig.pass(InputEvent{.type = EventType::kBack});
   r.wait(1);
+  CHECK(!r.rig.wm.running());
+}
+
+TEST_CASE("three fingers coming together are Back, and neither turn nor zoom the view", "[screens][content]") {
+  OA_REQUIRE_GAME_FILES(files);
+  test::TempDir dir("oa_touch");
+  GameRig r(files, dir.path);
+  REQUIRE(r.rig.wm.current_screen() == 1);
+  // Over the map's centre, the fingers a little apart in time, a pass after
+  // each event.
+  const int cx = (r.map().pane().x0 + r.map().pane().x1) / 2;
+  const int cy = (r.map().pane().y0 + r.map().pane().y1) / 2;
+  const auto close = [&] {
+    r.touch.feed(finger(EventType::kFingerDown, 1, cx - 120, cy, 0));
+    r.rig.pass();
+    r.touch.feed(finger(EventType::kFingerDown, 2, cx + 120, cy, 30));
+    r.rig.pass();
+    r.touch.feed(finger(EventType::kFingerMove, 2, cx + 110, cy + 5, 50));
+    r.rig.pass();
+    r.touch.feed(finger(EventType::kFingerDown, 3, cx, cy + 120, 60));
+    r.rig.pass();
+    for (int i = 1; i <= 4; ++i) {
+      const int d = 120 - i * 25;
+      r.touch.feed(finger(EventType::kFingerMove, 1, cx - d, cy, 60 + i * 20));
+      r.touch.feed(finger(EventType::kFingerMove, 2, cx + d, cy, 60 + i * 20));
+      r.touch.feed(finger(EventType::kFingerMove, 3, cx, cy + d, 60 + i * 20));
+      r.rig.pass();
+    }
+    for (const std::uint64_t id : {1, 2, 3}) {
+      r.touch.feed(finger(EventType::kFingerUp, id, cx, cy, 200));
+    }
+    r.wait(3);
+  };
+  r.rig.key('s', SDL_KMOD_LALT);
+  r.wait(3);
+  REQUIRE(r.rig.wm.current_screen() != 1);
+  close();
+  CHECK(r.rig.wm.current_screen() == 1);
+
+  const std::array<float, 9> orientation = r.map().camera().orientation;
+  const float fov = r.map().fov();
+  r.rig.key('s', SDL_KMOD_LALT);
+  r.wait(3);
+  r.rig.pass(InputEvent{.type = EventType::kBack});
+  r.wait(2);
+  REQUIRE(r.rig.wm.current_screen() == 1);
+  close();
+  CHECK(r.map().camera().orientation == orientation);
+  CHECK(r.map().fov() == fov);
+  CHECK(r.rig.wm.current_screen() != 1);
+
+  r.rig.wm.set_screen(0, false);
+  close();
   CHECK(!r.rig.wm.running());
 }
 

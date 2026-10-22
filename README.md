@@ -79,6 +79,8 @@ your finger:
 - **Back** (button or gesture): closes the current dialog or goes back to
   the previous screen, like the original's exit corners; on the opening
   menu, it quits.
+- **Three fingers or more** brought together toward their centre: the same
+  as Back.
 
 The game in progress is saved when the app goes to the background, so that
 "Return to Current Game" goes on from there even if Android closed the app
