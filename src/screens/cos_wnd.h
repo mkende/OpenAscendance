@@ -155,13 +155,17 @@ class CosWnd final : public GWindow {
   void update_hover(int x, int y);
   // The item hovered at (x, y), window-relative, -1 for none: the
   // original's test (the items from the last built, the first hit). With
-  // the remake's picking (`remake_picking`), when no item is hit, the only
-  // visible star within `kTargetMargin` of the original's radius is.
+  // the remake's picking (`remake_picking`), a ship at a star picks that
+  // star instead, and when no item is hit, the only visible star within
+  // `kTargetMargin` of the original's radius is.
   int pick(int x, int y) const;
   // Whether the remake's picking applies: the enlarged targets on
   // (`WinMgr::enlarged_targets`) on the screens where a star click acts
   // (1 and 13).
   bool remake_picking() const;
+  // The visible star item where the ship item `k` is (its star's marker,
+  // or a ship in transit still at its departure star), -1 for none.
+  int ship_star_item(std::size_t k) const;
   // `CosWnd_click_item` (0x24300).
   void click_item();
   // `CosDrawList_draw` (0x24c18).

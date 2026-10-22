@@ -308,23 +308,6 @@ TEST_CASE("the list box: hovered row, pick message, arrows repeating faster whil
   CHECK(list.top() <= list.count() - (200 - 100) / list.line_height());
 }
 
-// Appends a 24-byte trace record (`assets/winevent.h`) to `trace`.
-void append_record(std::vector<std::uint8_t>& trace, std::uint32_t time, TraceEventType type, std::uint32_t a,
-                   std::uint32_t b) {
-  const auto put = [&](std::uint32_t value, int bytes) {
-    for (int i = 0; i < bytes; ++i) {
-      trace.push_back(static_cast<std::uint8_t>(value >> (8 * i)));
-    }
-  };
-  put(time, 4);
-  put(0, 4);
-  put(static_cast<std::uint16_t>(type), 2);
-  put(0, 2);
-  put(a, 4);
-  put(b, 4);
-  put(0, 4);
-}
-
 TEST_CASE("enlarged click targets: a press on no window within 5 pixels of one target reaches it", "[ui][content]") {
   OA_REQUIRE_GAME_FILES(files);
   UiRig rig(files);
@@ -401,10 +384,10 @@ TEST_CASE("enlarged click targets: a press on no window within 5 pixels of one t
 
   // Never while a trace is replayed: its presses are the original's.
   std::vector<std::uint8_t> trace(Trace::kHeaderSize, 0);
-  append_record(trace, 1, TraceEventType::kMouseMove, 154, 115);
-  append_record(trace, 2, TraceEventType::kMouseButton, 0, 1);
-  append_record(trace, 3, TraceEventType::kMouseButton, 0, 0);
-  append_record(trace, 20, TraceEventType::kMouseMove, 154, 115);
+  test::append_trace_record(trace, 1, TraceEventType::kMouseMove, 154, 115);
+  test::append_trace_record(trace, 2, TraceEventType::kMouseButton, 0, 1);
+  test::append_trace_record(trace, 3, TraceEventType::kMouseButton, 0, 0);
+  test::append_trace_record(trace, 20, TraceEventType::kMouseMove, 154, 115);
   log.events.clear();
   REQUIRE(rig.wm.start_replay(trace, "test.bin", false));
   for (int i = 0; i < 6; ++i) {

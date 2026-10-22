@@ -17,7 +17,9 @@
 #include <vector>
 
 #include "assets/gif.h"
+#include "assets/winevent.h"
 #include "core/error.h"
+#include "game/cosmos.h"
 #include "game/new_game.h"
 #include "game/save.h"
 #include "game_data.h"
@@ -439,6 +441,87 @@ TEST_CASE("the remake picks no star when two are within its enlarged radius", "[
   CHECK(map.hovered() == -1);
   h.click(x, y);
   CHECK(h.r.rig.wm.current_screen() == 1);
+}
+
+TEST_CASE("a click on the ships at a star opens it; one on a ship in transit does nothing", "[screens][content]") {
+  OA_REQUIRE_GAME_FILES(files);
+  HomeRig h(files);
+  // A ship of the player in its home system (none on day 0).
+  game::Session& session = *h.r.session.core();
+  game::Ship* ship = game::cosmos_alloc_ship(session, session.player_race);
+  REQUIRE(ship != nullptr);
+  ship->location_kind = game::ShipLocation::kSystem;
+  game::ship_enter_star_system(session, h.cosmos().stars[static_cast<std::size_t>(h.home())], *ship);
+  h.refresh();
+  CosWnd& map = h.r.map();
+  const std::size_t home = star_item(map, h.home());
+  // The home star's ships marker, right after it; its hover point is 5
+  // pixels right and 2 up of the item.
+  REQUIRE(home + 1 < map.items().size());
+  const CosWnd::Item marker = map.items()[home + 1];
+  REQUIRE(marker.kind == CosWnd::ItemKind::kShip);
+  const int x = marker.x + 5;
+  const int y = marker.y - 2;
+
+  SECTION("the original's: the ship hovered, its click does nothing") {
+    h.r.rig.wm.set_enlarged_targets(false);
+    h.hover(x, y);
+    CHECK(map.hovered() == static_cast<int>(home + 1));
+    h.click(x, y);
+    CHECK(h.r.rig.wm.current_screen() == 1);
+  }
+  SECTION("never while a trace is replayed") {
+    std::vector<std::uint8_t> trace(Trace::kHeaderSize, 0);
+    const auto sx = static_cast<std::uint32_t>(map.pane().x0 + x);
+    const auto sy = static_cast<std::uint32_t>(map.pane().y0 + y);
+    test::append_trace_record(trace, 1, TraceEventType::kMouseMove, sx, sy);
+    test::append_trace_record(trace, 2, TraceEventType::kMouseButton, 0, 1);
+    test::append_trace_record(trace, 3, TraceEventType::kMouseButton, 0, 0);
+    test::append_trace_record(trace, 30, TraceEventType::kMouseMove, sx, sy);
+    REQUIRE(h.r.rig.wm.start_replay(trace, "test.bin", false));
+    h.r.wait(8);
+    REQUIRE(h.r.rig.wm.replaying());
+    CHECK(map.hovered() == static_cast<int>(home + 1));
+    CHECK(h.r.rig.wm.current_screen() == 1);
+  }
+  SECTION("the remake's: the star hovered (its label), the click opens it") {
+    h.hover(x, y);
+    CHECK(map.hovered() == static_cast<int>(home));
+    CHECK(h.r.rig.pointer_frame == 3);
+    h.click(x, y);
+    CHECK(h.cosmos().selected_star == h.home());
+    CHECK(h.r.rig.wm.current_screen() == 16);
+  }
+  SECTION("a ship in transit: picked only while still at its departure star") {
+    game::Cosmos& c = h.cosmos();
+    const game::Star& star = c.stars[static_cast<std::size_t>(h.home())];
+    REQUIRE(star.lane_count > 0);
+    const game::LaneIndex l = star.lanes[0];
+    const game::Lane& lane = c.lanes[static_cast<std::size_t>(l)];
+    // `ship_enter_lane`, halfway along.
+    ship->location_kind = game::ShipLocation::kLane;
+    ship->location = l;
+    ship->position[1] = lane.star_a == h.home() ? 1.0F : 0.0F;
+    ship->position[0] = game::f32(game::length(game::sub(c.stars[static_cast<std::size_t>(lane.star_a)].position,
+                                                         c.stars[static_cast<std::size_t>(lane.star_b)].position)) *
+                                  0.5);
+    h.refresh();
+    const auto transit = static_cast<int>(map.items().size()) - 1;
+    REQUIRE(map.items()[static_cast<std::size_t>(transit)].kind == CosWnd::ItemKind::kShip);
+    const CosWnd::Item moving = map.items()[static_cast<std::size_t>(transit)];
+    h.hover(moving.x + 5, moving.y - 2);
+    CHECK(map.hovered() == transit);
+    h.click(moving.x + 5, moving.y - 2);
+    CHECK(h.r.rig.wm.current_screen() == 1);
+
+    ship->position[0] = 0.0F;
+    h.refresh();
+    const CosWnd::Item leaving = map.items()[static_cast<std::size_t>(transit)];
+    h.hover(leaving.x + 5, leaving.y - 2);
+    CHECK(map.hovered() == static_cast<int>(star_item(map, h.home())));
+    h.click(leaving.x + 5, leaving.y - 2);
+    CHECK(h.r.rig.wm.current_screen() == 16);
+  }
 }
 
 TEST_CASE("Next Turn ends the day; the auto next turn repeats it until the map is left", "[screens][content]") {

@@ -159,6 +159,10 @@ HoverDistance hover_distance(const CosWnd::Item& it, int x, int y) {
   return {dx * dx + dy * dy, radius};
 }
 
+// Whether a ship in transit goes from its lane's star B (the direction
+// float at ship `+0xa2` is +-0), else from star A.
+bool from_star_b(const game::Ship& ship) { return (std::bit_cast<std::uint32_t>(ship.position[1]) & 0x7fffffffU) == 0; }
+
 // The depth of an item relative to the galaxy's centre (`chop(z - 1500)`).
 std::int32_t relative_depth(float depth) {
   return game::chop(static_cast<double>(depth) + static_cast<double>(kDepthOffset));
@@ -345,7 +349,7 @@ void CosWnd::project_items() {
         if (ship.location_kind == game::ShipLocation::kLane) {
           // Along its lane: from star A, or from B when the direction is 0.
           const game::Lane& lane = c.lanes[static_cast<std::size_t>(ship.location)];
-          const bool from_b = (std::bit_cast<std::uint32_t>(ship.position[1]) & 0x7fffffffU) == 0;
+          const bool from_b = from_star_b(ship);
           const Vec3& start = c.stars[static_cast<std::size_t>(from_b ? lane.star_b : lane.star_a)].position;
           const Vec3& end = c.stars[static_cast<std::size_t>(from_b ? lane.star_a : lane.star_b)].position;
           const Vec3 d = game::sub(end, start);
@@ -485,6 +489,30 @@ bool CosWnd::remake_picking() const {
   return wm_.enlarged_targets() && (screen_id == kScreenStarMap || screen_id == kScreenDiplomacy);
 }
 
+int CosWnd::ship_star_item(std::size_t k) const {
+  const game::Session* core = wm_.services().game.core();
+  if (core == nullptr) {
+    return -1;
+  }
+  const game::Cosmos& c = core->game->cosmos;
+  const game::Ship& ship = c.ships[static_cast<std::size_t>(items_[k].index)];
+  int star = -1;
+  if (ship.location_kind != game::ShipLocation::kLane) {
+    // A star's marker: right after that star's item (`build_items`).
+    star = k > 0 && items_[k - 1].kind == ItemKind::kStar ? static_cast<int>(k) - 1 : -1;
+  } else if (ship.position[0] == 0.0F) {
+    // Entered its lane, not moved yet (`ship_enter_lane`).
+    const game::Lane& lane = c.lanes[static_cast<std::size_t>(ship.location)];
+    const std::int16_t from = from_star_b(ship) ? lane.star_b : lane.star_a;
+    for (std::size_t i = 0; i < item_count_ && star == -1; ++i) {
+      if (items_[i].kind == ItemKind::kStar && items_[i].index == from) {
+        star = static_cast<int>(i);
+      }
+    }
+  }
+  return star != -1 && !items_[static_cast<std::size_t>(star)].clipped ? star : -1;
+}
+
 int CosWnd::pick(int x, int y) const {
   for (int k = static_cast<int>(item_count_) - 1; k >= 0; --k) {
     const Item& it = items_[static_cast<std::size_t>(k)];
@@ -492,6 +520,10 @@ int CosWnd::pick(int x, int y) const {
       continue;
     }
     if (const HoverDistance d = hover_distance(it, x, y); d.squared < d.radius) {
+      if (it.kind == ItemKind::kShip && remake_picking()) {
+        const int star = ship_star_item(static_cast<std::size_t>(k));
+        return star != -1 ? star : k;
+      }
       return k;
     }
   }

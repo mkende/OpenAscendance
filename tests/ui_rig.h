@@ -6,7 +6,9 @@
 #include <deque>
 #include <filesystem>
 #include <optional>
+#include <vector>
 
+#include "assets/winevent.h"
 #include "audio/mixer.h"
 #include "audio/sound_system.h"
 #include "gfx/gsystem.h"
@@ -23,6 +25,23 @@ inline WindowFactory full_factory() {
   WindowFactory f = WindowFactory::standard();
   add_screen_windows(f);
   return f;
+}
+
+// Appends a 24-byte trace record (`assets/winevent.h`) to `trace`.
+inline void append_trace_record(std::vector<std::uint8_t>& trace, std::uint32_t time, TraceEventType type,
+                                std::uint32_t a, std::uint32_t b) {
+  const auto put = [&](std::uint32_t value, int bytes) {
+    for (int i = 0; i < bytes; ++i) {
+      trace.push_back(static_cast<std::uint8_t>(value >> (8 * i)));
+    }
+  };
+  put(time, 4);
+  put(0, 4);
+  put(static_cast<std::uint16_t>(type), 2);
+  put(0, 2);
+  put(a, 4);
+  put(b, 4);
+  put(0, 4);
 }
 
 struct UiRig {
