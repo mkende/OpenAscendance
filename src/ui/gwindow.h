@@ -44,6 +44,16 @@ enum WindowEvent : int {
   kEventListHelp = 0x1c02,  // a list row clicked in help mode: (row, 0xc)
 };
 
+// A rectangle where a shown window takes the presses (the left, right and
+// help clicks) that the original delivers to it (`GWindow::press_areas`).
+struct PressArea {
+  Pane pane;
+  // Whether a press there acts (a button, a list's rows, a control), as
+  // opposed to one the window takes without acting (a background, a view's
+  // empty space, a dialog swallowing every click).
+  bool target = false;
+};
+
 // The `draw` modes: 0 normal, 2 not hot, 3 hot.
 enum DrawMode : int { kDrawNormal = 0, kDrawNotHot = 2, kDrawHot = 3 };
 
@@ -113,6 +123,14 @@ class GWindow {
   // Whether the window plays an animation that Space skips (a remake
   // addition: a finger put down then skips it, `WinMgr::skippable_animation`).
   virtual bool plays_skippable_animation() const { return false; }
+
+  // The remake's enlarged click targets (`WinMgr`, not in the original):
+  // appends to `out` the rectangles where this window, while shown, takes
+  // the presses, its click targets marked. The default: the window's
+  // rectangle, a target when a click sends a message. A class taking
+  // presses elsewhere (outside its rectangle, everywhere) or whose parts
+  // are the targets overrides it.
+  virtual void press_areas(std::vector<PressArea>& out) const;
 
   // The `windows.txt` TYPE (-1 for a window made by the code).
   int type() const { return type_; }

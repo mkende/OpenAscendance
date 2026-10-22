@@ -53,6 +53,9 @@ class ResWnd final : public GWindow {
 
   // `ResWnd_handle_event` 0x42a84.
   bool handle_event(int type, int a, int b) override;
+  // The tree and the items' hover boxes (a click acts on the hovered item
+  // wherever the pointer is), not targets.
+  void press_areas(std::vector<PressArea>& out) const override;
   // `ResWnd_draw` 0x4331c: the tree, then the info column and the title bar
   // when they are marked for redrawing.
   void draw(int mode) override;

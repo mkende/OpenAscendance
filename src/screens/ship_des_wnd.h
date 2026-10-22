@@ -51,6 +51,8 @@ class ShipDesWnd final : public GWindow {
   // ship as the template shown by an entry without one, and forgets the
   // ship unless it was modified.
   bool handle_event(int type, int a, int b) override;
+  // The slot grid, not a target.
+  void press_areas(std::vector<PressArea>& out) const override { out.push_back(PressArea{pane_, false}); }
   // `ShipDesWnd_draw` (0x49b68).
   void draw(int mode) override;
 

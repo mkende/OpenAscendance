@@ -36,6 +36,9 @@ class NegWnd final : public GWindow {
   // (`NegWnd_pick_third_party` 0x31e34); 0xc there gives help `tinyrace`;
   // 0x1c01 chooses the picked row (`NegWnd_choose_option` 0x31f20).
   bool handle_event(int type, int a, int b) override;
+  // The window and the third parties' box (outside its rectangle), not
+  // targets.
+  void press_areas(std::vector<PressArea>& out) const override;
   // `NegWnd_draw` (0x31b34): the third parties (when there are some), the
   // selected system, the children.
   void draw(int mode) override;

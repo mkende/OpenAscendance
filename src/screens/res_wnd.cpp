@@ -278,6 +278,26 @@ std::uint16_t ResWnd::item_at(int screen_x, int screen_y) const {
   return kNone;
 }
 
+void ResWnd::press_areas(std::vector<PressArea>& out) const {
+  out.push_back(PressArea{pane_, false});
+  const game::Session* session = core();
+  if (session == nullptr) {
+    return;
+  }
+  const game::Research& research = session->game->research;
+  for (std::size_t k = 0; k < research.count; ++k) {
+    const std::uint16_t item = order_[k];
+    if (game::research_can_research(research, session->player_race, item)) {
+      // `item_at`'s open box around the item.
+      const ScreenPoint p = screen_[item];
+      const int x = pane_.x0 + p.x;
+      const int y = pane_.y0 + p.y;
+      out.push_back(PressArea{
+          Pane{x - kHoverDistance + 1, y - kHoverDistance + 1, x + kHoverDistance - 1, y + kHoverDistance - 1}, false});
+    }
+  }
+}
+
 void ResWnd::update_hover() {
   const std::uint16_t found = item_at(wm_.input().x, wm_.input().y);
   if (found != hovered_) {

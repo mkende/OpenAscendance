@@ -69,6 +69,14 @@ std::string fill(std::string_view format, std::initializer_list<std::string_view
 NewGameWnd::NewGameWnd(WinMgr& wm, const WindowRecord& record, const ShapeTable* shapes)
     : GWindow(wm, record, shapes) {}
 
+void NewGameWnd::press_areas(std::vector<PressArea>& out) const {
+  out.push_back(PressArea{pane_, false});
+  // The open boxes of the clicks' tests.
+  for (const Pane& box : {kColorBar, kBeginBox}) {
+    out.push_back(PressArea{Pane{box.x0 + 1, box.y0 + 1, box.x1 - 1, box.y1 - 1}, true});
+  }
+}
+
 bool NewGameWnd::in_begin_box(int x, int y) const {
   return x > kBeginBox.x0 && x < kBeginBox.x1 && y > kBeginBox.y0 && y < kBeginBox.y1;
 }

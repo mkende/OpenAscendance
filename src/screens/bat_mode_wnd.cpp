@@ -1141,6 +1141,10 @@ void BatModeWnd::deactivate(int a, int b) {
   GWindow::handle_event(kEventDeactivate, a, b);
 }
 
+void BatModeWnd::press_areas(std::vector<PressArea>& out) const {
+  out.push_back(PressArea{state_ == State::kAnimating ? Pane{} : pane_, false});
+}
+
 bool BatModeWnd::handle_event(int type, int a, int b) {
   const auto inside = [&](int x, int y) { return x >= pane_.x0 && x <= pane_.x1 && y >= pane_.y0 && y <= pane_.y1; };
   switch (type) {

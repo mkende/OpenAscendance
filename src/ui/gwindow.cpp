@@ -134,6 +134,10 @@ bool GWindow::handle_event(int type, int a, int b) {
   }
 }
 
+void GWindow::press_areas(std::vector<PressArea>& out) const {
+  out.push_back(PressArea{pane_, message_ != kMessageNone});
+}
+
 void GWindow::draw_border(std::uint8_t color) {
   Image8& screen = wm_.screen();
   const int w = pane_.x1 - pane_.x0;

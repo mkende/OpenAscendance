@@ -59,6 +59,14 @@ enum HelpKind : int {
   kHelpPlanet = 5,    // planhelp.txt
 };
 
+// A pointer position, in screen pixels.
+struct PointerPos {
+  int x = 0;
+  int y = 0;
+
+  bool operator==(const PointerPos&) const = default;
+};
+
 // The pointer frames of `MOUSE.SHP` (`GSystem_set_pointer`).
 enum PointerFrame : int { kPointerNormal = 0, kPointerHelp = 1, kPointerExitCorner = 4 };
 
@@ -204,6 +212,21 @@ class WinMgr final : public WindowStateIo {
   // The input of the current pass (the pointer position, `0xc84d4`).
   const InputState& input() const { return last_input_; }
   bool in_modal() const { return modal_; }
+  // The remake's enlarged click targets (not in the original), how far
+  // around its rectangle a click target takes the pointer, in pixels.
+  static constexpr int kTargetMargin = 5;
+  // The point where the pointer at `raw` acts (hovers and presses): when no
+  // shown window of the current screen takes a press there
+  // (`GWindow::press_areas`: the original would deliver the press to no
+  // window) and exactly one click target's rectangle grown by
+  // `kTargetMargin` on each side holds it, the nearest point of that
+  // target, provided that the target's window is the top one taking a
+  // press there; else `raw` itself. Always `raw` while a trace is replayed
+  // or when the enlarged targets are off.
+  PointerPos target_point(PointerPos raw) const;
+  // Turns the enlarged click targets on (the default) or off (the
+  // original's targets, as for the input of an oracle run).
+  void set_enlarged_targets(bool on) { enlarged_targets_ = on; }
   // The id of the top shown window of the current screen taking a view
   // gesture at (x, y) (`GWindow::takes_view_gesture`), 0 for none or in a
   // modal loop or help mode.
@@ -508,6 +531,13 @@ class WinMgr final : public WindowStateIo {
   bool showing_event_ = false;
   // The window a view gesture goes to (a remake addition), 0 for none.
   int gesture_window_ = 0;
+  // The pointer's position given by the input, before `target_point` moves
+  // `last_input_`'s (a remake addition).
+  PointerPos raw_pointer_;
+  // Whether the pointer acted at another point than its own at the last
+  // pass.
+  bool pointer_on_target_ = false;
+  bool enlarged_targets_ = true;
 };
 
 }  // namespace oa

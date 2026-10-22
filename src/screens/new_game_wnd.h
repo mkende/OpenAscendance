@@ -39,6 +39,9 @@ class NewGameWnd final : public GWindow {
   // begin the game (screen 12); 0xc gives the colour bar's and the box's
   // help; 501/503/505 cycle a setting; 0x1c01 picks the species.
   bool handle_event(int type, int a, int b) override;
+  // The window, not a target, and its colour bar and Begin box (outside
+  // its rectangle), targets.
+  void press_areas(std::vector<PressArea>& out) const override;
   // `NewGameWnd_draw` (0x4d5d0): the "Begin New Game" box and the list's
   // title, and in mode 0 the species panel, the settings' summary and the
   // colour bar.

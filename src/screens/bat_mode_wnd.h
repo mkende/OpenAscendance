@@ -128,6 +128,9 @@ class BatModeWnd final : public GWindow {
 
   // `BatModeWnd_handle` (0x16348).
   bool handle_event(int type, int a, int b) override;
+  // The view, not a target; the whole screen during an animation (a click
+  // anywhere is swallowed, a right click skips).
+  void press_areas(std::vector<PressArea>& out) const override;
   // `BatModeWnd_draw` (0x18ca8): `mode` 1 during the effects.
   void draw(int mode) override;
   void draw_hilite(int /*mode*/) override {}

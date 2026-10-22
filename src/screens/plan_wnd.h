@@ -88,6 +88,8 @@ class PlanWnd final : public GWindow {
 
   // `PlanWnd_handle_event` (0x35e98).
   bool handle_event(int type, int a, int b) override;
+  // The whole screen (its left click anywhere), not a target.
+  void press_areas(std::vector<PressArea>& out) const override { out.push_back(PressArea{Pane{}, false}); }
   // `PlanWnd_draw` (0x36de0).
   void draw(int mode) override;
   // `PlanWnd_serialize` (0x37ef4): the display flags byte.
@@ -181,6 +183,8 @@ class PlSquareWnd final : public GWindow {
 
   // `PlSquareWnd_handle_event` (0x3876c).
   bool handle_event(int type, int a, int b) override;
+  // The whole screen (it swallows every click).
+  void press_areas(std::vector<PressArea>& out) const override { out.push_back(PressArea{Pane{}, false}); }
   // `PlSquareWnd_draw` (0x38fec).
   void draw(int mode) override;
   void draw_hilite(int mode) override { draw(mode); }

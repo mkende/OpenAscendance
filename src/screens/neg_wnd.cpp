@@ -91,6 +91,11 @@ void NegWnd::on_star_selected() {
   draw(kDrawNormal);
 }
 
+void NegWnd::press_areas(std::vector<PressArea>& out) const {
+  out.push_back(PressArea{pane_, false});
+  out.push_back(PressArea{kThirdPartyBox, false});
+}
+
 bool NegWnd::handle_event(int type, int a, int b) {
   const auto in_box = [&](int x, int y) {
     return x > kThirdPartyBox.x0 - 1 && x < kThirdPartyBox.x1 + 1 && y > kThirdPartyBox.y0 - 1 &&

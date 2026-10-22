@@ -104,6 +104,15 @@ int ButtonGroup::hit_test(int x, int y) const {
   return -1;
 }
 
+void ButtonGroup::press_areas(std::vector<PressArea>& out) const {
+  out.push_back(PressArea{pane_, false});
+  for (const Control& c : controls_) {
+    if ((c.flags & kEnabled) != 0) {
+      out.push_back(PressArea{Pane{c.x0, c.y0, c.x1, c.y1}, true});
+    }
+  }
+}
+
 void ButtonGroup::set_hover(int index) {
   if (index == hover_) {
     return;

@@ -24,6 +24,8 @@ class FlicWnd final : public GWindow {
   // hidden, menu music stopped), 10 plays a frame, 3/4/5 skip, 2 fades the
   // picture and music out and reloads `game.pal` for the next screen's fade.
   bool handle_event(int type, int a, int b) override;
+  // The whole screen (a click anywhere skips).
+  void press_areas(std::vector<PressArea>& out) const override { out.push_back(PressArea{Pane{}, false}); }
   // `FlicWnd_draw` (0x2a9dc): nothing (the frames draw themselves).
   void draw(int /*mode*/) override {}
 

@@ -91,6 +91,8 @@ class ListBox final : public GWindow {
 
   // `ListBox_handle_event` (0x2daf4).
   bool handle_event(int type, int a, int b) override;
+  // The rows and the bar: a click target.
+  void press_areas(std::vector<PressArea>& out) const override { out.push_back(PressArea{pane_, true}); }
   // `ListBox_draw` (0x2dde0): background, border, scroll bar, the rows from
   // the top one.
   void draw(int mode) override;

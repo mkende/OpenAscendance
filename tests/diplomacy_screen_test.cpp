@@ -126,7 +126,10 @@ std::vector<std::uint8_t> contacts_save(const GameFiles& files) {
 // menu), replayed with the scripts' steps, a pass each.
 struct DiplomacyRig {
   DiplomacyRig(const GameFiles& files, const std::vector<std::uint8_t>& save)
-      : session((install(save), files), dir.path, false), rig((start(), files), &session, dir.path) {}
+      : session((install(save), files), dir.path, false), rig((start(), files), &session, dir.path) {
+    // The oracle run's pointer: the original's hover.
+    rig.wm.set_enlarged_targets(false);
+  }
 
   void install(const std::vector<std::uint8_t>& save) const {
     std::ofstream(dir.path / "RESUME.GAM", std::ios::binary)

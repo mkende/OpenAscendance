@@ -12,6 +12,7 @@
 
 #include "assets/gif.h"
 #include "assets/static_strings.h"
+#include "assets/winevent.h"
 #include "game_data.h"
 #include "screens/cos_wnd.h"
 #include "ui/button_group.h"
@@ -305,6 +306,132 @@ TEST_CASE("the list box: hovered row, pick message, arrows repeating faster whil
   CHECK(list.top() == stopped);
   // The top row stops when the last rows fill the window.
   CHECK(list.top() <= list.count() - (200 - 100) / list.line_height());
+}
+
+// Appends a 24-byte trace record (`assets/winevent.h`) to `trace`.
+void append_record(std::vector<std::uint8_t>& trace, std::uint32_t time, TraceEventType type, std::uint32_t a,
+                   std::uint32_t b) {
+  const auto put = [&](std::uint32_t value, int bytes) {
+    for (int i = 0; i < bytes; ++i) {
+      trace.push_back(static_cast<std::uint8_t>(value >> (8 * i)));
+    }
+  };
+  put(time, 4);
+  put(0, 4);
+  put(static_cast<std::uint16_t>(type), 2);
+  put(0, 2);
+  put(a, 4);
+  put(b, 4);
+  put(0, 4);
+}
+
+TEST_CASE("enlarged click targets: a press on no window within 5 pixels of one target reaches it", "[ui][content]") {
+  OA_REQUIRE_GAME_FILES(files);
+  UiRig rig(files);
+  auto parent = std::make_unique<EventLog>(rig.wm, "PARENT", Pane{600, 300, 610, 310});
+  EventLog& log = *parent;
+  const int parent_id = rig.wm.register_window(std::move(parent));
+  REQUIRE(rig.wm.add_to_screen(parent_id, kTestScreen));
+  // A window on top of the previous ones: a button sending `message` to
+  // the log, or with message 0 a window taking the presses without acting.
+  const auto add = [&](std::string name, const Pane& pane, int message) {
+    auto w = std::make_unique<GWindow>(rig.wm, std::move(name), pane);
+    GWindow& window = *w;
+    if (message != 0) {
+      window.set_message(message, 0, 0);
+      window.set_parent(parent_id);
+      log.add_child(&window);
+    }
+    const int id = rig.wm.register_window(std::move(w));
+    REQUIRE(rig.wm.add_to_screen(id, kTestScreen));
+    return id;
+  };
+  const int a = add("A", Pane{100, 100, 150, 130}, 60);
+  const int b = add("B", Pane{160, 100, 210, 130}, 61);
+  add("BACKGROUND", Pane{300, 100, 403, 200}, 0);
+  add("C", Pane{405, 150, 430, 170}, 62);
+  add("E", Pane{500, 100, 550, 130}, 63);
+  add("STRIP", Pane{530, 100, 560, 105}, 0);
+  rig.wm.set_screen(kTestScreen, true);
+  // The message the parent gets from a click at (x, y), 0 for none.
+  const auto clicked = [&](int x, int y) {
+    log.events.clear();
+    rig.click(x, y);
+    return log.events.empty() ? 0 : log.events.front().type;
+  };
+
+  // Between A and B (9 pixels apart): the one within 5 pixels.
+  CHECK(clicked(151, 115) == 60);
+  CHECK(clicked(154, 115) == 60);
+  CHECK(clicked(156, 115) == 61);
+  CHECK(clicked(159, 115) == 61);
+  // Within 5 pixels of both: none.
+  CHECK(clicked(155, 115) == 0);
+  // Farther than 5 pixels: none.
+  CHECK(clicked(94, 115) == 0);
+  CHECK(clicked(120, 136) == 0);
+  CHECK(clicked(95, 95) == 60);
+  CHECK(clicked(120, 135) == 60);
+
+  // The hover follows: the pointer acts at the target's nearest point.
+  rig.move(153, 135);
+  CHECK(rig.wm.hot_window() == a);
+  CHECK(rig.wm.input().x == 150);
+  CHECK(rig.wm.input().y == 130);
+  rig.move(157, 98);
+  CHECK(rig.wm.hot_window() == b);
+  CHECK(rig.wm.input().x == 160);
+  CHECK(rig.wm.input().y == 100);
+  rig.move(155, 115);
+  CHECK(rig.wm.hot_window() == -1);
+  CHECK(rig.wm.input().x == 155);
+
+  // A press the original delivers to a window (here one that does nothing
+  // with it) stays there.
+  CHECK(clicked(402, 160) == 0);
+  CHECK(clicked(404, 160) == 62);
+  // A target whose nearest point is under another window: none.
+  CHECK(clicked(535, 97) == 0);
+  CHECK(clicked(520, 97) == 63);
+
+  // Off: the original's targets.
+  rig.wm.set_enlarged_targets(false);
+  CHECK(clicked(154, 115) == 0);
+  rig.wm.set_enlarged_targets(true);
+
+  // Never while a trace is replayed: its presses are the original's.
+  std::vector<std::uint8_t> trace(Trace::kHeaderSize, 0);
+  append_record(trace, 1, TraceEventType::kMouseMove, 154, 115);
+  append_record(trace, 2, TraceEventType::kMouseButton, 0, 1);
+  append_record(trace, 3, TraceEventType::kMouseButton, 0, 0);
+  append_record(trace, 20, TraceEventType::kMouseMove, 154, 115);
+  log.events.clear();
+  REQUIRE(rig.wm.start_replay(trace, "test.bin", false));
+  for (int i = 0; i < 6; ++i) {
+    rig.wm.run_pass();
+  }
+  CHECK(rig.wm.replaying());
+  CHECK(rig.wm.input().x == 154);
+  CHECK(rig.wm.hot_window() == -1);
+  CHECK(log.events.empty());
+}
+
+TEST_CASE("enlarged click targets: the opening menu's buttons, 9 rows apart", "[ui][content]") {
+  OA_REQUIRE_GAME_FILES(files);
+  UiRig rig(files);
+  const int load = rig.wm.find_window("LOAD")->id();
+  const int save = rig.wm.find_window("SAVE")->id();
+  // LOAD (159, 360)-(477, 390), SAVE (159, 400)-(477, 430).
+  rig.move(300, 394);
+  CHECK(rig.wm.hot_window() == load);
+  rig.move(300, 395);
+  CHECK(rig.wm.hot_window() == -1);
+  rig.move(300, 396);
+  CHECK(rig.wm.hot_window() == save);
+  rig.move(154, 380);
+  CHECK(rig.wm.hot_window() == load);
+  rig.move(153, 380);
+  CHECK(rig.wm.hot_window() == -1);
 }
 
 }  // namespace

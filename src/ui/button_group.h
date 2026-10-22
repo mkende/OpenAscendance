@@ -46,6 +46,8 @@ class ButtonGroup final : public GWindow {
   // the parent, 7/6 start and stop the mouse-move notifications, 8 tracks
   // the hovered control, 9 sets the flags of control `a` (-1: all) to `b`.
   bool handle_event(int type, int a, int b) override;
+  // The window, the enabled controls its targets.
+  void press_areas(std::vector<PressArea>& out) const override;
   // `ButtonGroup_draw` (0x2d7a4): the background frame, then each control's
   // frame offset by its state (disabled +4, enabled +0, hovered +1, on +2,
   // on and hovered +3).

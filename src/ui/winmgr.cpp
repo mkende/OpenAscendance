@@ -710,6 +710,11 @@ void WinMgr::set_screen(int screen, bool push) {
   }
   broadcast_event(kEventActivate, 0, 0);
   hot_ = -1;
+  // The pointer's target point among the new screen's windows.
+  const PointerPos target = target_point(raw_pointer_);
+  last_input_.x = target.x;
+  last_input_.y = target.y;
+  pointer_on_target_ = target != raw_pointer_;
   update_hover(last_input_);
 }
 
@@ -1554,6 +1559,7 @@ void WinMgr::process_input(const InputState& input) {
   if (replaying_) {
     ++replay_pass_;
   }
+  const PointerPos previous{last_input_.x, last_input_.y};
   last_input_ = input;
   // The pass works on the input globals, which nested passes overwrite.
   InputState& in = last_input_;
@@ -1583,6 +1589,18 @@ void WinMgr::process_input(const InputState& input) {
   if (corner != exit_corner_) {
     exit_corner_ = corner;
     set_pointer(corner == -1 ? kPointerNormal : kPointerExitCorner + corner);
+  }
+  // The remake's enlarged click targets: the pointer acts at its target
+  // point; a change of that point (the windows changed) is a move.
+  raw_pointer_ = PointerPos{in.x, in.y};
+  if (corner == -1) {
+    const PointerPos target = target_point(raw_pointer_);
+    in.x = target.x;
+    in.y = target.y;
+    if (target != raw_pointer_ || pointer_on_target_) {
+      in.moved = in.moved || target != previous;
+    }
+    pointer_on_target_ = target != raw_pointer_;
   }
   if (in.moved) {
     update_hover(in);
@@ -1666,6 +1684,60 @@ void WinMgr::system_back() {
     services_.sound.play_sfx(kExitSound);
     go_back();
   }
+}
+
+PointerPos WinMgr::target_point(PointerPos raw) const {
+  if (replaying_ || !enlarged_targets_ || current_ < 0) {
+    return raw;
+  }
+  const auto inside = [](const Pane& pane, PointerPos p) {
+    return p.x >= pane.x0 && p.x <= pane.x1 && p.y >= pane.y0 && p.y <= pane.y1;
+  };
+  const Screen& s = screens_.at(static_cast<std::size_t>(current_));
+  std::vector<PressArea> areas;
+  // The top shown window taking a press at `p` (the broadcast's order).
+  const auto receiver = [&](PointerPos p) -> const GWindow* {
+    for (auto it = s.slots.rbegin(); it != s.slots.rend(); ++it) {
+      const GWindow* w = window(*it);
+      if (w == nullptr || !w->shown()) {
+        continue;
+      }
+      areas.clear();
+      w->press_areas(areas);
+      if (std::ranges::any_of(areas, [&](const PressArea& a) { return inside(a.pane, p); })) {
+        return w;
+      }
+    }
+    return nullptr;
+  };
+  if (receiver(raw) != nullptr) {
+    return raw;
+  }
+  const GWindow* found = nullptr;
+  Pane target;
+  int count = 0;
+  for (const int id : s.slots) {
+    const GWindow* w = window(id);
+    if (w == nullptr || !w->shown()) {
+      continue;
+    }
+    areas.clear();
+    w->press_areas(areas);
+    for (const PressArea& a : areas) {
+      const Pane grown{a.pane.x0 - kTargetMargin, a.pane.y0 - kTargetMargin, a.pane.x1 + kTargetMargin,
+                       a.pane.y1 + kTargetMargin};
+      if (a.target && inside(grown, raw)) {
+        ++count;
+        found = w;
+        target = a.pane;
+      }
+    }
+  }
+  if (count != 1) {
+    return raw;
+  }
+  const PointerPos point{std::clamp(raw.x, target.x0, target.x1), std::clamp(raw.y, target.y0, target.y1)};
+  return receiver(point) == found ? point : raw;
 }
 
 int WinMgr::view_window_at(int x, int y, bool mouse) const {

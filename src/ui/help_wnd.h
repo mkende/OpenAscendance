@@ -47,6 +47,8 @@ class HelpWnd : public GWindow {
   // (message 6, 202); a button's message 50 turns the page, or after the
   // last one closes it with the button's MSG.
   bool handle_event(int type, int a, int b) override;
+  // The whole screen (its right and help clicks anywhere).
+  void press_areas(std::vector<PressArea>& out) const override { out.push_back(PressArea{Pane{}, false}); }
   // `HelpWnd_draw` (0x2fe94): `help.shp`, the shown buttons spread along the
   // bottom, the current page's elements.
   void draw(int mode) override;
