@@ -74,6 +74,12 @@ class BatControlWnd final : public GWindow {
   // system's sun, name, type and controlling race.
   void draw(int mode) override;
   void draw_hilite(int /*mode*/) override {}
+  // The remake's planet picture: with a planet selected that a click in the
+  // view would open (`BatModeWnd::can_open_selected_planet`), the
+  // selected object's picture at the top of the panel takes the left
+  // click (a click target), and the help click (the view's topic), as the
+  // view's planet does; nothing while a trace is replayed.
+  void press_areas(std::vector<PressArea>& out) const override;
 
   // Message 800: the view's selection (`kind`, `object`); the list shows
   // its gizmos or weapons, or the player's items.
@@ -116,6 +122,13 @@ class BatControlWnd final : public GWindow {
  private:
   BatModeWnd* mode_wnd() const;
   ListBox* list() const;
+  // The selected object's picture above `rows` (its row's drawer).
+  static Pane object_pane(const ListBox& rows) {
+    return Pane{rows.pane().x0, 7, rows.pane().x1, rows.line_height() + 8};
+  }
+  // The planet picture's pane while a click there opens the planet, none
+  // otherwise (`press_areas`).
+  std::optional<Pane> planet_picture() const;
   game::Session* core() const { return wm_.services().game.core(); }
   // `BatControlWnd_fill_list` (0x11ba4): the rows of the list mode, sorted,
   // drawn.

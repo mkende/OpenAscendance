@@ -1026,9 +1026,7 @@ void BatModeWnd::click_item(bool left) {
   } else if (item.kind == ItemKind::kPlanet) {
     if (state_ != State::kMovePoint && state_ != State::kMoveElevation) {
       if (hovered_ == selected_ && state_ == State::kIdle) {
-        s->game->cosmos.selected_planet = static_cast<game::PlanetIndex>(item.object);
-        hovered_ = -1;
-        wm_.post_message(kMessageChangeScreen, kScreenPlanet, 1);
+        open_planet_screen(item.object);
       } else {
         notify = true;
         selected_ = hovered_;
@@ -1051,6 +1049,29 @@ void BatModeWnd::click_item(bool left) {
     ctrl->select(control_kind(selected_), items_[static_cast<std::size_t>(selected_)].object);
   }
   update_cursor();
+}
+
+void BatModeWnd::open_planet_screen(std::int32_t planet) {
+  core()->game->cosmos.selected_planet = static_cast<game::PlanetIndex>(planet);
+  hovered_ = -1;
+  wm_.post_message(kMessageChangeScreen, kScreenPlanet, 1);
+}
+
+bool BatModeWnd::can_open_selected_planet() const {
+  return core() != nullptr && control() != nullptr && state_ == State::kIdle && selected_ >= 0 &&
+         static_cast<std::size_t>(selected_) < item_count_ &&
+         items_[static_cast<std::size_t>(selected_)].kind == ItemKind::kPlanet;
+}
+
+void BatModeWnd::open_selected_planet() {
+  if (!can_open_selected_planet()) {
+    return;
+  }
+  // The view's left click on its hovered selected planet.
+  wm_.services().sound.play_sfx(kClickSound);
+  open_planet_screen(items_[static_cast<std::size_t>(selected_)].object);
+  update_cursor();
+  refresh();
 }
 
 void BatModeWnd::abandon_selected() {

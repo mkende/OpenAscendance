@@ -91,6 +91,24 @@ BatModeWnd* BatControlWnd::mode_wnd() const { return dynamic_cast<BatModeWnd*>(w
 
 ListBox* BatControlWnd::list() const { return dynamic_cast<ListBox*>(wm_.find_window("BatListWnd")); }
 
+std::optional<Pane> BatControlWnd::planet_picture() const {
+  const BatModeWnd* view = mode_wnd();
+  const ListBox* rows = list();
+  if (wm_.replaying() || view == nullptr || rows == nullptr || list_mode_ != kListOrbital ||
+      selection_.kind != kObjectPlanet || !view->can_open_selected_planet() ||
+      view->items()[static_cast<std::size_t>(view->selected())].object != selection_.object) {
+    return std::nullopt;
+  }
+  return object_pane(*rows);
+}
+
+void BatControlWnd::press_areas(std::vector<PressArea>& out) const {
+  GWindow::press_areas(out);
+  if (const std::optional<Pane> picture = planet_picture()) {
+    out.push_back(PressArea{*picture, true});
+  }
+}
+
 void BatControlWnd::activate(int a, int b) {
   game::Session* s = core();
   ListBox* rows = list();
@@ -598,7 +616,7 @@ void BatControlWnd::draw(int mode) {
   int frame = kFrameSystem;
   if (list_mode_ == kListGizmos || list_mode_ == kListOrbital) {
     if (ListBox* rows = list()) {
-      const Pane rect{rows->pane().x0, 7, rows->pane().x1, rows->line_height() + 8};
+      const Pane rect = object_pane(*rows);
       if (selection_.kind == kObjectShip || selection_.kind == kObjectPlanet) {
         draw_object_item(rect, selection_.object, list_mode_ == kListOrbital, false);
       }
@@ -814,6 +832,18 @@ bool BatControlWnd::handle_event(int type, int a, int b) {
       }
       return true;
     }
+    case kEventLeftClick:
+    case kEventHelpClick:
+      if (const std::optional<Pane> picture = planet_picture();
+          picture && a >= picture->x0 && a <= picture->x1 && b >= picture->y0 && b <= picture->y1) {
+        if (type == kEventLeftClick) {
+          view->open_selected_planet();
+        } else if (!view->help().starts_with('0')) {
+          wm_.post_message(kMessageHelp, 0, kHelpTopic, view->help());
+        }
+        return true;
+      }
+      return GWindow::handle_event(type, a, b);
     case kEventListPick:
       list_pick(a, b);
       return true;

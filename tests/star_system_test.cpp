@@ -78,6 +78,7 @@ TEST_CASE("the original's battle effects played frame by frame", "[star_system][
 namespace {
 
 constexpr int kScreenStarSystem = 16;
+constexpr int kScreenPlanet = 17;
 
 // Returns the index of the star named `name`.
 game::StarIndex find_star(const game::Cosmos& c, std::string_view name) {
@@ -270,6 +271,71 @@ TEST_CASE("a move ordered with the two clicks of the view", "[star_system]") {
   CHECK(frigate.position != start);
   CHECK(frigate.power < power);
   CHECK(r.panel().battle().player_turn());
+}
+
+TEST_CASE("the panel's planet picture opens the planet as a second click on it in the view does", "[star_system]") {
+  OA_REQUIRE_GAME_FILES(files);
+  // A point of the panel's top: the selected object's picture (474, 7)-(632,
+  // 92), else the star's title.
+  constexpr int kPictureX = 553;
+  constexpr int kPictureY = 30;
+  // The planet screen opened from the System Display, its planet selected,
+  // and the galaxy's selected planet before.
+  struct Opened {
+    int screen;
+    std::vector<int> history;
+    game::PlanetIndex planet;
+    bool operator==(const Opened&) const = default;
+  };
+  // Picks the player's planet in the list (row 0), then opens it with
+  // `open`.
+  const auto open_with = [&](const auto& open) {
+    SystemRig r(files, false);
+    r.cosmos().selected_planet = game::kNone;
+    r.rig.click(kListX, list_row_y(0));
+    REQUIRE(r.panel().list_mode() == BatControlWnd::kListOrbital);
+    REQUIRE(r.panel().selection().kind == BatControlWnd::kObjectPlanet);
+    const auto planet = static_cast<game::PlanetIndex>(r.panel().selection().object);
+    open(r, planet);
+    r.rig.pass();
+    CHECK(r.cosmos().selected_planet == planet);
+    return Opened{r.rig.wm.current_screen(), r.rig.wm.history(), r.cosmos().selected_planet};
+  };
+  // The original's way: the selected planet clicked in the view.
+  const Opened by_view = open_with([](SystemRig& r, game::PlanetIndex planet) {
+    BatModeWnd& v = r.view();
+    const int i = v.find_item(BatModeWnd::ItemKind::kPlanet, planet);
+    REQUIRE(i == v.selected());
+    const BatModeWnd::Item& item = v.items()[static_cast<std::size_t>(i)];
+    r.rig.move(item.x + v.pane().x0, item.y + v.pane().y0);
+    REQUIRE(v.hovered() == i);
+    r.rig.click(item.x + v.pane().x0, item.y + v.pane().y0);
+  });
+  CHECK(by_view.screen == kScreenPlanet);
+  CHECK(by_view.history.back() == kScreenStarSystem);
+  // The picture: the same, as do 5 pixels around it.
+  CHECK(open_with([](SystemRig& r, game::PlanetIndex) { r.rig.click(kPictureX, kPictureY); }) == by_view);
+  CHECK(open_with([](SystemRig& r, game::PlanetIndex) { r.rig.click(kPictureX, 2); }) == by_view);
+
+  // No planet selected: the panel's top does nothing (the original's).
+  SystemRig r(files, false);
+  r.rig.click(kPictureX, kPictureY);
+  r.rig.pass();
+  CHECK(r.rig.wm.current_screen() == kScreenStarSystem);
+  // A ship selected (its picture there): nothing either.
+  r.rig.click(kListX, list_row_y(1));
+  REQUIRE(r.panel().selection().kind == BatControlWnd::kObjectShip);
+  r.rig.click(kPictureX, kPictureY);
+  r.rig.pass();
+  CHECK(r.rig.wm.current_screen() == kScreenStarSystem);
+  // The planet selected but a click in the view would target it: nothing.
+  SystemRig targeting(files, false);
+  targeting.rig.click(kListX, list_row_y(0));
+  REQUIRE(targeting.panel().selection().kind == BatControlWnd::kObjectPlanet);
+  targeting.view().set_state(BatModeWnd::State::kTargeting);
+  targeting.rig.click(kPictureX, kPictureY);
+  targeting.rig.pass();
+  CHECK(targeting.rig.wm.current_screen() == kScreenStarSystem);
 }
 
 TEST_CASE("leaving the System Display during an effect applies the action", "[star_system]") {

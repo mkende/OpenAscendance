@@ -171,6 +171,13 @@ class BatModeWnd final : public GWindow {
   void effect_tick();
   // Selects the item of the BatControlWnd's selection (message 0x53).
   void select_from_control();
+  // The remake's planet picture of the panel (`BatControlWnd`): whether a
+  // click on the view's selected item would open its planet screen (a
+  // planet selected, no move, targeting or animation under way), and that
+  // click: its sound, the planet screen opened as `click_item` does, the
+  // view refreshed.
+  bool can_open_selected_planet() const;
+  void open_selected_planet();
 
   State state() const { return state_; }
   void set_state(State state) { state_ = state; }
@@ -197,6 +204,9 @@ class BatModeWnd final : public GWindow {
   };
 
   BatControlWnd* control() const;
+  // A click on the selected planet `planet` (`click_item`): it becomes the
+  // galaxy's selected planet and the planet screen is pushed.
+  void open_planet_screen(std::int32_t planet);
   game::Session* core() const { return wm_.services().game.core(); }
   // `BatModeWnd_init` (0x16120): `batfx.txt`.
   void load_effects();
