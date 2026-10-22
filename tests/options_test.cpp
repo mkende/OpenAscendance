@@ -257,7 +257,8 @@ TEST_CASE("options.cfg: the settings' text round-trips; bad lines are ignored", 
   CHECK(load_options(file) == set);
 }
 
-TEST_CASE("the options screen: OK applies and saves the settings, Cancel and Esc leave them", "[screens][content]") {
+TEST_CASE("the options screen: a pick applies at once, Cancel reverts, OK and Esc keep and save",
+          "[screens][content]") {
   OA_REQUIRE_GAME_FILES(files);
   TempDir dir("oa_options");
   test::UiRig rig(files, nullptr, dir.path);
@@ -275,19 +276,27 @@ TEST_CASE("the options screen: OK applies and saves the settings, Cancel and Esc
   for (const Row row : {kVariant, kDisplay, kScaling}) {
     rig.click(choice_x(1), row_y(row));
   }
+  // In force at once.
+  CHECK(rig.game.new_game_variant() == game::Variant::kAntagonizer);
+  CHECK(display.fullscreen());
+  CHECK(display.scaling() == Scaling::kSharp);
   rig.click(kCancelX, kButtonsY);
   CHECK(rig.wm.current_screen() == 0);
   CHECK(options == RemakeOptions{});
+  CHECK(rig.game.new_game_variant() == game::Variant::kStandard);
+  CHECK_FALSE(display.fullscreen());
+  CHECK(display.scaling() == Scaling::kSmooth);
   CHECK_FALSE(rig.sound.music_muted());
   CHECK(rig.sound.sfx_muted());
   CHECK_FALSE(std::filesystem::exists(file));
 
-  // Opened again: the picks were forgotten. Esc cancels too.
+  // Opened again: the picks were reverted. Esc (as Back) keeps and saves.
   rig.click(318, options_y());
   rig.click(choice_x(1), row_y(kVariant));
   rig.key(SDLK_ESCAPE);
   CHECK(rig.wm.current_screen() == 0);
-  CHECK(rig.game.new_game_variant() == game::Variant::kStandard);
+  CHECK(rig.game.new_game_variant() == game::Variant::kAntagonizer);
+  CHECK(load_options(file).variant == game::Variant::kAntagonizer);
 
   rig.click(318, options_y());
   for (const Row row : {kVariant, kDisplay, kScaling}) {
@@ -309,13 +318,14 @@ TEST_CASE("the options screen: OK applies and saves the settings, Cancel and Esc
   REQUIRE(cfg.size() == 12);
   CHECK(cfg.substr(0, 8) == std::string("\xff\xff\xff\xff\0\0\0\0", 8));
 
-  // Enter is OK; the screen shows the settings in force (the window's).
+  // Enter is OK; the screen shows the settings in force (the window's), and
+  // leaving it unchanged changes nothing.
   display.set_fullscreen(false);
   rig.click(318, options_y());
   rig.key(SDLK_RETURN);
   CHECK(rig.wm.current_screen() == 0);
-  CHECK_FALSE(options.fullscreen);
-  CHECK(options.variant == game::Variant::kAntagonizer);
+  CHECK(options == expected);
+  CHECK_FALSE(display.fullscreen());
 }
 
 // The level a volume slider of `row` shows (`options_wnd.cpp`: the bar
@@ -432,12 +442,13 @@ TEST_CASE("the options screen's volume sliders: click, drag, wheel and keys, hea
   CHECK(options == RemakeOptions{});
   CHECK_FALSE(std::filesystem::exists(file));
 
-  // Esc too.
+  // Esc keeps them.
   rig.click(318, options_y());
   rig.click(slider_x(25), row_y(kMusic));
   rig.key(SDLK_ESCAPE);
   CHECK(rig.wm.current_screen() == 0);
-  CHECK(rig.sound.music_level() == 100);
+  CHECK(rig.sound.music_level() == 25);
+  CHECK(load_options(file).music_volume == 25);
 
   // OK keeps them: the levels in options.cfg, a muted music in ascend.cfg.
   rig.click(318, options_y());

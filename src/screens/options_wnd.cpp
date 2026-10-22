@@ -96,7 +96,7 @@ endtext
 pos 0 15
 flags TJ_HC
 text
-Pick a setting in each row, then OK (Enter) keeps them and Cancel (Esc) leaves them as they were. Shift and a click on a row tells more about it.
+Each setting applies as soon as it is picked. OK keeps them, Cancel puts back those in force when this screen was opened. Shift and a click on a row tells more about it.)" OA_KEY_HINT("Enter and Esc keep them too.") R"(
 endtext
 pos 5 50
 button
@@ -180,7 +180,7 @@ endtext
 pos 0 15
 flags TJ_HC
 text
-Keeps these settings and goes back to the opening menu (also Enter). A new game variant applies to the next new game.
+Keeps these settings and goes back to the opening menu. A new game variant applies to the next new game.)" OA_KEY_HINT("Enter and Esc do the same.") R"(
 endtext
 pos 5 50
 button
@@ -194,7 +194,7 @@ endtext
 pos 0 15
 flags TJ_HC
 text
-Goes back to the opening menu without changing the settings (also Esc).
+Puts back the settings in force when this screen was opened and goes back to the opening menu.
 endtext
 pos 5 50
 button
@@ -506,13 +506,14 @@ class OptionsWnd final : public GWindow {
     switch (type) {
       case kEventActivate:
         read_settings();
-        applied_ = false;
+        cancelled_ = false;
         wm_.set_timer(id_, kMessageSyncSound, 0, 0, 0);
         return GWindow::handle_event(type, a, b);
       case kEventDeactivate:
-        if (!applied_) {
-          // Cancel, Esc, Back: the volumes heard before.
-          restore_sound();
+        if (cancelled_) {
+          restore();
+        } else {
+          save();
         }
         return GWindow::handle_event(type, a, b);
       case kEventHelpClick:
@@ -526,15 +527,16 @@ class OptionsWnd final : public GWindow {
           return false;
         }
         wm_.services().sound.play_sfx(kClickSound);
-        apply();
+        wm_.go_back();
         return true;
       case kMessagePick:
         pick(static_cast<std::size_t>(a), b);
         return true;
       case kMessageOk:
-        apply();
+        wm_.go_back();
         return true;
       case kMessageCancel:
+        cancelled_ = true;
         wm_.go_back();
         return true;
       case kMessageLevel:
@@ -626,6 +628,8 @@ class OptionsWnd final : public GWindow {
     const Scaling scaling = context_.display != nullptr ? context_.display->scaling() : o.scaling;
     select(kRowDisplay, fullscreen ? 1 : 0);
     select(kRowScaling, scaling == Scaling::kSharp ? 1 : 0);
+    saved_options_ = o;
+    saved_display_ = DisplayState{.variant = variant, .fullscreen = fullscreen, .scaling = scaling};
     const SoundSystem& sound = wm_.services().sound;
     saved_sound_ = SoundState{.music_muted = sound.music_muted(),
                               .sfx_muted = sound.sfx_muted(),
@@ -663,14 +667,7 @@ class OptionsWnd final : public GWindow {
     }
   }
 
-  void restore_sound() {
-    SoundSystem& sound = wm_.services().sound;
-    sound.set_music_muted(saved_sound_.music_muted);
-    sound.set_sfx_muted(saved_sound_.sfx_muted);
-    sound.set_music_level(saved_sound_.music_level);
-    sound.set_sfx_level(saved_sound_.sfx_level);
-  }
-
+  // A choice applied at once.
   void pick(std::size_t row, int choice) {
     if (row >= rows_.size() || selected_[row] == choice) {
       return;
@@ -679,31 +676,57 @@ class OptionsWnd final : public GWindow {
     for (RemakeButton* button : rows_[row]) {
       button->draw(kDrawNormal);
     }
-  }
-
-  // OK: the settings applied and saved, back to the menu.
-  void apply() {
     RemakeOptions& o = *context_.options;
     o.variant = game::kVariants.at(static_cast<std::size_t>(selected_[kRowVariant])).variant;
     o.fullscreen = selected_[kRowDisplay] == 1;
     o.scaling = selected_[kRowScaling] == 1 ? Scaling::kSharp : Scaling::kSmooth;
-    wm_.services().game.set_new_game_variant(o.variant);
+    apply(DisplayState{.variant = o.variant, .fullscreen = o.fullscreen, .scaling = o.scaling});
+  }
+
+  // The settings the choice rows put in force (the sound is the sliders').
+  struct DisplayState {
+    game::Variant variant = game::Variant::kStandard;
+    bool fullscreen = false;
+    Scaling scaling = Scaling::kSmooth;
+  };
+
+  void apply(const DisplayState& d) {
+    wm_.services().game.set_new_game_variant(d.variant);
     if (context_.display != nullptr) {
-      if (context_.display->fullscreen() != o.fullscreen) {
-        context_.display->set_fullscreen(o.fullscreen);
+      if (context_.display->fullscreen() != d.fullscreen) {
+        context_.display->set_fullscreen(d.fullscreen);
       }
-      context_.display->set_scaling(o.scaling);
+      context_.display->set_scaling(d.scaling);
     }
-    // The sound is already as the sliders show it.
+  }
+
+  // Leaving by OK, Enter, Esc or Back: the settings in force saved, when
+  // they changed.
+  void save() {
+    RemakeOptions& o = *context_.options;
     const SoundSystem& sound = wm_.services().sound;
     o.music_volume = sound.music_level();
     o.sfx_volume = sound.sfx_level();
-    applied_ = true;
+    const bool mutes_changed =
+        sound.music_muted() != saved_sound_.music_muted || sound.sfx_muted() != saved_sound_.sfx_muted;
+    if (o == saved_options_ && !mutes_changed) {
+      return;
+    }
     if (!context_.file.empty()) {
       save_options(context_.file, o);
     }
     wm_.save_config();
-    wm_.go_back();
+  }
+
+  // Cancel: the settings and the sound of the screen's entry back in force.
+  void restore() {
+    *context_.options = saved_options_;
+    apply(saved_display_);
+    SoundSystem& sound = wm_.services().sound;
+    sound.set_music_muted(saved_sound_.music_muted);
+    sound.set_sfx_muted(saved_sound_.sfx_muted);
+    sound.set_music_level(saved_sound_.music_level);
+    sound.set_sfx_level(saved_sound_.sfx_level);
   }
 
   OptionsContext context_;
@@ -715,7 +738,9 @@ class OptionsWnd final : public GWindow {
   // The rows' sliders (null for the choice rows).
   std::vector<VolumeSlider*> sliders_;
 
-  // The sound at the screen's entry, back on leaving it without OK.
+  // The settings and the sound at the screen's entry, back on Cancel.
+  RemakeOptions saved_options_;
+  DisplayState saved_display_;
   struct SoundState {
     bool music_muted = false;
     bool sfx_muted = false;
@@ -723,7 +748,7 @@ class OptionsWnd final : public GWindow {
     int sfx_level = Mixer::kMaxLevel;
   };
   SoundState saved_sound_;
-  bool applied_ = false;
+  bool cancelled_ = false;
 };
 
 // The opening menu's two layouts, applied when the menu is entered.
