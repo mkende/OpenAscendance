@@ -1682,6 +1682,19 @@ int WinMgr::view_window_at(int x, int y, bool mouse) const {
   return 0;
 }
 
+bool WinMgr::skippable_animation() const {
+  if (modal_ || current_ < 0) {
+    return false;
+  }
+  for (const int id : screens_.at(static_cast<std::size_t>(current_)).slots) {
+    const GWindow* w = window(id);
+    if (w != nullptr && w->shown() && w->plays_skippable_animation()) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void WinMgr::route_wheel(int x, int y, int notches) {
   if (GWindow* w = window(view_window_at(x, y, false))) {
     w->view_wheel(notches);

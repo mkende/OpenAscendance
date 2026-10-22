@@ -63,7 +63,9 @@ Extended variant) are planned.
 The game runs in full screen in landscape. The mouse pointer is replaced by
 your finger:
 
-- **Tap**: a click (the left mouse button).
+- **Tap**: a click (the left mouse button). While a move, a shot or another
+  effect plays on a star system, a tap skips it, as Space does, and clicks
+  nothing.
 - **Long press**: the right mouse button, held until you lift your finger
   (for example, a long press on a rotation button keeps the view turning;
   tap the button again to stop it).

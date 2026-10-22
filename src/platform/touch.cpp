@@ -45,6 +45,11 @@ void TouchMapper::feed(const InputEvent& event) {
     case EventType::kFingerDown:
       if (phase_ == Phase::kIdle) {
         fingers_ = 1;
+        if (skip_query_ && skip_query_()) {
+          input_.feed(InputEvent{.type = EventType::kKeyDown, .key = ' '});
+          phase_ = Phase::kDone;
+          return;
+        }
         first_ = finger;
         second_.reset();
         start_x_ = finger.x;

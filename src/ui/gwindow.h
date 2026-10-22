@@ -110,6 +110,9 @@ class GWindow {
   virtual void view_end() {}
   // The zoom of one wheel notch on the 3D views, as a pinch's ratio.
   static constexpr float kWheelZoom = 1.1F;
+  // Whether the window plays an animation that Space skips (a remake
+  // addition: a finger put down then skips it, `WinMgr::skippable_animation`).
+  virtual bool plays_skippable_animation() const { return false; }
 
   // The `windows.txt` TYPE (-1 for a window made by the code).
   int type() const { return type_; }

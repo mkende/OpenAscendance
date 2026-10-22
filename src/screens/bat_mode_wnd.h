@@ -147,6 +147,8 @@ class BatModeWnd final : public GWindow {
   void view_drag(int dx, int dy) override;
   void view_pinch(float ratio) override;
   void view_wheel(int notches) override;
+  // The effects (state 4), which Space, Enter and a right click skip.
+  bool plays_skippable_animation() const override { return state_ == State::kAnimating; }
 
   // `BatModeWnd_build_scene` (0x187ec).
   void build_scene();

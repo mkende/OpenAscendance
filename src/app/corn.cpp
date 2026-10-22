@@ -6,9 +6,11 @@
 
 #include <ctime>
 #include <deque>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <stdexcept>
+#include <utility>
 
 #include "assets/cfile.h"
 #include "assets/gif.h"
@@ -95,6 +97,8 @@ class Host final : public DisplayControl {
   // `GSystem_set_pointer`: the `MOUSE.SHP` frame drawn.
   void set_pointer_frame(int frame) { pointer_frame_ = frame; }
   void warp_pointer(int x, int y) { input_.warp(x, y); }
+  // `TouchMapper::set_skip_query`.
+  void set_skip_query(std::function<bool()> query) { touch_.set_skip_query(std::move(query)); }
   // The last frame shown, with the pointer.
   const Image8& shown_frame() const { return frame_; }
 
@@ -299,6 +303,7 @@ void run(const GameOptions& options, const GameFiles& files) {
                                factory);
   WinMgr& wm = *wm_holder;
   wm.setup_race_shapes();
+  host.set_skip_query([&] { return wm.skippable_animation(); });
   if (!options.trace) {
     // A trace of the original clicks on the original opening menu.
     install_options(

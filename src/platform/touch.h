@@ -9,10 +9,15 @@
 //   with the finger (the original's continuous actions and its cancels).
 // - Moved past `kSlop` first: a view drag, without any click.
 // - A second finger: a pinch, without any click, until every finger is up.
+// - Put down while an animation that Space skips plays (`set_skip_query`):
+//   Space, at once, and nothing else until every finger is up (the tap
+//   never clicks what is under it).
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <optional>
+#include <utility>
 
 #include "platform/input.h"
 #include "platform/input_event.h"
@@ -32,6 +37,9 @@ class TouchMapper {
   // Takes a finger event (`kFingerDown` .. `kFingerCancel`); others are
   // ignored.
   void feed(const InputEvent& event);
+  // Sets the query of whether an animation that Space skips plays (none:
+  // never).
+  void set_skip_query(std::function<bool()> query) { skip_query_ = std::move(query); }
   // Presses the right button once a finger has been held `kLongPress`
   // (`now_ms` on the clock of the events' `time_ms`).
   void update(std::uint64_t now_ms);
@@ -59,6 +67,7 @@ class TouchMapper {
   void finish(bool tap);
 
   Input& input_;
+  std::function<bool()> skip_query_;
   Phase phase_ = Phase::kIdle;
   Finger first_;
   std::optional<Finger> second_;

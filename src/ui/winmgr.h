@@ -208,6 +208,10 @@ class WinMgr final : public WindowStateIo {
   // gesture at (x, y) (`GWindow::takes_view_gesture`), 0 for none or in a
   // modal loop or help mode.
   int view_window_at(int x, int y, bool mouse) const;
+  // Whether a shown window of the current screen plays an animation that
+  // Space skips (`GWindow::plays_skippable_animation`), not in a modal loop:
+  // a finger put down is then Space (a remake addition, `TouchMapper`).
+  bool skippable_animation() const;
   // The exit corner under the pointer (`+0x24da8`): 0..3, -1 for none.
   int exit_corner() const { return exit_corner_; }
   // The auto next turn (`+0x24d9c`, NEXTTURNCONT, message 8): a next day is

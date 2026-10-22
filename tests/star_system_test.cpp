@@ -19,6 +19,7 @@
 #include "core_session.h"
 #include "game/session.h"
 #include "game_data.h"
+#include "platform/touch.h"
 #include "replay_rig.h"
 #include "screens/bat_control_wnd.h"
 #include "screens/bat_mode_wnd.h"
@@ -286,6 +287,51 @@ TEST_CASE("leaving the System Display during an effect applies the action", "[st
   CHECK(r.rig.wm.current_screen() != kScreenStarSystem);
   CHECK(frigate.position != start);
   CHECK(r.s().screen != kScreenStarSystem);
+}
+
+TEST_CASE("a finger put down during an effect skips it as Space does, and clicks nothing", "[star_system]") {
+  OA_REQUIRE_GAME_FILES(files);
+  // The same move in two games: skipped by Space in one, by a tap on a row
+  // of the list (a click there picks the row) in the other.
+  SystemRig by_key(files, true);
+  SystemRig by_tap(files, true);
+  TouchMapper touch(by_tap.rig.input);
+  touch.set_skip_query([&] { return by_tap.rig.wm.skippable_animation(); });
+  for (SystemRig* r : {&by_key, &by_tap}) {
+    r->rig.click(kListX, list_row_y(1));
+    r->rig.move(150, 300);
+    r->rig.click(150, 300);
+    r->rig.move(150, 200);
+    r->rig.click(150, 200);
+    REQUIRE(r->view().state() == BatModeWnd::State::kAnimating);
+    r->rig.pass();
+    REQUIRE(r->rig.wm.skippable_animation());
+  }
+  by_key.rig.key(SDLK_SPACE);
+  touch.feed(InputEvent{.type = EventType::kFingerDown, .x = kListX, .y = list_row_y(0), .finger = 1});
+  by_tap.rig.pass();
+  touch.feed(InputEvent{.type = EventType::kFingerUp, .x = kListX, .y = list_row_y(0), .finger = 1, .time_ms = 50});
+  for (int i = 0; i < 3; ++i) {
+    by_key.rig.pass();
+    by_tap.rig.pass();
+    CHECK(!by_tap.rig.input.state().left_changed);
+    CHECK(!by_tap.rig.input.state().right_changed);
+  }
+  CHECK(by_key.view().state() == BatModeWnd::State::kIdle);
+  CHECK(by_tap.view().state() == BatModeWnd::State::kIdle);
+  CHECK(!by_tap.rig.wm.skippable_animation());
+  CHECK(by_tap.cosmos().ships[kFrigate1].position == by_key.cosmos().ships[kFrigate1].position);
+  CHECK(by_tap.panel().list_mode() == by_key.panel().list_mode());
+  CHECK(by_tap.panel().selection().kind == by_key.panel().selection().kind);
+  CHECK(by_tap.panel().selection().object == by_key.panel().selection().object);
+  CHECK(by_tap.rig.input.state().x != kListX);  // the pointer stayed
+
+  // Without an effect, a tap clicks again.
+  touch.feed(InputEvent{.type = EventType::kFingerDown, .x = kListX, .y = list_row_y(1), .finger = 2});
+  by_tap.rig.pass();
+  touch.feed(InputEvent{.type = EventType::kFingerUp, .x = kListX, .y = list_row_y(1), .finger = 2, .time_ms = 50});
+  by_tap.rig.pass();
+  CHECK(by_tap.rig.input.state().left_changed);
 }
 
 TEST_CASE("a weapon out of range cannot be fired", "[star_system]") {
