@@ -4,6 +4,7 @@
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_timer.h>
 
+#include <cstdint>
 #include <ctime>
 #include <deque>
 #include <functional>
@@ -57,6 +58,11 @@ struct SdlQuitGuard {
 // (the MOUSE module's), not drawn while the fingers move it.
 class Host final : public DisplayControl {
  public:
+  // The least time between two frames shown with the pointer moved between
+  // the passes: about a 60 Hz display's refresh, a little less, so that the
+  // frame is sent just before the refresh it waits for.
+  static constexpr std::uint64_t kPointerRefreshNs = 15'500'000;
+
   Host(const GameOptions& options, const GameFiles& files)
       : options_(options),
         headless_(options.screenshot.has_value()),
@@ -125,6 +131,24 @@ class Host final : public DisplayControl {
     touch_.update(SDL_GetTicks());
   }
 
+  // Waits a little, as the main loop does until its next pass. Meanwhile the
+  // system's events are read (the game sees them at its next poll, as it
+  // would without) and, when the mouse has moved, the last frame is shown
+  // again with the pointer where the mouse is now, at most once a display
+  // refresh: the pointer then follows the mouse at the display's rate
+  // rather than only at the passes (one every 3 ticks of 100 Hz, which fall
+  // unevenly on the display's refreshes). The frames the game shows and
+  // reads (`shown_frame`) keep the pointer it polled.
+  void idle() {
+    if (!headless_) {
+      while (const std::optional<InputEvent> e = display_.poll()) {
+        take(*e);
+      }
+      refresh_pointer();
+    }
+    clock_.idle();
+  }
+
   // A lifecycle event: the game kept in `resume.gam` by `save` as the
   // program goes to the background (where Android may kill it without
   // notice), runs low on memory or ends; the clock and the sound stopped
@@ -166,21 +190,44 @@ class Host final : public DisplayControl {
   // Shows the screen with the DAC and the pointer. In a headless run, saves
   // the frame and throws `ScreenshotTaken` once it is the last.
   void present(const GSystem& gs) {
-    frame_ = gs.screen();
-    if (pointer_shown_ && !touch_pointer_) {
-      const InputState& s = input_.state();
-      vfx_shape_draw(frame_, GSystem::kScreenPane, pointer_->at(static_cast<std::size_t>(pointer_frame_)), s.x, s.y);
-    }
-    const Palette palette = Palette::from_vga(gs.dac());
-    display_.present(frame_, palette);
+    background_ = gs.screen();
+    frame_ = background_;
+    const InputState& s = input_.state();
+    draw_pointer(frame_, s.x, s.y);
+    palette_ = Palette::from_vga(gs.dac());
+    display_.present(frame_, palette_);
+    presented_ns_ = SDL_GetTicksNS();
     ++frames_;
     if (headless_ && frames_ >= options_.frames) {
-      save_bmp(*options_.screenshot, frame_, palette);
+      save_bmp(*options_.screenshot, frame_, palette_);
       throw ScreenshotTaken();
     }
   }
 
  private:
+  // Draws the pointer at (x, y) on `frame`, when it is shown.
+  void draw_pointer(Image8& frame, int x, int y) {
+    pointer_x_ = x;
+    pointer_y_ = y;
+    if (pointer_shown_ && !touch_pointer_) {
+      vfx_shape_draw(frame, GSystem::kScreenPane, pointer_->at(static_cast<std::size_t>(pointer_frame_)), x, y);
+    }
+  }
+
+  // Shows the last frame again with the pointer where the mouse is now
+  // (`idle`).
+  void refresh_pointer() {
+    const auto [x, y] = input_.pointer();
+    if (frames_ == 0 || !pointer_shown_ || touch_pointer_ || (x == pointer_x_ && y == pointer_y_) ||
+        SDL_GetTicksNS() - presented_ns_ < kPointerRefreshNs) {
+      return;
+    }
+    refreshed_ = background_;
+    draw_pointer(refreshed_, x, y);
+    display_.present(refreshed_, palette_);
+    presented_ns_ = SDL_GetTicksNS();
+  }
+
   // One input event: the quit noted, fingers through the touch mapper.
   void take(const InputEvent& e) {
     switch (e.type) {
@@ -216,7 +263,17 @@ class Host final : public DisplayControl {
   std::unique_ptr<AudioDevice> audio_;
   std::unique_ptr<ShapeTable> pointer_;
   std::deque<InputEvent> pending_;
+  // The last frame shown by the game: without the pointer, with it, and
+  // its palette; the frame shown again with the pointer moved.
+  Image8 background_;
   Image8 frame_;
+  Palette palette_;
+  Image8 refreshed_;
+  // Where the pointer was last drawn, and when the last frame was shown
+  // (`SDL_GetTicksNS`).
+  int pointer_x_ = 0;
+  int pointer_y_ = 0;
+  std::uint64_t presented_ns_ = 0;
   int frames_ = 0;
   bool pointer_shown_ = false;
   int pointer_frame_ = 0;
@@ -287,7 +344,7 @@ void run(const GameOptions& options, const GameFiles& files) {
                                           .user_dir = options.user_dir,
                                           .now_us = [&] { return host.clock().micros(); },
                                           .ticks = [&] { return host.clock().ticks(); },
-                                          .idle = [&] { host.clock().idle(); },
+                                          .idle = [&] { host.idle(); },
                                           .show_pointer = [&](bool shown) { host.set_pointer_shown(shown); },
                                           .set_pointer_frame = [&](int frame) { host.set_pointer_frame(frame); },
                                           .poll_input = [&]() -> const InputState& {

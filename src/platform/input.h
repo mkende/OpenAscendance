@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <deque>
+#include <utility>
 
 #include "core/image.h"
 #include "platform/input_event.h"
@@ -91,6 +92,10 @@ class Input {
   const InputState& poll();
 
   const InputState& state() const { return state_; }
+
+  // The pointer's position as fed, which the next poll reports (the game
+  // reads `state()`'s).
+  std::pair<int, int> pointer() const { return {mouse_x_, mouse_y_}; }
 
   // `MOUSE_force_move`: the pointer moved to (x, y) without a move event
   // (a replayed trace's).

@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 #include "app/command_line.h"
@@ -283,6 +284,22 @@ TEST_CASE("mouse: the wheel's notches add up until the poll, the pointer where t
   input.poll();
   CHECK(s.gesture.started);
   CHECK(s.gesture.mouse);
+}
+
+TEST_CASE("mouse: the pointer drawn between passes follows the moves at once, the game's at the poll", "[platform]") {
+  Input input;
+  input.poll();
+  const InputState& s = input.poll();
+  input.feed(InputEvent{.type = EventType::kMouseMove, .x = 100, .y = 50});
+  CHECK(input.pointer() == std::pair{100, 50});
+  input.feed(InputEvent{.type = EventType::kMouseMove, .x = 700, .y = -3});
+  CHECK(input.pointer() == std::pair{kScreenWidth - 1, 0});  // kept on the screen
+  CHECK(s.x == kScreenWidth / 2);
+  CHECK(!s.moved);
+  input.poll();
+  CHECK(s.x == kScreenWidth - 1);
+  CHECK(s.y == 0);
+  CHECK(s.moved);
 }
 
 TEST_CASE("the 4:3 letterbox: centred, clear of the display cutout", "[platform]") {
