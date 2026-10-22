@@ -34,6 +34,26 @@ int Mixer::music_volume() const {
   return music_.volume;
 }
 
+void Mixer::set_music_level(int percent) {
+  const std::scoped_lock lock(mutex_);
+  music_level_ = std::clamp(percent, 0, kMaxLevel);
+}
+
+int Mixer::music_level() const {
+  const std::scoped_lock lock(mutex_);
+  return music_level_;
+}
+
+void Mixer::set_sfx_level(int percent) {
+  const std::scoped_lock lock(mutex_);
+  sfx_level_ = std::clamp(percent, 0, kMaxLevel);
+}
+
+int Mixer::sfx_level() const {
+  const std::scoped_lock lock(mutex_);
+  return sfx_level_;
+}
+
 void Mixer::play_sfx(int voice, SampleData sample, int volume) {
   const std::scoped_lock lock(mutex_);
   Voice& v = sfx_.at(static_cast<std::size_t>(voice));
@@ -60,24 +80,26 @@ void Mixer::render(std::span<std::int16_t> out) {
   std::vector<std::int32_t> acc(out.size(), 0);
   {
     const std::scoped_lock lock(mutex_);
-    const auto mix = [&](Voice& v) {
+    const auto mix = [&](Voice& v, int level) {
       if (!v.playing) {
         return;
       }
       const std::vector<std::uint8_t>& d = *v.data;
       const std::size_t n = std::min(out.size(), d.size() - v.position);
       for (std::size_t i = 0; i < n; ++i) {
-        // 8-bit unsigned to 16-bit signed, scaled by the AIL volume.
-        acc[i] += (static_cast<std::int32_t>(d[v.position + i]) - 128) * 256 * v.volume / kMaxVolume;
+        // 8-bit unsigned to 16-bit signed, scaled by the AIL volume and the
+        // level (at most 127 * 256 * 127 * 100, within 32 bits).
+        acc[i] +=
+            (static_cast<std::int32_t>(d[v.position + i]) - 128) * 256 * v.volume * level / (kMaxVolume * kMaxLevel);
       }
       v.position += n;
       if (v.position >= d.size()) {
         v.playing = false;
       }
     };
-    mix(music_);
+    mix(music_, music_level_);
     for (Voice& v : sfx_) {
-      mix(v);
+      mix(v, sfx_level_);
     }
   }
   for (std::size_t i = 0; i < out.size(); ++i) {

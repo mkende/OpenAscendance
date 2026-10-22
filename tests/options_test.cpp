@@ -23,6 +23,7 @@
 #include "core_session.h"
 #include "game/save.h"
 #include "game_data.h"
+#include "platform/touch.h"
 #include "screen_shots.h"
 #include "screens/options_wnd.h"
 #include "test_dirs.h"
@@ -61,6 +62,9 @@ constexpr int kOkX = 340;
 constexpr int kCancelX = 527;
 constexpr int kButtonsY = 437;
 enum Row : int { kVariant, kDisplay, kScaling, kMusic, kSound };
+// The volume sliders of rows Music and Sound Effects (258..610, a level
+// from 0 at x 264 to 100 at x 604): the x of `level`, a multiple of 5.
+constexpr int slider_x(int level) { return 264 + level * 34 / 10; }
 
 class FakeDisplay final : public DisplayControl {
  public:
@@ -74,9 +78,12 @@ class FakeDisplay final : public DisplayControl {
   Scaling scaling_ = Scaling::kSmooth;
 };
 
-// Installs the options on `rig` and enters the opening menu again (the rig
-// starts on it with the original layout).
+// Installs the options on `rig`, the volumes of its settings applied as
+// `main` does, and enters the opening menu again (the rig starts on it with
+// the original layout).
 void install(test::UiRig& rig, OptionsContext context) {
+  rig.sound.set_music_level(context.options->music_volume);
+  rig.sound.set_sfx_level(context.options->sfx_volume);
   install_options(rig.wm, std::move(context));
   rig.wm.set_screen(kScreenOptions, false);
   rig.wm.set_screen(0, false);
@@ -221,12 +228,27 @@ TEST_CASE("options.cfg: the settings' text round-trips; bad lines are ignored", 
   // The full screen by default; a file's window kept.
   CHECK(defaults.fullscreen);
   CHECK_FALSE(parse_options("fullscreen=0\n").fullscreen);
-  const RemakeOptions set{.variant = game::Variant::kAntagonizer, .fullscreen = false, .scaling = Scaling::kSharp};
-  CHECK(format_options(set) == "variant=antagonizer\nfullscreen=0\nscaling=sharp\n");
+  // The music at the original's volume, the sound effects under it.
+  CHECK(defaults.music_volume == 100);
+  CHECK(defaults.sfx_volume == 60);
+  const RemakeOptions set{.variant = game::Variant::kAntagonizer,
+                          .fullscreen = false,
+                          .scaling = Scaling::kSharp,
+                          .music_volume = 0,
+                          .sfx_volume = 35};
+  CHECK(format_options(set) == "variant=antagonizer\nfullscreen=0\nscaling=sharp\nmusic_volume=0\nsfx_volume=35\n");
   CHECK(parse_options(format_options(set)) == set);
   CHECK(parse_options(format_options(defaults)) == defaults);
   CHECK(parse_options("# comment\r\n variant = antagonizer # Antagonizer\r\nwide=1\nfullscreen=yes\nscaling\n") ==
         RemakeOptions{.variant = game::Variant::kAntagonizer, .fullscreen = true, .scaling = Scaling::kSmooth});
+  // A file of an earlier version (no volumes): the defaults' volumes (the
+  // mute flags stay those of ascend.cfg).
+  CHECK(parse_options("variant=standard\nfullscreen=0\nscaling=sharp\n") ==
+        RemakeOptions{.fullscreen = false, .scaling = Scaling::kSharp, .music_volume = 100, .sfx_volume = 60});
+  // Volumes are whole percents.
+  CHECK(parse_options("music_volume=101\nsfx_volume=-1\n") == defaults);
+  CHECK(parse_options("music_volume=50%\nsfx_volume=0x10\nmusic_volume=\n") == defaults);
+  CHECK(parse_options("music_volume = 7\nsfx_volume=100\n") == RemakeOptions{.music_volume = 7, .sfx_volume = 100});
 
   TempDir dir("oa_options");
   const std::filesystem::path file = dir.path / kOptionsFile;
@@ -248,13 +270,11 @@ TEST_CASE("the options screen: OK applies and saves the settings, Cancel and Esc
 
   rig.click(318, options_y());
   REQUIRE(rig.wm.current_screen() == kScreenOptions);
-  // The current settings are selected: Sound Effects off.
   rig.move(choice_x(1), row_y(kVariant));
   test::write_shot(rig, "options_screen");
-  for (const Row row : {kVariant, kDisplay, kScaling, kMusic}) {
+  for (const Row row : {kVariant, kDisplay, kScaling}) {
     rig.click(choice_x(1), row_y(row));
   }
-  rig.click(choice_x(0), row_y(kSound));
   rig.click(kCancelX, kButtonsY);
   CHECK(rig.wm.current_screen() == 0);
   CHECK(options == RemakeOptions{});
@@ -270,10 +290,9 @@ TEST_CASE("the options screen: OK applies and saves the settings, Cancel and Esc
   CHECK(rig.game.new_game_variant() == game::Variant::kStandard);
 
   rig.click(318, options_y());
-  for (const Row row : {kVariant, kDisplay, kScaling, kMusic}) {
+  for (const Row row : {kVariant, kDisplay, kScaling}) {
     rig.click(choice_x(1), row_y(row));
   }
-  rig.click(choice_x(0), row_y(kSound));
   rig.click(kOkX, kButtonsY);
   CHECK(rig.wm.current_screen() == 0);
   const RemakeOptions expected{.variant = game::Variant::kAntagonizer, .fullscreen = true, .scaling = Scaling::kSharp};
@@ -282,12 +301,13 @@ TEST_CASE("the options screen: OK applies and saves the settings, Cancel and Esc
   CHECK(rig.game.new_game_variant() == game::Variant::kAntagonizer);
   CHECK(display.fullscreen());
   CHECK(display.scaling() == Scaling::kSharp);
-  CHECK(rig.sound.music_muted());
-  CHECK_FALSE(rig.sound.sfx_muted());
-  // ascend.cfg: the original's 12 bytes, the mute flags as 0 / -1.
+  CHECK_FALSE(rig.sound.music_muted());
+  CHECK(rig.sound.sfx_muted());
+  // ascend.cfg: the original's 12 bytes, the mute flags (effects, music) as
+  // 0 / -1.
   const std::string cfg = read_text(dir.path / "ascend.cfg");
   REQUIRE(cfg.size() == 12);
-  CHECK(cfg.substr(0, 8) == std::string("\0\0\0\0\xff\xff\xff\xff", 8));
+  CHECK(cfg.substr(0, 8) == std::string("\xff\xff\xff\xff\0\0\0\0", 8));
 
   // Enter is OK; the screen shows the settings in force (the window's).
   display.set_fullscreen(false);
@@ -296,6 +316,184 @@ TEST_CASE("the options screen: OK applies and saves the settings, Cancel and Esc
   CHECK(rig.wm.current_screen() == 0);
   CHECK_FALSE(options.fullscreen);
   CHECK(options.variant == game::Variant::kAntagonizer);
+}
+
+// The level a volume slider of `row` shows (`options_wnd.cpp`: the bar
+// 258..610 filled with the selected colour, hot or not, up to 264 + level *
+// 340 / 100), read on its top rows, off the caption.
+int shown_level(test::UiRig& rig, Row row) {
+  const int y = 72 + 60 * row + 2;
+  const auto filled = [&](int x) {
+    const std::uint8_t c = rig.wm.screen().at(x, y);
+    return c == kSelectedColor || c == kSelectedHotColor;
+  };
+  if (!filled(258)) {
+    return 0;
+  }
+  if (filled(610)) {
+    return 100;
+  }
+  int end = 258;
+  while (filled(end + 1)) {
+    ++end;
+  }
+  return ((end - 264) * 100 + 170) / 340;
+}
+
+TEST_CASE("the options screen's volume sliders: click, drag, wheel and keys, heard at once", "[screens][content]") {
+  OA_REQUIRE_GAME_FILES(files);
+  TempDir dir("oa_options");
+  test::UiRig rig(files, nullptr, dir.path);
+  RemakeOptions options;
+  const std::filesystem::path file = dir.path / kOptionsFile;
+  install(rig, OptionsContext{.options = &options, .file = file, .display = nullptr});
+  rig.sound.set_sfx_muted(true);
+
+  rig.click(318, options_y());
+  REQUIRE(rig.wm.current_screen() == kScreenOptions);
+  // The music at 100 %, the muted sound effects at 0.
+  CHECK(shown_level(rig, kMusic) == 100);
+  CHECK(shown_level(rig, kSound) == 0);
+
+  // A click sets the level under the pointer, heard at once.
+  rig.click(slider_x(40), row_y(kMusic));
+  CHECK(shown_level(rig, kMusic) == 40);
+  CHECK(rig.sound.music_level() == 40);
+  CHECK(rig.mixer.music_level() == 40);
+  CHECK_FALSE(rig.sound.music_muted());
+  // The sound effects unmuted at the new level, one played to hear it.
+  rig.mixer.stop_all_sfx();
+  rig.click(slider_x(80), row_y(kSound));
+  CHECK(shown_level(rig, kSound) == 80);
+  CHECK_FALSE(rig.sound.sfx_muted());
+  CHECK(rig.mixer.sfx_level() == 80);
+  CHECK(rig.mixer.sfx_playing(0));
+  // The ends of the bar are 0 and 100.
+  rig.click(611 - 3, row_y(kMusic));
+  CHECK(rig.sound.music_level() == 100);
+  rig.move(100, 400);
+  test::write_shot(rig, "options_volume");
+
+  // A drag of the mouse moves the level with the pointer, past the press.
+  rig.pass(
+      InputEvent{.type = EventType::kMouseDown, .x = slider_x(60), .y = row_y(kMusic), .button = MouseButton::kLeft});
+  CHECK(rig.sound.music_level() == 60);
+  for (const int level : {50, 30, 20}) {
+    rig.move(slider_x(level), row_y(kMusic) + 20);
+    CHECK(rig.sound.music_level() == level);
+  }
+  rig.pass(InputEvent{
+      .type = EventType::kMouseUp, .x = slider_x(20), .y = row_y(kMusic) + 20, .button = MouseButton::kLeft});
+  CHECK(shown_level(rig, kMusic) == 20);
+  // Dragged to the far left: muted, the level kept for Alt+M.
+  rig.pass(
+      InputEvent{.type = EventType::kMouseDown, .x = slider_x(20), .y = row_y(kMusic), .button = MouseButton::kLeft});
+  rig.move(100, row_y(kMusic));
+  rig.pass(InputEvent{.type = EventType::kMouseUp, .x = 100, .y = row_y(kMusic), .button = MouseButton::kLeft});
+  CHECK(shown_level(rig, kMusic) == 0);
+  CHECK(rig.sound.music_muted());
+  CHECK(rig.sound.music_level() == 20);
+
+  // A finger: a tap sets the level, a drag moves it from where it landed.
+  TouchMapper touch(rig.input);
+  const auto finger = [&](EventType type, int x, std::uint64_t ms) {
+    touch.feed(InputEvent{.type = type, .x = x, .y = row_y(kSound), .finger = 1, .time_ms = ms});
+    rig.pass();
+  };
+  finger(EventType::kFingerDown, slider_x(30), 0);
+  finger(EventType::kFingerUp, slider_x(30), 50);
+  rig.pass();
+  CHECK(rig.sound.sfx_level() == 30);
+  finger(EventType::kFingerDown, slider_x(30), 1000);
+  finger(EventType::kFingerMove, slider_x(45), 1050);
+  CHECK(rig.sound.sfx_level() == 45);
+  finger(EventType::kFingerMove, slider_x(70), 1100);
+  finger(EventType::kFingerUp, slider_x(70), 1150);
+  CHECK(rig.sound.sfx_level() == 70);
+  CHECK(shown_level(rig, kSound) == 70);
+
+  // The wheel and the arrow keys step the slider under the pointer by 5.
+  rig.pass(InputEvent{.type = EventType::kMouseWheel, .x = slider_x(50), .y = row_y(kSound), .wheel = 1});
+  CHECK(rig.sound.sfx_level() == 75);
+  rig.key(SDLK_LEFT);
+  rig.key(SDLK_LEFT);
+  CHECK(rig.sound.sfx_level() == 65);
+  CHECK(shown_level(rig, kSound) == 65);
+
+  // Cancel: the volumes heard before.
+  rig.click(kCancelX, kButtonsY);
+  CHECK(rig.wm.current_screen() == 0);
+  CHECK_FALSE(rig.sound.music_muted());
+  CHECK(rig.sound.music_level() == 100);
+  CHECK(rig.mixer.music_level() == 100);
+  CHECK(rig.sound.sfx_muted());
+  CHECK(rig.sound.sfx_level() == 60);
+  CHECK(rig.mixer.sfx_level() == 60);
+  CHECK(options == RemakeOptions{});
+  CHECK_FALSE(std::filesystem::exists(file));
+
+  // Esc too.
+  rig.click(318, options_y());
+  rig.click(slider_x(25), row_y(kMusic));
+  rig.key(SDLK_ESCAPE);
+  CHECK(rig.wm.current_screen() == 0);
+  CHECK(rig.sound.music_level() == 100);
+
+  // OK keeps them: the levels in options.cfg, a muted music in ascend.cfg.
+  rig.click(318, options_y());
+  rig.click(slider_x(85), row_y(kSound));
+  rig.click(slider_x(55), row_y(kMusic));
+  rig.pass(
+      InputEvent{.type = EventType::kMouseDown, .x = slider_x(55), .y = row_y(kMusic), .button = MouseButton::kLeft});
+  rig.move(100, row_y(kMusic));
+  rig.pass(InputEvent{.type = EventType::kMouseUp, .x = 100, .y = row_y(kMusic), .button = MouseButton::kLeft});
+  CHECK(rig.sound.music_muted());
+  rig.click(kOkX, kButtonsY);
+  CHECK(rig.wm.current_screen() == 0);
+  CHECK(options.music_volume == 55);
+  CHECK(options.sfx_volume == 85);
+  CHECK(load_options(file) == options);
+  CHECK(rig.sound.music_muted());
+  CHECK_FALSE(rig.sound.sfx_muted());
+  const std::string cfg = read_text(dir.path / "ascend.cfg");
+  REQUIRE(cfg.size() == 12);
+  CHECK(cfg.substr(0, 8) == std::string("\0\0\0\0\xff\xff\xff\xff", 8));
+}
+
+TEST_CASE("Alt+M and Alt+N mute and unmute at the sliders' volumes", "[screens][content]") {
+  OA_REQUIRE_GAME_FILES(files);
+  test::UiRig rig(files);
+  RemakeOptions options{.music_volume = 70, .sfx_volume = 45};
+  install(rig, OptionsContext{.options = &options, .file = {}, .display = nullptr});
+  CHECK(rig.mixer.music_level() == 70);
+  CHECK(rig.mixer.sfx_level() == 45);
+  rig.key(SDLK_N, SDL_KMOD_LALT);
+  CHECK(rig.sound.sfx_muted());
+  CHECK(rig.sound.sfx_level() == 45);
+  rig.click(318, options_y());
+  REQUIRE(rig.wm.current_screen() == kScreenOptions);
+  CHECK(shown_level(rig, kMusic) == 70);
+  CHECK(shown_level(rig, kSound) == 0);
+  // On the options screen, the sliders follow the keys.
+  rig.key(SDLK_N, SDL_KMOD_LALT);
+  rig.pass();
+  CHECK_FALSE(rig.sound.sfx_muted());
+  CHECK(shown_level(rig, kSound) == 45);
+  rig.key(SDLK_M, SDL_KMOD_LALT);
+  rig.pass();
+  CHECK(rig.sound.music_muted());
+  CHECK(shown_level(rig, kMusic) == 0);
+  // A muted music unmuted by its slider, at the slider's level.
+  rig.click(slider_x(35), row_y(kMusic));
+  CHECK_FALSE(rig.sound.music_muted());
+  CHECK(rig.sound.music_level() == 35);
+  rig.key(SDLK_RETURN);
+  CHECK(options.music_volume == 35);
+  CHECK(options.sfx_volume == 45);
+  rig.key(SDLK_M, SDL_KMOD_LALT);
+  rig.key(SDLK_M, SDL_KMOD_LALT);
+  CHECK_FALSE(rig.sound.music_muted());
+  CHECK(rig.mixer.music_level() == 35);
 }
 
 TEST_CASE("the options screen's help: Shift and a click", "[screens][content]") {
@@ -319,6 +517,9 @@ TEST_CASE("the options screen's help: Shift and a click", "[screens][content]") 
   REQUIRE(rig.wm.current_screen() == kScreenOptions);
   help_click(choice_x(0), row_y(kScaling));
   CHECK(help.topic() == "oa_scaling");
+  help_click(slider_x(50), row_y(kSound));
+  CHECK(help.topic() == "oa_sound");
+  CHECK(rig.sound.sfx_level() == 60);
   help_click(100, row_y(kVariant));
   CHECK(help.topic() == "oa_variant");
   help_click(100, 400);

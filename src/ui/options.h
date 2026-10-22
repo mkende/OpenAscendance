@@ -1,13 +1,16 @@
 // The remake's own settings, set on its options screen
 // (`screens/options_wnd.h`) and kept in `options.cfg` in the user folder,
 // apart from the original's `ascend.cfg` (the mute flags and the rotation
-// speed, kept byte-compatible by `WinMgr`).
+// speed, kept byte-compatible by `WinMgr`: a muted sound keeps its volume
+// here).
 //
 // `options.cfg` is text, one `key=value` per line (`#` starts a comment):
 //
 //     variant=standard        # or antagonizer: the variant of new games
 //     fullscreen=1            # or 0: a window
 //     scaling=smooth          # or sharp
+//     music_volume=100        # 0..100, percent of the original's volume
+//     sfx_volume=60           # 0..100, likewise for the sound effects
 //
 // Unknown keys and bad values are ignored with a warning, so that a file of
 // a later version stays readable.
@@ -24,10 +27,18 @@ namespace oa {
 
 inline constexpr std::string_view kOptionsFile = "options.cfg";
 
+// The volumes' defaults, in percent: the music at the original's level, the
+// sound effects under it.
+inline constexpr int kDefaultMusicVolume = 100;
+inline constexpr int kDefaultSfxVolume = 60;
+
 struct RemakeOptions {
   game::Variant variant = game::Variant::kStandard;
   bool fullscreen = true;
   Scaling scaling = Scaling::kSmooth;
+  // The levels of `SoundSystem::set_music_level` / `set_sfx_level`.
+  int music_volume = kDefaultMusicVolume;
+  int sfx_volume = kDefaultSfxVolume;
 
   bool operator==(const RemakeOptions&) const = default;
 };

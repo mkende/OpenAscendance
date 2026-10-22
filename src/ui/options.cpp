@@ -1,6 +1,7 @@
 #include "ui/options.h"
 
 #include <algorithm>
+#include <charconv>
 #include <format>
 #include <fstream>
 #include <iterator>
@@ -30,6 +31,16 @@ std::optional<bool> parse_flag(std::string_view value) {
     return false;
   }
   return std::nullopt;
+}
+
+// Returns the volume `value`, a whole percent within 0..100.
+std::optional<int> parse_volume(std::string_view value) {
+  int v = 0;
+  const auto [end, ec] = std::from_chars(value.data(), value.data() + value.size(), v);
+  if (ec != std::errc{} || end != value.data() + value.size() || v < 0 || v > 100) {
+    return std::nullopt;
+  }
+  return v;
 }
 
 std::optional<Scaling> parse_scaling(std::string_view value) {
@@ -78,6 +89,12 @@ RemakeOptions parse_options(std::string_view text) {
       } else {
         known = false;
       }
+    } else if (key == "music_volume" || key == "sfx_volume") {
+      if (const std::optional<int> v = parse_volume(value)) {
+        (key == "music_volume" ? options.music_volume : options.sfx_volume) = *v;
+      } else {
+        known = false;
+      }
     } else {
       known = false;
     }
@@ -89,8 +106,9 @@ RemakeOptions parse_options(std::string_view text) {
 }
 
 std::string format_options(const RemakeOptions& options) {
-  return std::format("variant={}\nfullscreen={}\nscaling={}\n", game::variant_info(options.variant).key,
-                     options.fullscreen ? 1 : 0, options.scaling == Scaling::kSharp ? "sharp" : "smooth");
+  return std::format("variant={}\nfullscreen={}\nscaling={}\nmusic_volume={}\nsfx_volume={}\n",
+                     game::variant_info(options.variant).key, options.fullscreen ? 1 : 0,
+                     options.scaling == Scaling::kSharp ? "sharp" : "smooth", options.music_volume, options.sfx_volume);
 }
 
 RemakeOptions load_options(const std::filesystem::path& path) {

@@ -65,6 +65,20 @@ void SoundSystem::set_music_volume(int volume) {
   }
 }
 
+void SoundSystem::set_music_level(int percent) {
+  music_level_ = std::clamp(percent, 0, Mixer::kMaxLevel);
+  if (mixer_ != nullptr) {
+    mixer_->set_music_level(music_level_);
+  }
+}
+
+void SoundSystem::set_sfx_level(int percent) {
+  sfx_level_ = std::clamp(percent, 0, Mixer::kMaxLevel);
+  if (mixer_ != nullptr) {
+    mixer_->set_sfx_level(sfx_level_);
+  }
+}
+
 void SoundSystem::play_sfx(int id) {
   if (sfx_muted_ || mixer_ == nullptr) {
     return;

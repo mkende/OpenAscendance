@@ -1,8 +1,9 @@
 // The remake's options (`docs/11-screens.md`, "Remake additions"): an
 // "Options" button on the opening menu, between "Save Game" and "Exit to
 // DOS", the seven original buttons made shorter to make room, and the
-// options screen it opens (the settings of `ui/options.h` and the sound
-// mute flags of `ascend.cfg`).
+// options screen it opens (the settings of `ui/options.h`, the sound
+// volumes among them, and the mute flags of `ascend.cfg`, a volume slider
+// at 0 being muted).
 //
 // While a trace of the original is replayed (a tutorial), the opening menu
 // takes its original layout back, the one the trace's clicks were recorded

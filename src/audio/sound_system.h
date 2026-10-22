@@ -59,6 +59,14 @@ class SoundSystem {
   void set_music_volume(int volume);
   int music_volume() const { return music_volume_; }
 
+  // The remake's volume settings (not in the original), in percent
+  // (0..100, clamped): the music's level scales the music volume above, the
+  // sound effects' level the effects' volume (`Mixer`). Muting keeps them.
+  void set_music_level(int percent);
+  int music_level() const { return music_level_; }
+  void set_sfx_level(int percent);
+  int sfx_level() const { return sfx_level_; }
+
   // `SoundSystem_play_sfx` (0x4afa0): plays sound `id` on the first free
   // voice; dropped when all 7 are busy, when muted or without output.
   // Throws `DataError` when the sound's file is missing or too short.
@@ -80,6 +88,8 @@ class SoundSystem {
   bool tune_playing_ = false;
   int current_tune_ = -1;
   int music_volume_ = kDefaultMusicVolume;
+  int music_level_ = Mixer::kMaxLevel;
+  int sfx_level_ = Mixer::kMaxLevel;
 };
 
 }  // namespace oa

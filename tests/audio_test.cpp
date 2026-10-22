@@ -31,6 +31,52 @@ TEST_CASE("the mixer converts unsigned 8-bit samples, scales by volume and clamp
   CHECK(m.music_volume() == 127);
 }
 
+TEST_CASE("the mixer scales the music and the sound effects by their levels", "[audio]") {
+  Mixer m;
+  CHECK(m.music_level() == 100);
+  CHECK(m.sfx_level() == 100);
+  m.set_music_volume(SoundSystem::kDefaultMusicVolume);
+  m.set_music_level(50);
+  m.set_sfx_level(60);
+  m.play_music(samples({255, 255, 255}), 0);
+  std::vector<std::int16_t> out(1);
+  m.render(out);
+  CHECK(out[0] == 127 * 256 * 100 / 127 * 50 / 100);
+  m.stop_music();
+  // The effects at the AIL volume of the original, then the level.
+  m.play_sfx(0, samples({255, 0, 255}), 127);
+  m.render(out);
+  CHECK(out[0] == 127 * 256 * 60 / 100);
+  // A new level applies to the voices playing.
+  m.set_sfx_level(0);
+  m.render(out);
+  CHECK(out[0] == 0);
+  m.set_sfx_level(100);
+  m.render(out);
+  CHECK(out[0] == 127 * 256);
+  m.set_sfx_level(150);
+  CHECK(m.sfx_level() == 100);
+  m.set_music_level(-3);
+  CHECK(m.music_level() == 0);
+}
+
+TEST_CASE("the sound system's levels reach the mixer and survive muting and the music volume", "[audio][content]") {
+  OA_REQUIRE_GAME_FILES(files);
+  Mixer m;
+  SoundSystem sound(files, &m);
+  sound.set_music_level(30);
+  sound.set_sfx_level(120);
+  CHECK(sound.music_level() == 30);
+  CHECK(sound.sfx_level() == 100);
+  CHECK(m.music_level() == 30);
+  sound.set_music_muted(true);
+  sound.set_music_muted(false);
+  // `SoundSystem_set_music_volume` keeps its own volume, the level apart.
+  sound.set_music_volume(64);
+  CHECK(m.music_volume() == 64);
+  CHECK(m.music_level() == 30);
+}
+
 TEST_CASE("music positions are kept per tune and resumed", "[audio][content]") {
   OA_REQUIRE_GAME_FILES(files);
   Mixer m;

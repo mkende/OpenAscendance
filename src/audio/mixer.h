@@ -3,6 +3,9 @@
 // (handles 1..7), all 8-bit unsigned mono at 22050 Hz, mixed to signed
 // 16-bit mono at the same rate. Thread-safe: the audio thread renders while
 // the game thread controls the voices.
+//
+// On top of the AIL volumes, the remake's volume settings (the options
+// screen) scale the music voice and the sound-effect voices, in percent.
 #pragma once
 
 #include <array>
@@ -23,6 +26,8 @@ class Mixer {
   static constexpr int kSfxVoices = 7;
   // The AIL volume range (`AIL_set_sample_volume`): 0..127.
   static constexpr int kMaxVolume = 127;
+  // The remake's volume settings' range, in percent of the AIL volumes.
+  static constexpr int kMaxLevel = 100;
 
   // Starts `music` from sample `position` at the current music volume,
   // replacing any music playing.
@@ -34,6 +39,14 @@ class Mixer {
   // Sets the music volume (clamped to 0..127).
   void set_music_volume(int volume);
   int music_volume() const;
+  // Sets the music's level (clamped to 0..100), applied to the music volume
+  // at once, also to the music playing.
+  void set_music_level(int percent);
+  int music_level() const;
+  // Sets the sound effects' level (clamped to 0..100), applied to every
+  // effect's volume at once, also to those playing.
+  void set_sfx_level(int percent);
+  int sfx_level() const;
 
   // Plays `sample` on voice `voice` (0..6) at `volume` (0..127).
   void play_sfx(int voice, SampleData sample, int volume);
@@ -54,6 +67,8 @@ class Mixer {
 
   mutable std::mutex mutex_;
   Voice music_;
+  int music_level_ = kMaxLevel;
+  int sfx_level_ = kMaxLevel;
   std::array<Voice, kSfxVoices> sfx_;
 };
 

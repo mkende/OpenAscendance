@@ -316,6 +316,8 @@ void run(const GameOptions& options, const GameFiles& files) {
   GameCoreSession game(files, options.user_dir, !options.screenshot.has_value());
   RemakeOptions settings = options.settings;
   game.set_new_game_variant(settings.variant);
+  sound.set_music_level(settings.music_volume);
+  sound.set_sfx_level(settings.sfx_volume);
   std::optional<game::CosmosTxt> cosmos_txt;
   if (options.seed) {
     cosmos_txt = game::CosmosTxt{.stars = 50, .races = 7, .seed = *options.seed, .species = {}};

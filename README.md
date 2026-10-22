@@ -55,7 +55,8 @@ Extended variant) are planned.
   where it never changes the game: per-user saves outside the original's
   folder, scaling of the original 640x480 picture to any window size (smooth
   or sharp pixels), the full screen by default or a window (Alt+Enter
-  switches), music and sound toggles.
+  switches), music and sound effects volume sliders (Alt+M and Alt+N mute
+  and unmute them).
 
 - **Extended** (planned): the classic game with fixes and improvements.
 

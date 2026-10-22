@@ -8,7 +8,10 @@
 #include <utility>
 
 #include "assets/gif.h"
+#include "audio/mixer.h"
+#include "audio/sound_system.h"
 #include "core/error.h"
+#include "platform/input.h"
 #include "ui/help_wnd.h"
 
 namespace oa {
@@ -45,6 +48,18 @@ constexpr int kButtonsTop = 424;
 constexpr int kMessagePick = 600;
 constexpr int kMessageOk = 601;
 constexpr int kMessageCancel = 602;
+// The messages of the volume sliders to the screen (p1 the row): a new
+// level (p2), the end of a change (p2 the level); and the screen's timer
+// that follows the mute keys.
+constexpr int kMessageLevel = 603;
+constexpr int kMessageLevelDone = 604;
+constexpr int kMessageSyncSound = 605;
+// A volume slider's step (a wheel notch, an arrow key), and the margin at
+// each end of its bar where a press is 0 or 100.
+constexpr int kLevelStep = 5;
+constexpr int kSliderMargin = 6;
+constexpr std::uint16_t kScanLeft = 0x4b;
+constexpr std::uint16_t kScanRight = 0x4d;
 // The click sound of the menu's buttons (`soundfx.txt` 0, SOUNDCHANNEL 0).
 constexpr int kClickSound = 0;
 constexpr std::uint16_t kEnterKey = '\r';
@@ -137,7 +152,7 @@ endtext
 pos 0 15
 flags TJ_HC
 text
-Plays the music or not.)" OA_KEY_HINT("Alt+M also switches it.") R"(
+The music's volume: a click, a tap or a drag on the bar sets it, at the far left no music. At 100 % it plays as loud as in the original.)" OA_KEY_HINT("The wheel and the arrow keys change it by steps; Alt+M switches the music off and back on at this volume.") R"(
 endtext
 pos 5 50
 button
@@ -151,7 +166,7 @@ endtext
 pos 0 15
 flags TJ_HC
 text
-Plays the sound effects or not.)" OA_KEY_HINT("Alt+N also switches them.") R"(
+The sound effects' volume, played at each change: a click, a tap or a drag on the bar sets it, at the far left no sound effects. At 100 % they play as loud as in the original, louder than the music.)" OA_KEY_HINT("The wheel and the arrow keys change it by steps; Alt+N switches them off and back on at this volume.") R"(
 endtext
 pos 5 50
 button
@@ -291,12 +306,145 @@ class RemakeButton final : public GWindow {
   bool selected_ = false;
 };
 
-// A row of the options screen.
+// A volume slider of the remake, as wide as a row's choices: a text window
+// (0xf2, hot 0x96) filled from the left up to its level in `kSelectedColor`
+// (hot `kSelectedHotColor`), the level as its caption ("Off" at 0). A
+// click or a tap sets the level under the pointer, a drag of the mouse or
+// a finger moves it, the wheel and the arrow keys (the pointer over it)
+// step it. Sends `kMessageLevel` (row, level) to its parent at each
+// change, `kMessageLevelDone` (row, level) at the end of a click, drag,
+// notch or key.
+class VolumeSlider final : public GWindow {
+ public:
+  VolumeSlider(WinMgr& wm, const Pane& pane, int row, std::string help_topic) : GWindow(wm, "", pane), row_(row) {
+    mouse_focus_ = true;
+    help_ = std::move(help_topic);
+  }
+
+  int level() const { return level_; }
+  // Shows `level` (0..100), without a message.
+  void set_level(int level) {
+    level_ = std::clamp(level, 0, Mixer::kMaxLevel);
+    draw(kDrawNormal);
+  }
+
+  bool handle_event(int type, int a, int b) override {
+    switch (type) {
+      case kEventLeftClick:
+        if (!contains(a, b)) {
+          return false;
+        }
+        change(level_at(a));
+        done();
+        return true;
+      case kEventRightClick:
+        return contains(a, b);
+      case kEventHelpClick:
+        if (!contains(a, b)) {
+          return false;
+        }
+        show_remake_help(wm_, help_);
+        return true;
+      case kEventKey:
+        if (wm_.hot_window() != id_ || (b != kScanLeft && b != kScanRight)) {
+          return false;
+        }
+        change(level_ + (b == kScanRight ? kLevelStep : -kLevelStep));
+        done();
+        return true;
+      default:
+        return GWindow::handle_event(type, a, b);
+    }
+  }
+
+  void press_areas(std::vector<PressArea>& out) const override { out.push_back(PressArea{pane_, true}); }
+  bool takes_view_gesture(int x, int y, bool /*mouse*/) const override { return contains(x, y); }
+  void view_drag(int dx, int /*dy*/) override {
+    // The gesture's drags add up from where it started (the press).
+    if (const ViewGesture& g = wm_.input().gesture; g.started) {
+      drag_x_ = g.x;
+    }
+    drag_x_ += dx;
+    dragging_ = true;
+    change(level_at(drag_x_));
+  }
+  void view_wheel(int notches) override {
+    change(level_ + notches * kLevelStep);
+    done();
+  }
+  void view_end() override {
+    if (dragging_) {
+      dragging_ = false;
+      done();
+    }
+  }
+
+  void draw(int mode) override {
+    if (active_) {
+      draw_bar((wm_.hot_window() == id_ || mode == kDrawHot) && mode != kDrawNotHot);
+    }
+  }
+  void draw_hilite(int /*mode*/) override { draw_bar(true); }
+
+ private:
+  int inner_width() const { return pane_.x1 - pane_.x0 - 2 * kSliderMargin; }
+
+  // The level at screen x `x`.
+  int level_at(int x) const {
+    const int w = inner_width();
+    const int offset = std::clamp(x - pane_.x0 - kSliderMargin, 0, w);
+    return (offset * Mixer::kMaxLevel + w / 2) / w;
+  }
+
+  // The last column of the filled part (`pane_.x0 - 1` for none).
+  int fill_end() const {
+    if (level_ == 0) {
+      return pane_.x0 - 1;
+    }
+    if (level_ == Mixer::kMaxLevel) {
+      return pane_.x1;
+    }
+    return pane_.x0 + kSliderMargin + (level_ * inner_width() + Mixer::kMaxLevel / 2) / Mixer::kMaxLevel;
+  }
+
+  void draw_bar(bool hot) {
+    Image8& screen = wm_.screen();
+    const int end = fill_end();
+    if (end >= pane_.x0) {
+      vfx_pane_wipe(screen, Pane{pane_.x0, pane_.y0, end, pane_.y1}, hot ? kSelectedHotColor : kSelectedColor);
+    }
+    if (end < pane_.x1) {
+      vfx_pane_wipe(screen, Pane{end + 1, pane_.y0, pane_.x1, pane_.y1}, hot ? kHotBackColor : kBackColor);
+    }
+    GameFont& font = wm_.large_font();
+    font.pane() = pane_;
+    const std::string caption = level_ == 0 ? "Off" : std::format("{} %", level_);
+    font.draw_wrapped(screen, 0, 0, caption, kFontCenterH | kFontCenterV, kDefault, 0xff, 0);
+  }
+
+  void change(int level) {
+    level = std::clamp(level, 0, Mixer::kMaxLevel);
+    if (level == level_) {
+      return;
+    }
+    set_level(level);
+    wm_.send_event(parent_, kMessageLevel, row_, level_);
+  }
+  void done() { wm_.send_event(parent_, kMessageLevelDone, row_, level_); }
+
+  int row_;
+  int level_ = 0;
+  // The pointer's x in a drag (the start plus the drags so far).
+  int drag_x_ = 0;
+  bool dragging_ = false;
+};
+
+// A row of the options screen: choice buttons, or a volume slider.
 struct Setting {
   std::string_view label;
   std::string_view note;  // under the label, in the small font
   std::string_view help;
-  std::vector<std::string_view> choices;
+  std::vector<std::string_view> choices;  // none for a slider
 };
 
 // The rows, in order (their indices are `OptionsWnd`'s).
@@ -311,8 +459,8 @@ std::vector<Setting> settings() {
       {"Game Variant", "For the next new game", "oa_variant", std::move(variants)},
       {"Display", "", "oa_display", {"Window", "Full Screen"}},
       {"Scaling", "", "oa_scaling", {"Smooth", "Sharp"}},
-      {"Music", "", "oa_music", {"On", "Off"}},
-      {"Sound Effects", "", "oa_sound", {"On", "Off"}},
+      {"Music", "", "oa_music", {}},
+      {"Sound Effects", "", "oa_sound", {}},
   };
 }
 
@@ -323,6 +471,7 @@ class OptionsWnd final : public GWindow {
   OptionsWnd(WinMgr& wm, OptionsContext context, std::shared_ptr<const Image8> gif)
       : GWindow(wm, "Options", kBodyPane), context_(std::move(context)), gif_(std::move(gif)), settings_(settings()) {
     selected_.assign(settings_.size(), 0);
+    sliders_.assign(settings_.size(), nullptr);
   }
 
   // Creates the buttons (registered as children, on the options screen).
@@ -332,6 +481,11 @@ class OptionsWnd final : public GWindow {
       const int n = static_cast<int>(s.choices.size());
       const int y0 = kRowTop + static_cast<int>(row) * kRowPitch;
       std::vector<RemakeButton*>& buttons = rows_.emplace_back();
+      if (n == 0) {
+        sliders_[row] =
+            add(std::make_unique<VolumeSlider>(wm_, choice_pane(0, 1, y0), static_cast<int>(row), std::string(s.help)));
+        continue;
+      }
       for (int c = 0; c < n; ++c) {
         auto button = std::make_unique<RemakeButton>(wm_, std::string(s.choices[static_cast<std::size_t>(c)]),
                                                      choice_pane(c, n, y0), std::string(s.help));
@@ -352,6 +506,14 @@ class OptionsWnd final : public GWindow {
     switch (type) {
       case kEventActivate:
         read_settings();
+        applied_ = false;
+        wm_.set_timer(id_, kMessageSyncSound, 0, 0, 0);
+        return GWindow::handle_event(type, a, b);
+      case kEventDeactivate:
+        if (!applied_) {
+          // Cancel, Esc, Back: the volumes heard before.
+          restore_sound();
+        }
         return GWindow::handle_event(type, a, b);
       case kEventHelpClick:
         if (!contains(a, b)) {
@@ -374,6 +536,17 @@ class OptionsWnd final : public GWindow {
         return true;
       case kMessageCancel:
         wm_.go_back();
+        return true;
+      case kMessageLevel:
+        set_level(static_cast<std::size_t>(a), b);
+        return true;
+      case kMessageLevelDone:
+        if (a == kRowSound && b > 0) {
+          wm_.services().sound.play_sfx(kClickSound);
+        }
+        return true;
+      case kMessageSyncSound:
+        sync_sliders();
         return true;
       default:
         return GWindow::handle_event(type, a, b);
@@ -411,8 +584,9 @@ class OptionsWnd final : public GWindow {
   // The static string "OK".
   static constexpr int kOkString = 0x1e;
 
-  RemakeButton* add(std::unique_ptr<RemakeButton> button) {
-    RemakeButton* raw = button.get();
+  template <typename T>
+  T* add(std::unique_ptr<T> button) {
+    T* raw = button.get();
     raw->set_parent(id_);
     const int id = wm_.register_window(std::move(button));
     add_child(raw);
@@ -453,8 +627,48 @@ class OptionsWnd final : public GWindow {
     select(kRowDisplay, fullscreen ? 1 : 0);
     select(kRowScaling, scaling == Scaling::kSharp ? 1 : 0);
     const SoundSystem& sound = wm_.services().sound;
-    select(kRowMusic, sound.music_muted() ? 1 : 0);
-    select(kRowSound, sound.sfx_muted() ? 1 : 0);
+    saved_sound_ = SoundState{.music_muted = sound.music_muted(),
+                              .sfx_muted = sound.sfx_muted(),
+                              .music_level = sound.music_level(),
+                              .sfx_level = sound.sfx_level()};
+    sync_sliders();
+  }
+
+  // The sliders show the volumes heard: 0 while muted (Alt+M / Alt+N too).
+  void sync_sliders() {
+    const SoundSystem& sound = wm_.services().sound;
+    const auto show = [](VolumeSlider* slider, bool muted, int level) {
+      if (const int heard = muted ? 0 : level; slider->level() != heard) {
+        slider->set_level(heard);
+      }
+    };
+    show(sliders_[kRowMusic], sound.music_muted(), sound.music_level());
+    show(sliders_[kRowSound], sound.sfx_muted(), sound.sfx_level());
+  }
+
+  // A slider's level heard at once: 0 mutes (the level kept for Alt+M /
+  // Alt+N), another one unmutes at that level.
+  void set_level(std::size_t row, int level) {
+    SoundSystem& sound = wm_.services().sound;
+    if (row == kRowMusic) {
+      sound.set_music_muted(level == 0);
+      if (level > 0) {
+        sound.set_music_level(level);
+      }
+    } else if (row == kRowSound) {
+      sound.set_sfx_muted(level == 0);
+      if (level > 0) {
+        sound.set_sfx_level(level);
+      }
+    }
+  }
+
+  void restore_sound() {
+    SoundSystem& sound = wm_.services().sound;
+    sound.set_music_muted(saved_sound_.music_muted);
+    sound.set_sfx_muted(saved_sound_.sfx_muted);
+    sound.set_music_level(saved_sound_.music_level);
+    sound.set_sfx_level(saved_sound_.sfx_level);
   }
 
   void pick(std::size_t row, int choice) {
@@ -480,9 +694,11 @@ class OptionsWnd final : public GWindow {
       }
       context_.display->set_scaling(o.scaling);
     }
-    SoundSystem& sound = wm_.services().sound;
-    sound.set_music_muted(selected_[kRowMusic] == 1);
-    sound.set_sfx_muted(selected_[kRowSound] == 1);
+    // The sound is already as the sliders show it.
+    const SoundSystem& sound = wm_.services().sound;
+    o.music_volume = sound.music_level();
+    o.sfx_volume = sound.sfx_level();
+    applied_ = true;
     if (!context_.file.empty()) {
       save_options(context_.file, o);
     }
@@ -496,6 +712,18 @@ class OptionsWnd final : public GWindow {
   std::vector<Setting> settings_;
   std::vector<int> selected_;
   std::vector<std::vector<RemakeButton*>> rows_;
+  // The rows' sliders (null for the choice rows).
+  std::vector<VolumeSlider*> sliders_;
+
+  // The sound at the screen's entry, back on leaving it without OK.
+  struct SoundState {
+    bool music_muted = false;
+    bool sfx_muted = false;
+    int music_level = Mixer::kMaxLevel;
+    int sfx_level = Mixer::kMaxLevel;
+  };
+  SoundState saved_sound_;
+  bool applied_ = false;
 };
 
 // The opening menu's two layouts, applied when the menu is entered.
