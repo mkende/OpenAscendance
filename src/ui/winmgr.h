@@ -227,6 +227,10 @@ class WinMgr final : public WindowStateIo {
   // Turns the enlarged click targets on (the default) or off (the
   // original's targets, as for the input of an oracle run).
   void set_enlarged_targets(bool on) { enlarged_targets_ = on; }
+  // Whether the remake's enlarged targets act now: on and no trace
+  // replayed (the windows' own enlarged picking, such as the star map's,
+  // follows it).
+  bool enlarged_targets() const { return enlarged_targets_ && !replaying_; }
   // The id of the top shown window of the current screen taking a view
   // gesture at (x, y) (`GWindow::takes_view_gesture`), 0 for none or in a
   // modal loop or help mode.

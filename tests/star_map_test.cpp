@@ -205,8 +205,7 @@ TEST_CASE("the windows' state of the saves round-trips through the windows", "[s
     // The Antagonizer games get the variant trailer after the window state.
     const std::size_t end = std::min(original.size(), saved.size());
     REQUIRE(end >= game::kWindowStateSize);
-    std::vector<std::uint8_t> a(original.end() - static_cast<std::ptrdiff_t>(game::kWindowStateSize),
-                                original.end());
+    std::vector<std::uint8_t> a(original.end() - static_cast<std::ptrdiff_t>(game::kWindowStateSize), original.end());
     std::vector<std::uint8_t> b(saved.begin() + static_cast<std::ptrdiff_t>(original.size()) -
                                     static_cast<std::ptrdiff_t>(game::kWindowStateSize),
                                 saved.begin() + static_cast<std::ptrdiff_t>(original.size()));
@@ -336,6 +335,110 @@ TEST_CASE("hovering a star names it; a click on an explored star opens its syste
   r.rig.pass();
   CHECK(s.game->cosmos.selected_star == home);
   CHECK(r.rig.wm.current_screen() == 16);
+}
+
+// The index of the star item of `star` on `map`.
+std::size_t star_item(const CosWnd& map, game::StarIndex star) {
+  for (std::size_t k = 0; k < map.items().size(); ++k) {
+    if (map.items()[k].kind == CosWnd::ItemKind::kStar && map.items()[k].index == star) {
+      return k;
+    }
+  }
+  FAIL("no item for star " << star);
+  return 0;
+}
+
+// The star map of a new game (seed 1234) with its player's home star.
+struct HomeRig {
+  explicit HomeRig(const GameFiles& files) : r(files, 1234, dir.path) {
+    r.to_new_game_screen();
+    r.to_star_map();
+    REQUIRE(r.rig.wm.current_screen() == 1);
+  }
+
+  game::Cosmos& cosmos() { return r.session.core()->game->cosmos; }
+  game::StarIndex home() { return cosmos().races[r.session.core()->player_race].home; }
+  // The map rebuilt and projected again (a new day's refresh).
+  void refresh() { r.rig.wm.send_event(r.map().id(), kEventRefresh, 0, 0); }
+  // Moves the pointer away from the map's items, then to the window-relative
+  // point (x, y).
+  void hover(int x, int y) {
+    r.rig.move(600, 300);
+    r.rig.move(r.map().pane().x0 + x, r.map().pane().y0 + y);
+  }
+  // Clicks at the window-relative point (x, y), then runs the posted
+  // messages.
+  void click(int x, int y) {
+    r.rig.click(r.map().pane().x0 + x, r.map().pane().y0 + y);
+    r.rig.pass();
+  }
+
+  TempDir dir;
+  StarMapRig r;
+};
+
+TEST_CASE("the remake picks the only star within 5 pixels of the original's radius", "[screens][content]") {
+  OA_REQUIRE_GAME_FILES(files);
+  HomeRig h(files);
+  CosWnd& map = h.r.map();
+  const std::size_t home = star_item(map, h.home());
+  const CosWnd::Item star = map.items()[home];
+  // 9 pixels left of the home star (81 > 40), no other star within 12.
+  const int x = star.x - 9;
+  const int y = star.y;
+  for (const CosWnd::Item& it : map.items()) {
+    if (it.kind == CosWnd::ItemKind::kStar && it.index != h.home()) {
+      REQUIRE((it.x - x) * (it.x - x) + (it.y - y) * (it.y - y) > 144);
+    }
+  }
+  h.r.rig.wm.set_enlarged_targets(false);
+  h.hover(x, y);
+  CHECK(map.hovered() == -1);
+  h.r.rig.wm.set_enlarged_targets(true);
+  h.hover(x, y);
+  CHECK(map.hovered() == static_cast<int>(home));
+  CHECK(h.r.rig.pointer_frame == 3);  // CURSORSHAPE + 1
+  // Kept while the pointer moves within the enlarged radius.
+  h.r.rig.move(map.pane().x0 + x - 1, map.pane().y0 + y + 1);
+  CHECK(map.hovered() == static_cast<int>(home));
+  // 12 pixels away (144 > (sqrt 40 + 5)^2): none.
+  h.hover(star.x - 12, y);
+  CHECK(map.hovered() == -1);
+  CHECK(h.r.rig.pointer_frame == 2);
+  h.hover(x, y);
+  h.click(x, y);
+  CHECK(h.cosmos().selected_star == h.home());
+  CHECK(h.r.rig.wm.current_screen() == 16);
+}
+
+TEST_CASE("the remake picks no star when two are within its enlarged radius", "[screens][content]") {
+  OA_REQUIRE_GAME_FILES(files);
+  HomeRig h(files);
+  // Another star (without ships) put 20 units right of the home star:
+  // about 10 pixels apart on the map.
+  game::Cosmos& c = h.cosmos();
+  game::StarIndex other = 0;
+  while (other == h.home() || c.stars[static_cast<std::size_t>(other)].ships_mask != 0) {
+    ++other;
+  }
+  const game::Vec3& at = c.stars[static_cast<std::size_t>(h.home())].position;
+  c.stars[static_cast<std::size_t>(other)].position = {at[0] + 20.0F, at[1], at[2]};
+  h.refresh();
+  CosWnd& map = h.r.map();
+  const CosWnd::Item a = map.items()[star_item(map, h.home())];
+  const CosWnd::Item b = map.items()[star_item(map, other)];
+  // Below the middle of the two: within the enlarged radius of both.
+  const int x = (a.x + b.x) / 2;
+  const int y = a.y + 7;
+  for (const CosWnd::Item& it : {a, b}) {
+    const int d = (it.x - x) * (it.x - x) + (it.y - y) * (it.y - y);
+    REQUIRE(d >= 40);
+    REQUIRE(d <= 128);
+  }
+  h.hover(x, y);
+  CHECK(map.hovered() == -1);
+  h.click(x, y);
+  CHECK(h.r.rig.wm.current_screen() == 1);
 }
 
 TEST_CASE("Next Turn ends the day; the auto next turn repeats it until the map is left", "[screens][content]") {

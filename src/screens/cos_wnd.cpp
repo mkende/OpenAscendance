@@ -50,6 +50,10 @@ constexpr double kCircleRadius = 170.0;
 // The hover radii (squared distances) and the ship marker's offset.
 constexpr int kStarHoverRadius = 40;
 constexpr int kShipHoverRadius = 20;
+// The remake's enlarged star radius (squared): the original's (sqrt 40)
+// grown by the enlarged targets' margin, (sqrt 40 + 5)^2 = 128.25.
+constexpr int kEnlargedStarRadius = 128;
+static_assert(WinMgr::kTargetMargin == 5, "kEnlargedStarRadius assumes a margin of 5");
 // The ship markers' offsets from a star, n-th race shown (0x86478 /
 // 0x86480).
 constexpr std::array<int, 7> kShipDx = {5, 5, 5, 14, 14, 14, 21};
@@ -135,6 +139,24 @@ int shade8(std::int32_t d) {
     ++s;
   }
   return s;
+}
+
+// The squared distance from (x, y) to an item's hover point, and the
+// radius it is hit within (`CosWnd_update_hover`).
+struct HoverDistance {
+  int squared;
+  int radius;
+};
+HoverDistance hover_distance(const CosWnd::Item& it, int x, int y) {
+  int dx = it.x - x;
+  int dy = it.y - y;
+  int radius = kStarHoverRadius;
+  if (it.kind == CosWnd::ItemKind::kShip) {
+    dx += kShipDx[0];
+    dy += kShipDy[0];
+    radius = kShipHoverRadius;
+  }
+  return {dx * dx + dy * dy, radius};
 }
 
 // The depth of an item relative to the galaxy's centre (`chop(z - 1500)`).
@@ -458,38 +480,52 @@ void CosWnd::draw_label(int background) {
                      wm_.static_string(kStringStarTypes + star.type), 0, kDefault, background, 0);
 }
 
+bool CosWnd::remake_picking() const {
+  const int screen_id = wm_.current_screen();
+  return wm_.enlarged_targets() && (screen_id == kScreenStarMap || screen_id == kScreenDiplomacy);
+}
+
+int CosWnd::pick(int x, int y) const {
+  for (int k = static_cast<int>(item_count_) - 1; k >= 0; --k) {
+    const Item& it = items_[static_cast<std::size_t>(k)];
+    if (it.kind == ItemKind::kLane) {
+      continue;
+    }
+    if (const HoverDistance d = hover_distance(it, x, y); d.squared < d.radius) {
+      return k;
+    }
+  }
+  if (!remake_picking()) {
+    return -1;
+  }
+  int found = -1;
+  for (std::size_t k = 0; k < item_count_; ++k) {
+    const Item& it = items_[k];
+    if (it.kind == ItemKind::kStar && !it.clipped && hover_distance(it, x, y).squared <= kEnlargedStarRadius) {
+      if (found != -1) {
+        return -1;
+      }
+      found = static_cast<int>(k);
+    }
+  }
+  return found;
+}
+
 void CosWnd::update_hover(int x, int y) {
   if (species_mode_ == -1) {
     return;
   }
-  const auto distance = [&](const Item& it, int& radius) {
-    int dx = it.x - x;
-    int dy = it.y - y;
-    radius = kStarHoverRadius;
-    if (it.kind == ItemKind::kShip) {
-      dx += kShipDx[0];
-      dy += kShipDy[0];
-      radius = kShipHoverRadius;
-    }
-    return dx * dx + dy * dy;
-  };
   if (hovered_ != -1) {
-    int radius = 0;
-    if (distance(items_[static_cast<std::size_t>(hovered_)], radius) <= radius) {
+    const HoverDistance d = hover_distance(items_[static_cast<std::size_t>(hovered_)], x, y);
+    // The remake's picks are kept while picked.
+    if (d.squared <= d.radius || (remake_picking() && pick(x, y) == hovered_)) {
       return;
     }
     hovered_ = -1;
     wm_.set_pointer(cursor_shape_);
     draw(10);
   }
-  for (int k = static_cast<int>(item_count_) - 1; k >= 0; --k) {
-    const Item& it = items_[static_cast<std::size_t>(k)];
-    int radius = 0;
-    if (it.kind != ItemKind::kLane && distance(it, radius) < radius) {
-      hovered_ = k;
-      break;
-    }
-  }
+  hovered_ = pick(x, y);
   if (hovered_ != -1) {
     wm_.set_pointer(cursor_shape_ + 1);
     draw_label(0xff);

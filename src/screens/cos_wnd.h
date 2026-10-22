@@ -150,8 +150,18 @@ class CosWnd final : public GWindow {
   void turn(bool y_axis, float angle);
   // `CosWnd_zoom_step` (0x238b8): `dir` -1 in, 1 out.
   void zoom_step(int dir);
-  // `CosWnd_update_hover` (0x24068), window-relative.
+  // `CosWnd_update_hover` (0x24068), window-relative, with the item of
+  // `pick`.
   void update_hover(int x, int y);
+  // The item hovered at (x, y), window-relative, -1 for none: the
+  // original's test (the items from the last built, the first hit). With
+  // the remake's picking (`remake_picking`), when no item is hit, the only
+  // visible star within `kTargetMargin` of the original's radius is.
+  int pick(int x, int y) const;
+  // Whether the remake's picking applies: the enlarged targets on
+  // (`WinMgr::enlarged_targets`) on the screens where a star click acts
+  // (1 and 13).
+  bool remake_picking() const;
   // `CosWnd_click_item` (0x24300).
   void click_item();
   // `CosDrawList_draw` (0x24c18).
