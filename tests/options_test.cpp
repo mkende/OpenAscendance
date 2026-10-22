@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <format>
@@ -172,6 +173,46 @@ TEST_CASE("a tutorial replays on the original opening menu", "[screens][content]
   CHECK_FALSE(rig.wm.find_window("Options")->shown());
   const Image8 gif = decode_gif(files.load("DATA\\0OPENING.GIF"), "0OPENING.GIF");
   CHECK(rig.wm.screen().at(155, 235) == gif.at(155, 235));
+}
+
+TEST_CASE("the options screen: the selected choices stand out from the others, hot or not", "[screens][content]") {
+  OA_REQUIRE_GAME_FILES(files);
+  test::UiRig rig(files);
+  RemakeOptions options;
+  install(rig, OptionsContext{.options = &options, .file = {}, .display = nullptr});
+  rig.click(318, options_y());
+  REQUIRE(rig.wm.current_screen() == kScreenOptions);
+  // A background pixel of choice `c` of row `row` (the columns from x 258
+  // and 445, the rows 28 high from y 72), off its caption.
+  const auto background = [&](int c, int row) { return rig.wm.screen().at(c == 0 ? 261 : 448, 72 + 60 * row + 3); };
+  // Standard (the default variant) selected, Antagonizer not.
+  CHECK(background(0, kVariant) == kSelectedColor);
+  CHECK(background(1, kVariant) == GWindow::kBackColor);
+  rig.move(choice_x(0), row_y(kVariant));
+  CHECK(background(0, kVariant) == kSelectedHotColor);
+  test::write_shot(rig, "options_screen_selected_hot");
+  rig.move(choice_x(1), row_y(kVariant));
+  CHECK(background(0, kVariant) == kSelectedColor);
+  CHECK(background(1, kVariant) == GWindow::kHotBackColor);
+
+  // In the game's palette, far from the unselected colours (the toggles'
+  // "on" colours 0x50 / 0xca were within 80 of 0xf2), dark enough for the
+  // white captions.
+  const Palette palette = Palette::from_vga(rig.gs.shadow());
+  const auto distance = [&](std::uint8_t a, std::uint8_t b) {
+    const Rgb& p = palette.colors.at(a);
+    const Rgb& q = palette.colors.at(b);
+    const auto d = [](int u, int v) { return (u - v) * (u - v); };
+    return std::sqrt(static_cast<double>(d(p.r, q.r) + d(p.g, q.g) + d(p.b, q.b)));
+  };
+  CHECK(distance(0x50, GWindow::kBackColor) < 80);
+  for (const std::uint8_t selected : {kSelectedColor, kSelectedHotColor}) {
+    for (const std::uint8_t other : {GWindow::kBackColor, GWindow::kHotBackColor}) {
+      CHECK(distance(selected, other) > 150);
+    }
+    const Rgb& c = palette.colors.at(selected);
+    CHECK(0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b < 100);
+  }
 }
 
 TEST_CASE("options.cfg: the settings' text round-trips; bad lines are ignored", "[ui]") {

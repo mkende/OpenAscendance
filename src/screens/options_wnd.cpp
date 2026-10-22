@@ -10,7 +10,6 @@
 #include "assets/gif.h"
 #include "core/error.h"
 #include "ui/help_wnd.h"
-#include "ui/toggle_button.h"
 
 namespace oa {
 
@@ -252,7 +251,8 @@ void draw_stone_frame(Image8& screen, const Image8& gif, const Pane& inner) {
 }
 
 // A text button of the remake: the toolkit's text window (0xf2, hot 0x96),
-// in a toggle's "on" colours while selected, whose help is a remake topic.
+// in `kSelectedColor` (hot `kSelectedHotColor`) while selected, whose help
+// is a remake topic.
 class RemakeButton final : public GWindow {
  public:
   RemakeButton(WinMgr& wm, std::string caption, const Pane& pane, std::string help_topic)
@@ -282,10 +282,10 @@ class RemakeButton final : public GWindow {
     if ((wm_.hot_window() == id_ || mode == kDrawHot) && mode != kDrawNotHot) {
       draw_hilite(mode);
     } else {
-      draw_text(selected_ ? ToggleButton::kOnColor : kBackColor);
+      draw_text(selected_ ? kSelectedColor : kBackColor);
     }
   }
-  void draw_hilite(int /*mode*/) override { draw_text(selected_ ? ToggleButton::kOnHotColor : kHotBackColor); }
+  void draw_hilite(int /*mode*/) override { draw_text(selected_ ? kSelectedHotColor : kHotBackColor); }
 
  private:
   bool selected_ = false;

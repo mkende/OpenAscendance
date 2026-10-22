@@ -10,6 +10,7 @@
 #pragma once
 
 #include <array>
+#include <cstdint>
 #include <filesystem>
 #include <span>
 #include <string_view>
@@ -23,6 +24,13 @@ namespace oa {
 
 // The options screen's number (one the original does not use).
 inline constexpr int kScreenOptions = 30;
+
+// The background of a selected choice of the options screen, normal and
+// hot (`game.pal`): the red ramp of the toggles' "on" colour (0x50), two
+// steps brighter, which stands out from the unselected choices' 0xf2 / hot
+// 0x96 and keeps the white captions readable.
+inline constexpr std::uint8_t kSelectedColor = 0x52;
+inline constexpr std::uint8_t kSelectedHotColor = 0x53;
 
 // The opening menu's buttons of `windows.txt`, top to bottom, and the place
 // of the Options button among them.
