@@ -53,7 +53,7 @@ constexpr int kMessageCancel = 602;
 // that follows the mute keys.
 constexpr int kMessageLevel = 603;
 constexpr int kMessageLevelDone = 604;
-constexpr int kMessageSyncSound = 605;
+constexpr int kMessageSync = 605;
 // A volume slider's step (a wheel notch, an arrow key), and the margin at
 // each end of its bar where a press is 0 or 100.
 constexpr int kLevelStep = 5;
@@ -502,14 +502,29 @@ class OptionsWnd final : public GWindow {
     add(std::move(cancel));
   }
 
+  // `FullscreenToggled`: saved at once; on this screen, kept by Cancel too,
+  // the other settings' picks still pending.
+  void fullscreen_toggled(bool fullscreen) {
+    context_.options->fullscreen = fullscreen;
+    if (open_) {
+      saved_options_.fullscreen = fullscreen;
+      saved_display_.fullscreen = fullscreen;
+    }
+    if (!context_.file.empty()) {
+      save_options(context_.file, open_ ? saved_options_ : *context_.options);
+    }
+  }
+
   bool handle_event(int type, int a, int b) override {
     switch (type) {
       case kEventActivate:
         read_settings();
         cancelled_ = false;
-        wm_.set_timer(id_, kMessageSyncSound, 0, 0, 0);
+        open_ = true;
+        wm_.set_timer(id_, kMessageSync, 0, 0, 0);
         return GWindow::handle_event(type, a, b);
       case kEventDeactivate:
+        open_ = false;
         if (cancelled_) {
           restore();
         } else {
@@ -547,8 +562,9 @@ class OptionsWnd final : public GWindow {
           wm_.services().sound.play_sfx(kClickSound);
         }
         return true;
-      case kMessageSyncSound:
+      case kMessageSync:
         sync_sliders();
+        sync_display();
         return true;
       default:
         return GWindow::handle_event(type, a, b);
@@ -636,6 +652,20 @@ class OptionsWnd final : public GWindow {
                               .music_level = sound.music_level(),
                               .sfx_level = sound.sfx_level()};
     sync_sliders();
+  }
+
+  // The Display row shows the window's state (Alt+Enter too).
+  void sync_display() {
+    if (context_.display == nullptr) {
+      return;
+    }
+    const int choice = context_.display->fullscreen() ? 1 : 0;
+    if (selected_[kRowDisplay] != choice) {
+      select(kRowDisplay, choice);
+      for (RemakeButton* button : rows_[kRowDisplay]) {
+        button->draw(kDrawNormal);
+      }
+    }
   }
 
   // The sliders show the volumes heard: 0 while muted (Alt+M / Alt+N too).
@@ -749,6 +779,8 @@ class OptionsWnd final : public GWindow {
   };
   SoundState saved_sound_;
   bool cancelled_ = false;
+  // Between the screen's entry and its exit.
+  bool open_ = false;
 };
 
 // The opening menu's two layouts, applied when the menu is entered.
@@ -894,7 +926,7 @@ std::vector<Pane> spread_menu_buttons(std::span<const Pane> original, int count)
   return out;
 }
 
-void install_options(WinMgr& wm, OptionsContext context) {
+FullscreenToggled install_options(WinMgr& wm, OptionsContext context) {
   if (context.options == nullptr) {
     throw std::invalid_argument("install_options: no settings");
   }
@@ -911,6 +943,7 @@ void install_options(WinMgr& wm, OptionsContext context) {
   wm.set_enter_handler(kScreenOptions, [&wm](int /*screen*/) {
     vfx_shape_draw(wm.screen(), GSystem::kScreenPane, wm.shapes().get(kBackground).at(0), 0, 0);
   });
+  return [&options_ref](bool fullscreen) { options_ref.fullscreen_toggled(fullscreen); };
 }
 
 }  // namespace oa

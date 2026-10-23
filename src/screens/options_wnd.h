@@ -13,6 +13,7 @@
 #include <array>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <span>
 #include <string_view>
 #include <vector>
@@ -50,16 +51,24 @@ struct OptionsContext {
   // The settings the screen shows and its OK changes; must outlive the
   // window manager.
   RemakeOptions* options = nullptr;
-  // `options.cfg`, written by OK; empty: not written.
+  // `options.cfg`, written when the settings kept change; empty: not
+  // written.
   std::filesystem::path file;
   // The program's window; null for none (headless runs): the display
   // settings then only change `options`.
   DisplayControl* display = nullptr;
 };
 
+// Called with the new state when the fullscreen setting is changed outside
+// the options screen's rows (Alt+Enter): it is saved at once, also while the
+// options screen is open (where Cancel then keeps it).
+using FullscreenToggled = std::function<void(bool)>;
+
 // Adds the Options button to the opening menu (and its layout to the
-// menu's entry) and the options screen's windows. Throws `DataError` when
-// a menu button or the help window is missing from `windows.txt`.
-void install_options(WinMgr& wm, OptionsContext context);
+// menu's entry) and the options screen's windows; returns the handler of
+// the fullscreen changes, valid as long as the window manager. Throws
+// `DataError` when a menu button or the help window is missing from
+// `windows.txt`.
+FullscreenToggled install_options(WinMgr& wm, OptionsContext context);
 
 }  // namespace oa

@@ -81,6 +81,7 @@ struct Display::Impl {
   Scaling scaling = Scaling::kSmooth;
   // The Enter key of the last Alt+Enter, until its release.
   std::optional<SDL_Keycode> toggle_key;
+  std::function<void(bool)> fullscreen_listener;
   // The picture's place in the output, in pixels.
   SDL_FRect picture{0, 0, kScreenWidth, kScreenHeight};
   // The rectangle the system pointer is confined to, none when it is free.
@@ -262,6 +263,10 @@ void Display::set_fullscreen(bool fullscreen) {
   impl_->place();
 }
 
+void Display::set_fullscreen_listener(std::function<void(bool)> listener) {
+  impl_->fullscreen_listener = std::move(listener);
+}
+
 Scaling Display::scaling() const { return impl_->scaling; }
 
 void Display::set_scaling(Scaling scaling) {
@@ -304,7 +309,11 @@ std::optional<InputEvent> Display::poll() {
       case SDL_EVENT_KEY_UP:
         if (e.type == SDL_EVENT_KEY_DOWN && is_fullscreen_toggle(e.key)) {
           if (!e.key.repeat) {
-            set_fullscreen(!impl_->fullscreen);
+            const bool was = impl_->fullscreen;
+            set_fullscreen(!was);
+            if (impl_->fullscreen != was && impl_->fullscreen_listener) {
+              impl_->fullscreen_listener(impl_->fullscreen);
+            }
           }
           impl_->toggle_key = e.key.key;
           break;

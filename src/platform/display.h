@@ -5,6 +5,7 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string_view>
@@ -89,6 +90,9 @@ class Display {
 
   bool fullscreen() const;
   void set_fullscreen(bool fullscreen);
+  // Sets the function called with the new state each time Alt+Enter changes
+  // it (not `set_fullscreen`, nor the window manager).
+  void set_fullscreen_listener(std::function<void(bool)> listener);
   Scaling scaling() const;
   void set_scaling(Scaling scaling);
 

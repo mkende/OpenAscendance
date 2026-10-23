@@ -80,13 +80,14 @@ class FakeDisplay final : public DisplayControl {
 
 // Installs the options on `rig`, the volumes of its settings applied as
 // `main` does, and enters the opening menu again (the rig starts on it with
-// the original layout).
-void install(test::UiRig& rig, OptionsContext context) {
+// the original layout); returns the handler of Alt+Enter.
+FullscreenToggled install(test::UiRig& rig, OptionsContext context) {
   rig.sound.set_music_level(context.options->music_volume);
   rig.sound.set_sfx_level(context.options->sfx_volume);
-  install_options(rig.wm, std::move(context));
+  FullscreenToggled toggled = install_options(rig.wm, std::move(context));
   rig.wm.set_screen(kScreenOptions, false);
   rig.wm.set_screen(0, false);
+  return toggled;
 }
 
 std::string read_text(const std::filesystem::path& path) {
@@ -348,6 +349,62 @@ int shown_level(test::UiRig& rig, Row row) {
     ++end;
   }
   return ((end - 264) * 100 + 170) / 340;
+}
+
+TEST_CASE("Alt+Enter saves the fullscreen setting at once, also on the options screen", "[screens][content]") {
+  OA_REQUIRE_GAME_FILES(files);
+  TempDir dir("oa_options");
+  test::UiRig rig(files, nullptr, dir.path);
+  RemakeOptions options{.fullscreen = false};
+  FakeDisplay display;
+  const std::filesystem::path file = dir.path / kOptionsFile;
+  const FullscreenToggled toggled = install(rig, OptionsContext{.options = &options, .file = file, .display = &display});
+  // What `Display` does on Alt+Enter.
+  const auto alt_enter = [&] {
+    display.set_fullscreen(!display.fullscreen());
+    toggled(display.fullscreen());
+  };
+  // A background pixel of choice `c` of the Display row (as in the
+  // selected choices' test), off its caption.
+  const auto display_choice = [&](int c) { return rig.wm.screen().at(c == 0 ? 261 : 448, 72 + 60 * kDisplay + 3); };
+
+  // On the opening menu.
+  alt_enter();
+  CHECK(options.fullscreen);
+  CHECK(load_options(file) == RemakeOptions{.fullscreen = true});
+
+  // On the options screen, a pick pending: the Display row follows, Cancel
+  // reverts the pick and keeps the window's state.
+  rig.click(318, options_y());
+  REQUIRE(rig.wm.current_screen() == kScreenOptions);
+  rig.click(choice_x(1), row_y(kVariant));
+  CHECK(display_choice(1) == kSelectedColor);
+  alt_enter();
+  CHECK(load_options(file) == RemakeOptions{.fullscreen = false});
+  // Shown at the next pass.
+  rig.pass();
+  CHECK(display_choice(0) == kSelectedColor);
+  CHECK(display_choice(1) == GWindow::kBackColor);
+  // Another pick puts the shown rows in force: the window stays as toggled.
+  rig.click(choice_x(1), row_y(kScaling));
+  CHECK_FALSE(display.fullscreen());
+  rig.click(kCancelX, kButtonsY);
+  CHECK(rig.wm.current_screen() == 0);
+  CHECK_FALSE(display.fullscreen());
+  CHECK(display.scaling() == Scaling::kSmooth);
+  CHECK(rig.game.new_game_variant() == game::Variant::kStandard);
+  CHECK(options == RemakeOptions{.fullscreen = false});
+  CHECK(load_options(file) == RemakeOptions{.fullscreen = false});
+
+  // OK keeps the picks with the toggled state.
+  rig.click(318, options_y());
+  rig.click(choice_x(1), row_y(kVariant));
+  alt_enter();
+  rig.pass();
+  rig.click(kOkX, kButtonsY);
+  const RemakeOptions expected{.variant = game::Variant::kAntagonizer, .fullscreen = true};
+  CHECK(options == expected);
+  CHECK(load_options(file) == expected);
 }
 
 TEST_CASE("the options screen's volume sliders: click, drag, wheel and keys, heard at once", "[screens][content]") {

@@ -93,6 +93,10 @@ class Host final : public DisplayControl {
   DisplayControl* display_control() { return headless_ ? nullptr : this; }
   bool fullscreen() const override { return display_.fullscreen(); }
   void set_fullscreen(bool fullscreen) override { display_.set_fullscreen(fullscreen); }
+  // `Display::set_fullscreen_listener`.
+  void set_fullscreen_listener(std::function<void(bool)> listener) {
+    display_.set_fullscreen_listener(std::move(listener));
+  }
   Scaling scaling() const override { return display_.scaling(); }
   void set_scaling(Scaling scaling) override { display_.set_scaling(scaling); }
   Input& input() { return input_; }
@@ -365,8 +369,15 @@ void run(const GameOptions& options, const GameFiles& files) {
   host.set_skip_query([&] { return wm.skippable_animation(); });
   if (!options.trace) {
     // A trace of the original clicks on the original opening menu.
-    install_options(
-        wm, OptionsContext{.options = &settings, .file = options.settings_file, .display = host.display_control()});
+    host.set_fullscreen_listener(install_options(
+        wm, OptionsContext{.options = &settings, .file = options.settings_file, .display = host.display_control()}));
+  } else {
+    host.set_fullscreen_listener([&](bool fullscreen) {
+      settings.fullscreen = fullscreen;
+      if (!options.settings_file.empty()) {
+        save_options(options.settings_file, settings);
+      }
+    });
   }
 
   gs.fade_window_colors(VgaPalette{}, kLogoFadeOut);
