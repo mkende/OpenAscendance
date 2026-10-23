@@ -53,6 +53,9 @@ class ShipDesWnd final : public GWindow {
   bool handle_event(int type, int a, int b) override;
   // The slot grid, not a target.
   void press_areas(std::vector<PressArea>& out) const override { out.push_back(PressArea{pane_, false}); }
+  // A long press on a fitted slot (unless read-only): the right button,
+  // which removes its component.
+  LongPress long_press(int x, int y) const override;
   // `ShipDesWnd_draw` (0x49b68).
   void draw(int mode) override;
 

@@ -342,6 +342,10 @@ void ResWnd::toggle_motion(int message, int button) {
   }
 }
 
+LongPress ResWnd::child_long_press(const GWindow& child, int /*x*/, int /*y*/) const {
+  return child.message() >= kRotateLeft && child.message() <= kMoveDown ? LongPress::kLeftHold : LongPress::kHelp;
+}
+
 bool ResWnd::handle_event(int type, int a, int b) {
   game::Session* session = core();
   switch (type) {

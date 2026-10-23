@@ -79,6 +79,13 @@ void Input::track_mouse_drag(const InputEvent& event, int from_x, int from_y) {
   }
 }
 
+void Input::help_click(int x, int y) {
+  mouse_x_ = std::clamp(x, 0, kScreenWidth - 1);
+  mouse_y_ = std::clamp(y, 0, kScreenHeight - 1);
+  buttons_.push_back({MouseButton::kLeft, true, true});
+  buttons_.push_back({MouseButton::kLeft, false});
+}
+
 void Input::begin_gesture(int x, int y, bool mouse) {
   gesture_ = ViewGesture{.started = true, .active = true, .mouse = mouse, .x = x, .y = y};
 }
@@ -126,6 +133,10 @@ const InputState& Input::poll() {
     }
     taken = taken || c.down != down;
     down = c.down;
+    if (c.help) {
+      s.shift_flags |= 2;  // left Shift (`bios_shift_state`)
+      s.shift = true;
+    }
     buttons_.pop_front();
   }
   if (mouse_x_ != s.x || mouse_y_ != s.y) {

@@ -11,6 +11,7 @@
 #include "assets/shp.h"
 #include "assets/windows_txt.h"
 #include "gfx/vfx.h"
+#include "platform/input_event.h"
 
 namespace oa {
 
@@ -131,6 +132,20 @@ class GWindow {
   // presses elsewhere (outside its rectangle, everywhere) or whose parts
   // are the targets overrides it.
   virtual void press_areas(std::vector<PressArea>& out) const;
+
+  // What a finger's long press at (x, y) on the window is (a remake
+  // addition, `WinMgr::long_press`). The default: the parent's
+  // `child_long_press`, a help click without a parent.
+  virtual LongPress long_press(int x, int y) const;
+  // What a long press at (x, y) on the child window `child` is: a help
+  // click by default.
+  virtual LongPress child_long_press(const GWindow& /*child*/, int /*x*/, int /*y*/) const {
+    return LongPress::kHelp;
+  }
+  // Esc or Back on the window's screen (a remake addition,
+  // `WinMgr::cancel_action`): cancels the window's action in progress;
+  // returns whether there was one (the screen then stays).
+  virtual bool cancel_action() { return false; }
 
   // The `windows.txt` TYPE (-1 for a window made by the code).
   int type() const { return type_; }

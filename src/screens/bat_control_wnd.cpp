@@ -681,6 +681,12 @@ void BatControlWnd::list_help(int row) {
   }
 }
 
+LongPress BatControlWnd::child_long_press(const GWindow& child, int x, int y) const {
+  const ListBox* rows = list();
+  const bool objects = list_mode_ == kListMine || list_mode_ == kListOthers;
+  return objects && &child == rows && rows->row_at(x, y) >= 0 ? LongPress::kRight : LongPress::kHelp;
+}
+
 void BatControlWnd::list_pick(int row, int button) {
   game::Session* s = core();
   BatModeWnd* view = mode_wnd();

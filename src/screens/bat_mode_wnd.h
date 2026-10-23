@@ -131,6 +131,14 @@ class BatModeWnd final : public GWindow {
   // The view, not a target; the whole screen during an animation (a click
   // anywhere is swallowed, a right click skips).
   void press_areas(std::vector<PressArea>& out) const override;
+  // A long press on the view: the right button (an item centred, the
+  // selection dropped), during a move the preview following the finger. A
+  // long press holds the rotation and zoom buttons.
+  LongPress long_press(int x, int y) const override;
+  LongPress child_long_press(const GWindow& child, int x, int y) const override;
+  // Esc and Back during a move: the move cancelled, as by a right click on
+  // empty space.
+  bool cancel_action() override;
   // `BatModeWnd_draw` (0x18ca8): `mode` 1 during the effects.
   void draw(int mode) override;
   void draw_hilite(int /*mode*/) override {}
@@ -261,6 +269,9 @@ class BatModeWnd final : public GWindow {
   void update_cursor();
   // `BatModeWnd_click_item` (0x16d6c): `left` the left button.
   void click_item(bool left);
+  // A right click on empty space: the selection dropped, the state back to
+  // idle (when there was a selection).
+  void drop_selection();
   // `BatModeWnd_abandon_selected` (0x172b0).
   void abandon_selected();
   // The BatControlWnd's object kind of item `i` (3 ship, 2 planet, 4 lane, 0).

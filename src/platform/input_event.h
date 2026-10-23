@@ -35,6 +35,17 @@ enum class EventType : std::uint8_t {
 
 enum class MouseButton : std::uint8_t { kNone, kLeft, kRight, kMiddle };
 
+// What a finger's long press is where it is put down (`TouchMapper`, a
+// remake addition):
+// - `kHelp`: a help click (the original's Shift + left click), once;
+// - `kRight`: the right button, held until the finger lifts;
+// - `kLeftHold`: the left button, held until the finger lifts (the buttons
+//   acting while held: the views' rotation and zoom);
+// - `kMoveDrag`: no button while held, the pointer following the finger
+//   (the preview of a ship's move); the lift is a left click there when
+//   `TouchMapper::kMoveDragLiftClicks`.
+enum class LongPress : std::uint8_t { kHelp, kRight, kLeftHold, kMoveDrag };
+
 // An input event. Mouse coordinates are in pixels of the 640x480 screen (the
 // letterbox and the scaling removed; outside the picture they fall out of
 // 0..639 x 0..479). `key` is the SDL keycode (printable keys are their

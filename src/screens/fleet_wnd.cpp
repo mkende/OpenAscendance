@@ -147,6 +147,10 @@ void FleetWnd::fill() {
   });
 }
 
+LongPress FleetWnd::child_long_press(const GWindow& child, int x, int y) const {
+  return &child == list_ && list_->row_at(x, y) >= 0 ? LongPress::kRight : LongPress::kHelp;
+}
+
 bool FleetWnd::handle_event(int type, int a, int b) {
   switch (type) {
     case kEventActivate:

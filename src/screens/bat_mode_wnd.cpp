@@ -1166,6 +1166,44 @@ void BatModeWnd::press_areas(std::vector<PressArea>& out) const {
   out.push_back(PressArea{state_ == State::kAnimating ? Pane{} : pane_, false});
 }
 
+LongPress BatModeWnd::long_press(int /*x*/, int /*y*/) const {
+  return state_ == State::kMovePoint || state_ == State::kMoveElevation ? LongPress::kMoveDrag : LongPress::kRight;
+}
+
+LongPress BatModeWnd::child_long_press(const GWindow& child, int /*x*/, int /*y*/) const {
+  switch (child.message()) {
+    case kMessageRotateLeft:
+    case kMessageRotateRight:
+    case kMessageZoomIn:
+    case kMessageZoomOut:
+      return LongPress::kLeftHold;
+    default:
+      return LongPress::kHelp;
+  }
+}
+
+bool BatModeWnd::cancel_action() {
+  if (state_ != State::kMovePoint && state_ != State::kMoveElevation) {
+    return false;
+  }
+  wm_.services().sound.play_sfx(kClickSound);
+  drop_selection();
+  state_ = State::kIdle;
+  refresh();
+  update_cursor();
+  return true;
+}
+
+void BatModeWnd::drop_selection() {
+  if (selected_ != -1) {
+    selected_ = -1;
+    if (BatControlWnd* ctrl = control()) {
+      ctrl->select(BatControlWnd::kObjectNone, 0);
+    }
+    state_ = State::kIdle;
+  }
+}
+
 bool BatModeWnd::handle_event(int type, int a, int b) {
   const auto inside = [&](int x, int y) { return x >= pane_.x0 && x <= pane_.x1 && y >= pane_.y0 && y <= pane_.y1; };
   switch (type) {
@@ -1204,13 +1242,7 @@ bool BatModeWnd::handle_event(int type, int a, int b) {
       }
       wm_.services().sound.play_sfx(kClickSound);
       if (hovered_ == -1) {
-        if (selected_ != -1) {
-          selected_ = -1;
-          if (BatControlWnd* ctrl = control()) {
-            ctrl->select(BatControlWnd::kObjectNone, 0);
-          }
-          state_ = State::kIdle;
-        }
+        drop_selection();
       } else {
         click_item(false);
       }

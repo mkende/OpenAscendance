@@ -6,8 +6,10 @@
 // - A finger put down moves the pointer there at once (the hover).
 // - Lifted without moving past `kSlop` before `kLongPress`: a left click
 //   there (a press and a release).
-// - Held still for `kLongPress`: the right button pressed there, released
-//   with the finger (the original's continuous actions and its cancels).
+// - Held still for `kLongPress`: what the long press query answers for the
+//   place (`LongPress`): a help click, the right or left button pressed
+//   there and released with the finger, or the pointer following the
+//   finger.
 // - Moved past `kSlop` first: a view drag, without any click.
 // - A second finger: a pinch, without any click, until every finger is up.
 //   Its zoom starts `kPinchDelay` after the second finger (or when the
@@ -44,6 +46,8 @@ class TouchMapper {
   // The part of their spread three fingers or more come together to before
   // they are Back.
   static constexpr double kCloseRatio = 0.6;
+  // Whether the lift of a `LongPress::kMoveDrag` is a left click.
+  static constexpr bool kMoveDragLiftClicks = true;
 
   // `input` gets the mouse events and gestures; it must outlive the mapper.
   explicit TouchMapper(Input& input) : input_(input) {}
@@ -54,7 +58,10 @@ class TouchMapper {
   // Sets the query of whether an animation that Space skips plays (none:
   // never).
   void set_skip_query(std::function<bool()> query) { skip_query_ = std::move(query); }
-  // Presses the right button once a finger has been held `kLongPress`, and
+  // Sets the query of a long press's kind at a place of the screen (none:
+  // `LongPress::kRight` everywhere).
+  void set_long_press_query(std::function<LongPress(int x, int y)> query) { long_press_query_ = std::move(query); }
+  // Starts a long press once a finger has been held `kLongPress`, and
   // starts the zoom of a pinch `kPinchDelay` after its second finger
   // (`now_ms` on the clock of the events' `time_ms`).
   void update(std::uint64_t now_ms);
@@ -63,7 +70,7 @@ class TouchMapper {
   enum class Phase : std::uint8_t {
     kIdle,
     kPending,     // one finger down, not moved nor held yet
-    kLongPress,   // the right button held
+    kLongPress,   // a long press held (`held_`)
     kDrag,        // a view drag
     kPinchDelay,  // two fingers, not zooming yet
     kPinch,       // two fingers zooming
@@ -90,6 +97,9 @@ class TouchMapper {
 
   Input& input_;
   std::function<bool()> skip_query_;
+  std::function<LongPress(int x, int y)> long_press_query_;
+  // The button a `kLongPress` holds (none: a `LongPress::kMoveDrag`).
+  MouseButton held_ = MouseButton::kNone;
   Phase phase_ = Phase::kIdle;
   // Every finger down, where it is now.
   std::vector<Finger> down_;

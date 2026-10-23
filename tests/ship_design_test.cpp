@@ -275,6 +275,8 @@ TEST_CASE("Ships list rows, title and picks", "[shipdes]") {
 
   // A right click shows the ship's design, read-only.
   const game::ShipIndex frigate = fleet.row_ship(2);
+  // A long press on a row is the right click.
+  CHECK(r.rig.wm.long_press(300, 300) == LongPress::kRight);
   r.rig.click(300, 300, MouseButton::kRight);
   r.rig.pass();
   REQUIRE(r.rig.wm.current_screen() == kScreenShipDesign);
@@ -284,6 +286,7 @@ TEST_CASE("Ships list rows, title and picks", "[shipdes]") {
   CHECK(design.category() == ShipDesWnd::kGenerator);
   write_shot(r.rig, "design_view");
   const game::Ship before = *design.ship();
+  CHECK(r.rig.wm.long_press(403, 166) == LongPress::kHelp);
   r.rig.click(403, 166);
   r.rig.click(403, 166, MouseButton::kRight);
   CHECK(design.ship()->slots[0].gizmo == before.slots[0].gizmo);
@@ -329,8 +332,13 @@ TEST_CASE("Ship design: a new design named and built", "[shipdes]") {
     write_shot(r.rig, std::string("design_hull") + std::to_string(hull));
   }
   CHECK_FALSE(design.modified());
+  CHECK(r.rig.wm.long_press(403, 166) == LongPress::kHelp);
   r.rig.click(403, 166);  // slot 0: the Mass Barrage Gun
   CHECK(design.modified());
+  // A long press on a fitted slot is the right click (it removes); on the
+  // components' list, a help click.
+  CHECK(r.rig.wm.long_press(403, 166) == LongPress::kRight);
+  CHECK(r.rig.wm.long_press(557, 189) == LongPress::kHelp);
   r.rig.click(500, 22);   // WEAPONS
   r.rig.click(557, 189);  // the second weapon
   CHECK(design.selected_gizmo() == kFourierMissiles);

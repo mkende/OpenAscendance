@@ -138,6 +138,11 @@ void GWindow::press_areas(std::vector<PressArea>& out) const {
   out.push_back(PressArea{pane_, message_ != kMessageNone});
 }
 
+LongPress GWindow::long_press(int x, int y) const {
+  const GWindow* parent = parent_ != 0 ? wm_.window(parent_) : nullptr;
+  return parent != nullptr ? parent->child_long_press(*this, x, y) : LongPress::kHelp;
+}
+
 void GWindow::draw_border(std::uint8_t color) {
   Image8& screen = wm_.screen();
   const int w = pane_.x1 - pane_.x0;

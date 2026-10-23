@@ -57,7 +57,12 @@ void TouchMapper::finish(bool tap) {
       }
       break;
     case Phase::kLongPress:
-      mouse(EventType::kMouseUp, first_.x, first_.y, MouseButton::kRight);
+      if (held_ != MouseButton::kNone) {
+        mouse(EventType::kMouseUp, first_.x, first_.y, held_);
+      } else if (tap && kMoveDragLiftClicks) {
+        mouse(EventType::kMouseDown, first_.x, first_.y, MouseButton::kLeft);
+        mouse(EventType::kMouseUp, first_.x, first_.y, MouseButton::kLeft);
+      }
       break;
     case Phase::kDrag:
     case Phase::kPinch:
@@ -194,8 +199,22 @@ void TouchMapper::feed(const InputEvent& event) {
 
 void TouchMapper::update(std::uint64_t now_ms) {
   if (phase_ == Phase::kPending && now_ms - down_ms_ >= kLongPress) {
+    const LongPress kind = long_press_query_ ? long_press_query_(start_x_, start_y_) : LongPress::kRight;
+    switch (kind) {
+      case LongPress::kHelp:
+        input_.help_click(start_x_, start_y_);
+        phase_ = Phase::kDone;
+        return;
+      case LongPress::kRight:
+      case LongPress::kLeftHold:
+        held_ = kind == LongPress::kRight ? MouseButton::kRight : MouseButton::kLeft;
+        mouse(EventType::kMouseDown, start_x_, start_y_, held_);
+        break;
+      case LongPress::kMoveDrag:
+        held_ = MouseButton::kNone;
+        break;
+    }
     phase_ = Phase::kLongPress;
-    mouse(EventType::kMouseDown, start_x_, start_y_, MouseButton::kRight);
   } else if (phase_ == Phase::kPinchDelay && now_ms >= pinch_ms_ + kPinchDelay) {
     start_pinch();
   }

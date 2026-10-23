@@ -168,6 +168,31 @@ void ListBox::draw(int /*mode*/) {
   }
 }
 
+std::optional<ListBox::RowSpan> ListBox::row_span(int y) const {
+  int y0 = pane_.y0 + 1;
+  bool last = false;
+  for (int i = top_; i < count() && !last; ++i) {
+    int y1 = height_of(items_[static_cast<std::size_t>(i)]) + y0 - 1;
+    if (y1 >= pane_.y1) {
+      last = true;
+      y1 = pane_.y1 - 1;
+    }
+    if (y >= y0 && y <= y1) {
+      return RowSpan{.index = i, .y0 = y0, .y1 = y1};
+    }
+    y0 = y1 + 1;
+  }
+  return std::nullopt;
+}
+
+int ListBox::row_at(int x, int y) const {
+  if (!contains(x, y) || x >= pane_.x1 - (scroll_bar_ ? bar_width_ : 0)) {
+    return -1;
+  }
+  const std::optional<RowSpan> row = row_span(y);
+  return row ? row->index : -1;
+}
+
 void ListBox::track_mouse(int x, int y) {
   if (hover_ != -1) {
     if (y >= row_.y0 && y <= row_.y1 && x <= row_.x1) {
@@ -187,20 +212,11 @@ void ListBox::track_mouse(int x, int y) {
       wm_.cancel_notify(id_, kEventScrollStop);
       wm_.kill_timer(id_, -1);
     }
-    row_.y0 = pane_.y0 + 1;
-    bool last = false;
-    for (int i = top_; i < count() && !last; ++i) {
-      row_.y1 = height_of(items_[static_cast<std::size_t>(i)]) + row_.y0 - 1;
-      if (row_.y1 >= pane_.y1) {
-        last = true;
-        row_.y1 = pane_.y1 - 1;
-      }
-      if (y >= row_.y0 && y <= row_.y1) {
-        hover_ = i;
-        draw_row(i, true);
-        return;
-      }
-      row_.y0 = row_.y1 + 1;
+    if (const std::optional<RowSpan> row = row_span(y)) {
+      row_.y0 = row->y0;
+      row_.y1 = row->y1;
+      hover_ = row->index;
+      draw_row(hover_, true);
     }
   } else if (scroll_bar_) {
     const int mid = pane_.y0 + (pane_.y1 - pane_.y0) / 2;

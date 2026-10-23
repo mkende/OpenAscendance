@@ -109,6 +109,10 @@ class Host final : public DisplayControl {
   void warp_pointer(int x, int y) { input_.warp(x, y); }
   // `TouchMapper::set_skip_query`.
   void set_skip_query(std::function<bool()> query) { touch_.set_skip_query(std::move(query)); }
+  // `TouchMapper::set_long_press_query`.
+  void set_long_press_query(std::function<LongPress(int x, int y)> query) {
+    touch_.set_long_press_query(std::move(query));
+  }
   // The last frame shown, with the pointer.
   const Image8& shown_frame() const { return frame_; }
 
@@ -367,6 +371,7 @@ void run(const GameOptions& options, const GameFiles& files) {
   WinMgr& wm = *wm_holder;
   wm.setup_race_shapes();
   host.set_skip_query([&] { return wm.skippable_animation(); });
+  host.set_long_press_query([&](int x, int y) { return wm.long_press(x, y); });
   if (!options.trace) {
     // A trace of the original clicks on the original opening menu.
     host.set_fullscreen_listener(install_options(

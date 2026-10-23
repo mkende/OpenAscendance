@@ -94,6 +94,8 @@ class CosWnd final : public GWindow {
   // the pointer and hover (6, 7, 8), clicks (4, 5) and help (0xc), the
   // rotation speed keys (- and =), the new day (0xd) and the messages.
   bool handle_event(int type, int a, int b) override;
+  // A long press holds the rotation and zoom buttons (they act while held).
+  LongPress child_long_press(const GWindow& child, int x, int y) const override;
   // `CosWnd_draw` (0x23310): the items, the new-game box over it on screen
   // 3, the species circle on screen 7, the player's flag and the hovered
   // star's label.

@@ -217,10 +217,13 @@ TEST_CASE("Planet screen build list picks a project", "[planet]") {
   r.rig.move(top.x, top.y + 17);
   CHECK(plan.hovered() == target);
   write_shot(r.rig, "planet_pick_location");
+  // A long press would drop the item (the right button).
+  CHECK(r.rig.wm.long_press(top.x, top.y + 17) == LongPress::kRight);
   r.rig.click(top.x, top.y + 17);
   CHECK(p.project_square == target);
   CHECK(p.project_item == item);
   CHECK(plan.selection() == PlanWnd::kNoSelection);
+  CHECK(r.rig.wm.long_press(top.x, top.y + 17) == LongPress::kHelp);
   // Abandon on the unbuilt project square removes it.
   r.rig.click(top.x, top.y + 17);
   REQUIRE(r.dialog().shown());

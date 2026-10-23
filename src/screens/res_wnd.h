@@ -56,6 +56,8 @@ class ResWnd final : public GWindow {
   // The tree and the items' hover boxes (a click acts on the hovered item
   // wherever the pointer is), not targets.
   void press_areas(std::vector<PressArea>& out) const override;
+  // A long press holds the rotation and move buttons (they act while held).
+  LongPress child_long_press(const GWindow& child, int x, int y) const override;
   // `ResWnd_draw` 0x4331c: the tree, then the info column and the title bar
   // when they are marked for redrawing.
   void draw(int mode) override;

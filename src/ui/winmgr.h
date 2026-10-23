@@ -239,6 +239,12 @@ class WinMgr final : public WindowStateIo {
   // Space skips (`GWindow::plays_skippable_animation`), not in a modal loop:
   // a finger put down is then Space (a remake addition, `TouchMapper`).
   bool skippable_animation() const;
+  // What a finger's long press at (x, y) is (a remake addition,
+  // `TouchMapper`): the answer of the top shown window of the current
+  // screen taking a press at its target point (`GWindow::long_press`), a
+  // help click when none does or in a modal loop (where it is a left click,
+  // as the original's Shift + click).
+  LongPress long_press(int x, int y) const;
   // The exit corner under the pointer (`+0x24da8`): 0..3, -1 for none.
   int exit_corner() const { return exit_corner_; }
   // The auto next turn (`+0x24d9c`, NEXTTURNCONT, message 8): a next day is
@@ -351,7 +357,8 @@ class WinMgr final : public WindowStateIo {
   // The system's Back (a remake addition, Android's Back button and
   // gesture): what a click on an exit corner does (the modal loop ended
   // with -1, else the exit sound and the previous screen), and Exit to DOS
-  // on the opening menu, which has no exit corners.
+  // on the opening menu, which has no exit corners. An action in progress
+  // on the screen is cancelled first, the screen kept (`cancel_action`).
   void system_back();
 
   // `WinMgr_refresh_screen` (0x5049c): advances the pending fade.
@@ -541,6 +548,14 @@ class WinMgr final : public WindowStateIo {
   // Whether the pointer acted at another point than its own at the last
   // pass.
   bool pointer_on_target_ = false;
+  // The top shown window of the current screen taking a press at `p`
+  // (the broadcast's order), null for none.
+  const GWindow* press_receiver(PointerPos p) const;
+  // Esc or Back outside a modal loop (a remake addition, off while a trace
+  // is replayed): cancels the current screen's action in progress
+  // (`GWindow::cancel_action`); returns whether one was.
+  bool cancel_action();
+
   bool enlarged_targets_ = true;
 };
 

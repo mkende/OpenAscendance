@@ -38,6 +38,8 @@ class FleetWnd final : public GWindow {
   // construction, refitted or in orbit, the star system (16) of a ship in a
   // system, or goes back (message 3) for a ship in a starlane.
   bool handle_event(int type, int a, int b) override;
+  // A long press on a ship's row: the right button (the ship's design).
+  LongPress child_long_press(const GWindow& child, int x, int y) const override;
   // `FleetWnd_draw` (0x4cfd4): the title "<species>  (N Ships, M more
   // allowed)" in the player's colour with its flag, then the list.
   void draw(int mode) override;

@@ -910,7 +910,9 @@ bool WinMgr::handle_hotkey(const InputState& input) {
       if (current_ == kScreenPlanet) {
         return false;  // the planet window takes it
       }
-      go_back();
+      if (!cancel_action()) {
+        go_back();
+      }
       return true;
     case kScanS:
     case kScanL:
@@ -1680,7 +1682,7 @@ void WinMgr::system_back() {
     end_modal(-1);
   } else if (current_ == kScreenOpening) {
     post_message(kMessageQuit, 0, 0);
-  } else {
+  } else if (!cancel_action()) {
     services_.sound.play_sfx(kExitSound);
     go_back();
   }
@@ -1695,21 +1697,7 @@ PointerPos WinMgr::target_point(PointerPos raw) const {
   };
   const Screen& s = screens_.at(static_cast<std::size_t>(current_));
   std::vector<PressArea> areas;
-  // The top shown window taking a press at `p` (the broadcast's order).
-  const auto receiver = [&](PointerPos p) -> const GWindow* {
-    for (auto it = s.slots.rbegin(); it != s.slots.rend(); ++it) {
-      const GWindow* w = window(*it);
-      if (w == nullptr || !w->shown()) {
-        continue;
-      }
-      areas.clear();
-      w->press_areas(areas);
-      if (std::ranges::any_of(areas, [&](const PressArea& a) { return inside(a.pane, p); })) {
-        return w;
-      }
-    }
-    return nullptr;
-  };
+  const auto receiver = [&](PointerPos p) { return press_receiver(p); };
   if (receiver(raw) != nullptr) {
     return raw;
   }
@@ -1738,6 +1726,46 @@ PointerPos WinMgr::target_point(PointerPos raw) const {
   }
   const PointerPos point{std::clamp(raw.x, target.x0, target.x1), std::clamp(raw.y, target.y0, target.y1)};
   return receiver(point) == found ? point : raw;
+}
+
+const GWindow* WinMgr::press_receiver(PointerPos p) const {
+  const Screen& s = screens_.at(static_cast<std::size_t>(current_));
+  std::vector<PressArea> areas;
+  for (auto it = s.slots.rbegin(); it != s.slots.rend(); ++it) {
+    const GWindow* w = window(*it);
+    if (w == nullptr || !w->shown()) {
+      continue;
+    }
+    areas.clear();
+    w->press_areas(areas);
+    if (std::ranges::any_of(areas, [&](const PressArea& a) {
+          return p.x >= a.pane.x0 && p.x <= a.pane.x1 && p.y >= a.pane.y0 && p.y <= a.pane.y1;
+        })) {
+      return w;
+    }
+  }
+  return nullptr;
+}
+
+LongPress WinMgr::long_press(int x, int y) const {
+  if (modal_ || current_ < 0) {
+    return LongPress::kHelp;
+  }
+  const PointerPos p = target_point(PointerPos{x, y});
+  const GWindow* w = press_receiver(p);
+  return w != nullptr ? w->long_press(p.x, p.y) : LongPress::kHelp;
+}
+
+bool WinMgr::cancel_action() {
+  if (replaying_ || current_ < 0) {
+    return false;
+  }
+  for (const int id : screens_.at(static_cast<std::size_t>(current_)).slots) {
+    if (GWindow* w = window(id); w != nullptr && w->shown() && w->cancel_action()) {
+      return true;
+    }
+  }
+  return false;
 }
 
 int WinMgr::view_window_at(int x, int y, bool mouse) const {

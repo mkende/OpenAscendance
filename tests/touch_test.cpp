@@ -24,6 +24,7 @@
 #include "app/command_line.h"
 #include "app/corn.h"
 #include "core_session.h"
+#include "game/cosmos.h"
 #include "game/save.h"
 #include "game_data.h"
 #include "platform/display.h"
@@ -85,6 +86,82 @@ TEST_CASE("touch: a long press holds the right button until the finger is lifted
   CHECK(!s.right_down);
   CHECK(!s.left_down);
   CHECK(!s.left_changed);
+}
+
+TEST_CASE("touch: a long press is what the query answers for the place the finger was put", "[platform]") {
+  Input input;
+  TouchMapper touch(input);
+  LongPress answer = LongPress::kHelp;
+  std::vector<std::pair<int, int>> asked;
+  touch.set_long_press_query([&](int x, int y) {
+    asked.emplace_back(x, y);
+    return answer;
+  });
+  const InputState& s = input.poll();
+  // Held still `kLongPress` from `ms` at (x, y).
+  const auto hold = [&](int x, int y, std::uint64_t ms) {
+    touch.feed(finger(EventType::kFingerDown, 1, x, y, ms));
+    touch.update(ms + TouchMapper::kLongPress);
+  };
+
+  SECTION("a help click: Shift with the press only, once") {
+    hold(100, 120, 0);
+    CHECK(asked == std::vector<std::pair<int, int>>{{100, 120}});
+    input.poll();
+    CHECK(s.shift);
+    CHECK(s.left_down);
+    CHECK(s.left_changed);
+    input.poll();
+    CHECK(!s.shift);
+    CHECK(!s.left_down);
+    CHECK(s.left_changed);
+    touch.feed(finger(EventType::kFingerMove, 1, 160, 120, 600));
+    touch.feed(finger(EventType::kFingerUp, 1, 160, 120, 700));
+    input.poll();
+    CHECK(!s.left_changed);
+    CHECK(!s.right_down);
+    CHECK(s.x == 100);
+  }
+  SECTION("the left button held until the lift") {
+    answer = LongPress::kLeftHold;
+    hold(100, 120, 0);
+    input.poll();
+    CHECK(s.left_down);
+    CHECK(!s.shift);
+    CHECK(!s.right_down);
+    input.poll();
+    CHECK(s.left_down);
+    touch.feed(finger(EventType::kFingerUp, 1, 100, 120, 900));
+    input.poll();
+    CHECK(!s.left_down);
+    CHECK(s.left_changed);
+  }
+  SECTION("a move drag: the pointer follows, no button until the lift's click there") {
+    answer = LongPress::kMoveDrag;
+    hold(100, 120, 0);
+    touch.feed(finger(EventType::kFingerMove, 1, 180, 150, 600));
+    input.poll();
+    CHECK(s.x == 180);
+    CHECK(s.y == 150);
+    CHECK(!s.left_down);
+    CHECK(!s.right_down);
+    CHECK(!s.gesture.started);
+    touch.feed(finger(EventType::kFingerUp, 1, 180, 150, 700));
+    input.poll();
+    CHECK(s.left_down);
+    CHECK(s.x == 180);
+    input.poll();
+    CHECK(!s.left_down);
+  }
+  SECTION("a move drag cancelled by more fingers clicks nothing") {
+    answer = LongPress::kMoveDrag;
+    hold(100, 120, 0);
+    touch.feed(finger(EventType::kFingerDown, 2, 300, 120, 600));
+    touch.feed(finger(EventType::kFingerDown, 3, 200, 300, 600));
+    touch.feed(finger(EventType::kFingerUp, 1, 100, 120, 700));
+    input.poll();
+    CHECK(!s.left_changed);
+  }
 }
 
 TEST_CASE("touch: a moving finger drags the view without a click; two fingers pinch", "[platform]") {
@@ -739,6 +816,116 @@ TEST_CASE("Back: an exit corner's action, Exit to DOS on the opening menu", "[sc
   r.rig.pass(InputEvent{.type = EventType::kBack});
   r.wait(1);
   CHECK(!r.rig.wm.running());
+}
+
+TEST_CASE("long presses: held rotation buttons, the System Display's right button, its move drag, Back and Esc "
+          "cancelling a move",
+          "[screens][content]") {
+  OA_REQUIRE_GAME_FILES(files);
+  test::TempDir dir("oa_touch");
+  GameRig r(files, dir.path);
+  WinMgr& wm = r.rig.wm;
+  r.touch.set_long_press_query([&](int x, int y) { return wm.long_press(x, y); });
+  const auto centre = [](const GWindow& w) {
+    return std::pair{(w.pane().x0 + w.pane().x1) / 2, (w.pane().y0 + w.pane().y1) / 2};
+  };
+  const auto long_press_on = [&](const GWindow& w) {
+    const auto [x, y] = centre(w);
+    return wm.long_press(x, y);
+  };
+  std::uint64_t ms = 0;
+  // A finger held on (x, y) past the long press, `passes` passes.
+  const auto hold = [&](int x, int y, int passes) {
+    r.touch.feed(finger(EventType::kFingerDown, 1, x, y, ms));
+    r.rig.pass();
+    ms += TouchMapper::kLongPress;
+    r.touch.update(ms);
+    r.wait(passes);
+  };
+  const auto lift = [&](int x, int y) {
+    r.touch.feed(finger(EventType::kFingerUp, 1, x, y, ++ms));
+    r.wait(3);
+  };
+
+  // The star map: help, but its buttons acting while held.
+  REQUIRE(wm.current_screen() == 1);
+  CHECK(long_press_on(r.map()) == LongPress::kHelp);
+  CHECK(long_press_on(*wm.find_window("ROTRIGHT")) == LongPress::kLeftHold);
+  CHECK(long_press_on(*wm.find_window("ZOOMIN")) == LongPress::kLeftHold);
+  CHECK(long_press_on(*wm.find_window("CENTERHOLO")) == LongPress::kHelp);
+
+  // A ship of the player that can move in its home system (none on day 0).
+  game::Session& s = *r.session.core();
+  const int home_star = s.game->cosmos.races[s.player_race].home;
+  game::Ship* ship = game::cosmos_alloc_ship(s, s.player_race);
+  REQUIRE(ship != nullptr);
+  ship->location_kind = game::ShipLocation::kSystem;
+  ship->power = 10;
+  game::ship_enter_star_system(s, s.game->cosmos.stars[static_cast<std::size_t>(home_star)], *ship);
+  const CosWnd::Item& home = r.star_item(home_star);
+  r.click(r.map().pane().x0 + home.x, r.map().pane().y0 + home.y);
+  r.wait(10);
+  REQUIRE(wm.current_screen() == 16);
+  auto& view = dynamic_cast<BatModeWnd&>(*wm.find_window("BatModeWnd"));
+  const auto [cx, cy] = centre(view);
+  CHECK(wm.long_press(cx, cy) == LongPress::kRight);
+
+  // A rotation button turns the system while held, and only then.
+  const GWindow& rotate = *wm.find_window("BATROTLEFT");
+  REQUIRE(long_press_on(rotate) == LongPress::kLeftHold);
+  const auto [rx, ry] = centre(rotate);
+  const auto before = view.camera().position;
+  hold(rx, ry, 10);
+  CHECK(view.camera().position != before);
+  lift(rx, ry);
+  const auto stopped = view.camera().position;
+  r.wait(10);
+  CHECK(view.camera().position == stopped);
+
+  // One of the player's ships picked in the panel's list: a move.
+  auto& list = dynamic_cast<ListBox&>(*wm.find_window("BatListWnd"));
+  const auto pick_ship = [&] {
+    const int x = list.pane().x0 + 10;
+    for (int y = list.pane().y0; y <= list.pane().y1; ++y) {
+      if (const int row = list.row_at(x, y); row >= 0 && list.item(row).data >= 0) {
+        CHECK(wm.long_press(x, y) == LongPress::kRight);
+        r.click(x, y);
+        r.wait(2);
+        return;
+      }
+    }
+    FAIL("no ship in the list");
+  };
+  pick_ship();
+  REQUIRE(view.state() == BatModeWnd::State::kMovePoint);
+  CHECK(wm.long_press(cx, cy) == LongPress::kMoveDrag);
+
+  // Held and dragged: the target follows the finger, the lift fixes it.
+  hold(cx - 60, cy + 60, 1);
+  const auto first = view.move_point();
+  r.touch.feed(finger(EventType::kFingerMove, 1, cx - 20, cy + 80, ++ms));
+  r.wait(1);
+  CHECK(view.state() == BatModeWnd::State::kMovePoint);
+  CHECK(view.move_point() != first);
+  lift(cx - 20, cy + 80);
+  CHECK(view.state() == BatModeWnd::State::kMoveElevation);
+
+  // Back between the steps: the move cancelled, the screen kept.
+  r.rig.pass(InputEvent{.type = EventType::kBack});
+  r.wait(2);
+  CHECK(view.state() == BatModeWnd::State::kIdle);
+  CHECK(view.selected() == -1);
+  CHECK(wm.current_screen() == 16);
+
+  // Esc too; without a move it leaves.
+  pick_ship();
+  REQUIRE(view.state() == BatModeWnd::State::kMovePoint);
+  r.rig.key(SDLK_ESCAPE);
+  CHECK(view.state() == BatModeWnd::State::kIdle);
+  CHECK(wm.current_screen() == 16);
+  r.rig.key(SDLK_ESCAPE);
+  r.wait(3);
+  CHECK(wm.current_screen() != 16);
 }
 
 TEST_CASE("three fingers coming together are Back, and neither turn nor zoom the view", "[screens][content]") {

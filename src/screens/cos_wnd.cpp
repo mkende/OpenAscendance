@@ -836,6 +836,11 @@ void CosWnd::deactivate(int a, int b) {
   GWindow::handle_event(kEventDeactivate, a, b);
 }
 
+LongPress CosWnd::child_long_press(const GWindow& child, int /*x*/, int /*y*/) const {
+  return child.message() >= kMessageRotateLeft && child.message() <= kMessageZoomOut ? LongPress::kLeftHold
+                                                                                     : LongPress::kHelp;
+}
+
 bool CosWnd::handle_event(int type, int a, int b) {
   const auto strictly_inside = [&](int x, int y) {
     return x > pane_.x0 && x < pane_.x1 && y > pane_.y0 && y < pane_.y1;

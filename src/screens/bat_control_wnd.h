@@ -80,6 +80,9 @@ class BatControlWnd final : public GWindow {
   // click (a click target), and the help click (the view's topic), as the
   // view's planet does; nothing while a trace is replayed.
   void press_areas(std::vector<PressArea>& out) const override;
+  // A long press on a ship's or planet's row: the right button (the view
+  // centred on it); a help click elsewhere (the components' rows).
+  LongPress child_long_press(const GWindow& child, int x, int y) const override;
 
   // Message 800: the view's selection (`kind`, `object`); the list shows
   // its gizmos or weapons, or the player's items.

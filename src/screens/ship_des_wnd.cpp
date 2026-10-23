@@ -111,6 +111,15 @@ bool ShipDesWnd::edit_slot(bool install) {
                  : game::ship_remove_gizmo(*s, *ship_, hovered_);
 }
 
+LongPress ShipDesWnd::long_press(int x, int y) const {
+  if (read_only_ || !active_ || ship_ == nullptr) {
+    return LongPress::kHelp;
+  }
+  const int slot = game::ship_design_slot_at(x, y, ship_->hull_size);
+  return slot >= 0 && ship_->slots.at(static_cast<std::size_t>(slot)).gizmo != -1 ? LongPress::kRight
+                                                                                  : LongPress::kHelp;
+}
+
 bool ShipDesWnd::handle_event(int type, int a, int b) {
   switch (type) {
     case kEventActivate:

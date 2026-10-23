@@ -159,6 +159,9 @@ TEST_CASE("research: hover, click to choose a project, M, PgDn, rotation and lea
   r.rig.key(SDLK_HOME);
   CHECK(w.camera().position[1] == 0.0F);
 
+  // A long press holds RESROTLEFT (the left button); the tree has help.
+  CHECK(r.rig.wm.long_press(531, 457) == LongPress::kLeftHold);
+  CHECK(r.rig.wm.long_press(240, 260) == LongPress::kHelp);
   // A right click on RESROTLEFT rotates at each pass until clicked again.
   r.rig.click(531, 457, MouseButton::kRight);
   CHECK(w.motion() == ResWnd::kRotating);

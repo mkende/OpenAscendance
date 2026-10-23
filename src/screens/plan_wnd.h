@@ -90,6 +90,11 @@ class PlanWnd final : public GWindow {
   bool handle_event(int type, int a, int b) override;
   // The whole screen (its left click anywhere), not a target.
   void press_areas(std::vector<PressArea>& out) const override { out.push_back(PressArea{Pane{}, false}); }
+  // A long press while an item is being placed: the right button, which
+  // drops it.
+  LongPress long_press(int /*x*/, int /*y*/) const override {
+    return selection_ != kNoSelection ? LongPress::kRight : LongPress::kHelp;
+  }
   // `PlanWnd_draw` (0x36de0).
   void draw(int mode) override;
   // `PlanWnd_serialize` (0x37ef4): the display flags byte.

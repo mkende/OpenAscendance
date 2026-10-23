@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -82,6 +83,8 @@ class ListBox final : public GWindow {
 
   int top() const { return top_; }
   int hover_row() const { return hover_; }
+  // The row shown at (x, y), -1 for none (off the rows, on the scroll bar).
+  int row_at(int x, int y) const;
   bool scroll_bar() const { return scroll_bar_; }
   int line_height() const { return line_height_; }
   // The rows' default height (`+0x8c9`), set by the screens (LoadWnd).
@@ -115,7 +118,16 @@ class ListBox final : public GWindow {
   void draw_text_item(const Pane& row, const Item& item, bool hilite);
 
  private:
+  // A shown row's index and its first and last screen lines.
+  struct RowSpan {
+    int index = 0;
+    int y0 = 0;
+    int y1 = 0;
+  };
+
   int height_of(const Item& item) const;
+  // The shown row at height `y`, none below the last one.
+  std::optional<RowSpan> row_span(int y) const;
   // `ListBox_draw_scrollbar` (0x2df88).
   void draw_scroll_bar();
   // `ListBox_track_mouse` (0x2e4e8): the hovered row and arrow under (x, y).

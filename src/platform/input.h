@@ -97,6 +97,10 @@ class Input {
   // reads `state()`'s).
   std::pair<int, int> pointer() const { return {mouse_x_, mouse_y_}; }
 
+  // A help click at (x, y) (a finger's long press): a press and a release
+  // of the left button, Shift reported down by the poll of the press only.
+  void help_click(int x, int y);
+
   // `MOUSE_force_move`: the pointer moved to (x, y) without a move event
   // (a replayed trace's).
   void warp(int x, int y) {
@@ -110,6 +114,7 @@ class Input {
   struct ButtonChange {
     MouseButton button;
     bool down;
+    bool help = false;  // a help click's press
   };
 
   // A mouse event's part in the view drags; the pointer was at
