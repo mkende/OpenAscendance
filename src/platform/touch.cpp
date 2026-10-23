@@ -39,16 +39,44 @@ double TouchMapper::close_spread() const {
   return sum / n;
 }
 
-void TouchMapper::start_pinch() {
-  phase_ = Phase::kPinch;
-  input_.begin_gesture(pinch_x_, pinch_y_, false);
-  const std::int64_t now = spread();
-  if (pinch_spread_ > 0 && now > 0 && now != pinch_spread_) {
-    input_.zoom_gesture(static_cast<float>(std::sqrt(static_cast<double>(now) / static_cast<double>(pinch_spread_))));
+void TouchMapper::begin_gesture(int x, int y) {
+  if (!gesture_open_) {
+    input_.begin_gesture(x, y, false);
+    gesture_open_ = true;
   }
 }
 
+void TouchMapper::pinch_moved(std::int64_t before) {
+  const std::int64_t after = spread();
+  if (before > 0 && after > 0 && after != before) {
+    input_.zoom_gesture(static_cast<float>(std::sqrt(static_cast<double>(after) / static_cast<double>(before))));
+  }
+  const int x = (first_.x + second_->x) / 2;
+  const int y = (first_.y + second_->y) / 2;
+  if (x != pinch_x_ || y != pinch_y_) {
+    input_.drag_gesture(x - pinch_x_, y - pinch_y_);
+    pinch_x_ = x;
+    pinch_y_ = y;
+  }
+}
+
+void TouchMapper::start_pinch() {
+  phase_ = Phase::kPinch;
+  begin_gesture(pinch_x_, pinch_y_);
+  pinch_moved(pinch_spread_);
+}
+
+void TouchMapper::drag_on(const Finger& finger) {
+  first_ = finger;
+  second_.reset();
+  phase_ = Phase::kDrag;
+}
+
 void TouchMapper::finish(bool tap) {
+  if (gesture_open_) {
+    input_.end_gesture();
+    gesture_open_ = false;
+  }
   switch (phase_) {
     case Phase::kPending:
       if (tap) {
@@ -64,11 +92,9 @@ void TouchMapper::finish(bool tap) {
         mouse(EventType::kMouseUp, first_.x, first_.y, MouseButton::kLeft);
       }
       break;
+    case Phase::kIdle:
     case Phase::kDrag:
     case Phase::kPinch:
-      input_.end_gesture();
-      break;
-    case Phase::kIdle:
     case Phase::kPinchDelay:
     case Phase::kClose:
     case Phase::kDone:
@@ -113,7 +139,6 @@ void TouchMapper::feed(const InputEvent& event) {
         return;
       }
       if (phase_ == Phase::kPending || phase_ == Phase::kDrag) {
-        finish(false);
         second_ = finger;
         phase_ = Phase::kPinchDelay;
         pinch_ms_ = event.time_ms;
@@ -147,10 +172,7 @@ void TouchMapper::feed(const InputEvent& event) {
       if (phase_ == Phase::kPinch && (is_first || is_second)) {
         const std::int64_t before = spread();
         (is_first ? first_ : *second_) = finger;
-        const std::int64_t after = spread();
-        if (before > 0 && after > 0) {
-          input_.zoom_gesture(static_cast<float>(std::sqrt(static_cast<double>(after) / static_cast<double>(before))));
-        }
+        pinch_moved(before);
         return;
       }
       if (!is_first) {
@@ -158,9 +180,16 @@ void TouchMapper::feed(const InputEvent& event) {
       }
       if (phase_ == Phase::kPending &&
           (std::abs(finger.x - start_x_) > kSlop || std::abs(finger.y - start_y_) > kSlop)) {
-        phase_ = Phase::kDrag;
-        input_.begin_gesture(start_x_, start_y_, false);
-        input_.drag_gesture(finger.x - start_x_, finger.y - start_y_);
+        if (long_press_query_ && long_press_query_(start_x_, start_y_) == LongPress::kMoveDrag) {
+          // Where a long press would drag the pointer, a drag does at once.
+          phase_ = Phase::kLongPress;
+          held_ = MouseButton::kNone;
+          mouse(EventType::kMouseMove, finger.x, finger.y);
+        } else {
+          phase_ = Phase::kDrag;
+          begin_gesture(start_x_, start_y_);
+          input_.drag_gesture(finger.x - start_x_, finger.y - start_y_);
+        }
       } else if (phase_ == Phase::kDrag) {
         input_.drag_gesture(finger.x - first_.x, finger.y - first_.y);
       } else if (phase_ == Phase::kLongPress) {
@@ -182,6 +211,12 @@ void TouchMapper::feed(const InputEvent& event) {
       if (phase_ == Phase::kPinchDelay && event.type == EventType::kFingerUp) {
         // A pinch quicker than the delay still zooms.
         start_pinch();
+      }
+      if (phase_ == Phase::kPinch && event.type == EventType::kFingerUp && down_.size() == 1 &&
+          (finger.id == first_.id || finger.id == second_->id)) {
+        // The finger left drags on.
+        drag_on(down_.front());
+        return;
       }
       if (phase_ == Phase::kPinchDelay || phase_ == Phase::kPinch || phase_ == Phase::kClose ||
           finger.id == first_.id) {

@@ -11,9 +11,13 @@
 //   there and released with the finger, or the pointer following the
 //   finger.
 // - Moved past `kSlop` first: a view drag, without any click.
-// - A second finger: a pinch, without any click, until every finger is up.
-//   Its zoom starts `kPinchDelay` after the second finger (or when the
-//   fingers lift), so that a third finger coming meanwhile zooms nothing.
+// - Moved past `kSlop` first where a long press would make the pointer
+//   follow the finger (`LongPress::kMoveDrag`): that, at once.
+// - A second finger: a pinch, without any click: the fingers' spread zooms
+//   and their middle drags. It starts `kPinchDelay` after the second finger
+//   (or when a finger lifts), so that a third finger coming meanwhile zooms
+//   nothing. Lifting one of the two fingers: the other drags on, in the same
+//   gesture.
 // - A third finger (or more): nothing until the fingers come together, their
 //   mean distance to their centre down to `kCloseRatio` of what it was when
 //   the last of them was put down; then Back (`kBack`), once. Lifting one of
@@ -89,9 +93,16 @@ class TouchMapper {
   std::int64_t spread() const;
   // The mean distance of the fingers down to their centre.
   double close_spread() const;
-  // Starts the pinch's zoom: its gesture, and the zoom since the second
+  // Begins a view gesture at (x, y), unless one is open.
+  void begin_gesture(int x, int y);
+  // The pinch's zoom from a spread of `before` to the current one, and its
+  // drag from `pinch_x_`, `pinch_y_` to the fingers' middle (then there).
+  void pinch_moved(std::int64_t before);
+  // Starts the pinch: its gesture, and the zoom and drag since the second
   // finger was put down.
   void start_pinch();
+  // Makes `finger` the one finger of a drag of the open gesture.
+  void drag_on(const Finger& finger);
   // Ends the phase's gesture or button (`tap`: a pending touch clicks).
   void finish(bool tap);
 
@@ -110,8 +121,10 @@ class TouchMapper {
   int start_x_ = 0;
   int start_y_ = 0;
   std::uint64_t down_ms_ = 0;
+  // Whether a view gesture was begun and not ended.
+  bool gesture_open_ = false;
   // The pinch's start: when the second finger was put down, the fingers'
-  // squared distance then and their middle.
+  // squared distance then, and their middle (where the pinch last dragged).
   std::uint64_t pinch_ms_ = 0;
   std::int64_t pinch_spread_ = 0;
   int pinch_x_ = 0;

@@ -153,6 +153,23 @@ TEST_CASE("touch: a long press is what the query answers for the place the finge
     input.poll();
     CHECK(!s.left_down);
   }
+  SECTION("where a long press drags the pointer, so does a drag at once, without turning the view") {
+    answer = LongPress::kMoveDrag;
+    touch.feed(finger(EventType::kFingerDown, 1, 100, 120, 0));
+    touch.feed(finger(EventType::kFingerMove, 1, 140, 130, 50));
+    input.poll();
+    CHECK(asked == std::vector<std::pair<int, int>>{{100, 120}});
+    CHECK(s.x == 140);
+    CHECK(s.y == 130);
+    CHECK(!s.gesture.started);
+    CHECK(!s.left_changed);
+    touch.update(5000);  // already moving: no other long press
+    CHECK(asked.size() == 1);
+    touch.feed(finger(EventType::kFingerUp, 1, 140, 130, 5000));
+    input.poll();
+    CHECK(s.left_down);
+    CHECK(s.x == 140);
+  }
   SECTION("a move drag cancelled by more fingers clicks nothing") {
     answer = LongPress::kMoveDrag;
     hold(100, 120, 0);
@@ -238,6 +255,53 @@ TEST_CASE("touch: a pinch zooms once a third finger can no longer join it", "[pl
   CHECK(s.gesture.started);
   CHECK(!s.gesture.active);
   CHECK(s.gesture.zoom == 2.0F);
+  input.poll();
+  CHECK(!s.left_changed);
+}
+
+TEST_CASE("touch: a pinch's middle drags as it zooms; the finger left after it drags on", "[platform]") {
+  Input input;
+  TouchMapper touch(input);
+  const InputState& s = input.poll();
+  // A drag, then a second finger: the same gesture goes on.
+  touch.feed(finger(EventType::kFingerDown, 1, 200, 200, 0));
+  touch.feed(finger(EventType::kFingerMove, 1, 220, 200, 10));
+  touch.feed(finger(EventType::kFingerDown, 2, 320, 200, 20));
+  input.poll();
+  CHECK(s.gesture.started);
+  CHECK(s.gesture.dx == 20);
+  touch.update(20 + TouchMapper::kPinchDelay);
+  // Both fingers 40 pixels to the right, the second 60 more: the middle
+  // 70 to the right, twice the spread.
+  touch.feed(finger(EventType::kFingerMove, 1, 260, 200, 200));
+  touch.feed(finger(EventType::kFingerMove, 2, 420, 200, 200));
+  input.poll();
+  CHECK(!s.gesture.started);
+  CHECK(s.gesture.active);
+  CHECK(s.gesture.dx == 70);
+  CHECK(s.gesture.dy == 0);
+  CHECK(std::abs(s.gesture.zoom - 1.6F) < 1e-5F);
+  // The second lifted: the first drags on, the gesture never ended.
+  touch.feed(finger(EventType::kFingerUp, 2, 420, 200, 300));
+  touch.feed(finger(EventType::kFingerMove, 1, 230, 210, 310));
+  input.poll();
+  CHECK(!s.gesture.started);
+  CHECK(s.gesture.active);
+  CHECK(s.gesture.dx == -30);
+  CHECK(s.gesture.dy == 10);
+  CHECK(s.gesture.zoom == 1.0F);
+  // A second finger again: a pinch again; the first lifted, the second drags.
+  touch.feed(finger(EventType::kFingerDown, 3, 330, 210, 400));
+  touch.feed(finger(EventType::kFingerUp, 1, 230, 210, 450));
+  touch.feed(finger(EventType::kFingerMove, 3, 300, 220, 460));
+  input.poll();
+  CHECK(!s.gesture.started);
+  CHECK(s.gesture.active);
+  CHECK(s.gesture.dx == -30);
+  CHECK(s.gesture.dy == 10);
+  touch.feed(finger(EventType::kFingerUp, 3, 300, 220, 500));
+  input.poll();
+  CHECK(!s.gesture.active);
   input.poll();
   CHECK(!s.left_changed);
 }
@@ -818,9 +882,10 @@ TEST_CASE("Back: an exit corner's action, Exit to DOS on the opening menu", "[sc
   CHECK(!r.rig.wm.running());
 }
 
-TEST_CASE("long presses: held rotation buttons, the System Display's right button, its move drag, Back and Esc "
-          "cancelling a move",
-          "[screens][content]") {
+TEST_CASE(
+    "long presses: held rotation buttons, the System Display's right button, its move drag, Back and Esc "
+    "cancelling a move",
+    "[screens][content]") {
   OA_REQUIRE_GAME_FILES(files);
   test::TempDir dir("oa_touch");
   GameRig r(files, dir.path);
@@ -899,6 +964,25 @@ TEST_CASE("long presses: held rotation buttons, the System Display's right butto
   pick_ship();
   REQUIRE(view.state() == BatModeWnd::State::kMovePoint);
   CHECK(wm.long_press(cx, cy) == LongPress::kMoveDrag);
+
+  // Dragged at once: the target follows the finger, the view stays.
+  const auto camera = view.camera().position;
+  r.touch.feed(finger(EventType::kFingerDown, 1, cx - 60, cy + 60, ms));
+  r.rig.pass();
+  r.touch.feed(finger(EventType::kFingerMove, 1, cx - 60, cy + 90, ++ms));
+  r.wait(1);
+  const auto dragged = view.move_point();
+  r.touch.feed(finger(EventType::kFingerMove, 1, cx - 20, cy + 90, ++ms));
+  r.wait(1);
+  CHECK(view.move_point() != dragged);
+  CHECK(view.camera().position == camera);
+  CHECK(view.state() == BatModeWnd::State::kMovePoint);
+  // Esc instead of the lift's step: the move cancelled; the ship again.
+  r.rig.key(SDLK_ESCAPE);
+  lift(cx - 20, cy + 90);
+  REQUIRE(view.state() == BatModeWnd::State::kIdle);
+  pick_ship();
+  REQUIRE(view.state() == BatModeWnd::State::kMovePoint);
 
   // Held and dragged: the target follows the finger, the lift fixes it.
   hold(cx - 60, cy + 60, 1);
