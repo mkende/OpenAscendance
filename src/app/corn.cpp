@@ -119,7 +119,8 @@ class Host final : public DisplayControl {
 
   // Reads the system's input events, and the next scripted step when
   // `scripted` (one per main-loop pass). The lifecycle events are handled
-  // meanwhile (`LifecycleWatch`).
+  // meanwhile (`LifecycleWatch`), then the sound device is opened again if
+  // it has to be (`AudioDevice::update`, also while idle).
   void pump(bool scripted) {
     while (const std::optional<InputEvent> e = display_.poll()) {
       take(*e);
@@ -138,6 +139,9 @@ class Host final : public DisplayControl {
       }
     }
     touch_.update(SDL_GetTicks());
+    if (audio_) {
+      audio_->update();
+    }
   }
 
   // Waits a little, as the main loop does until its next pass. Meanwhile the
@@ -154,6 +158,9 @@ class Host final : public DisplayControl {
         take(*e);
       }
       refresh_pointer();
+      if (audio_) {
+        audio_->update();
+      }
     }
     clock_.idle();
   }
@@ -161,7 +168,8 @@ class Host final : public DisplayControl {
   // A lifecycle event: the game kept in `resume.gam` by `save` as the
   // program goes to the background (where Android may kill it without
   // notice), runs low on memory or ends; the clock and the sound stopped
-  // while in the background.
+  // while in the background (the sound device opened again on the way back,
+  // as the system may have taken it meanwhile, by a phone call).
   void lifecycle(LifecycleEvent e, const std::function<void()>& save) {
     log_info("lifecycle: {}", lifecycle_event_name(e));
     switch (e) {
