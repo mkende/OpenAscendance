@@ -64,6 +64,10 @@ bool ship_design_hull_known(const Research& research, RaceIndex race, std::uint8
 // own).
 bool ship_design_cycle_hull(Session& session, Ship& ship, RaceIndex race);
 
+// Tells whether `ship_design_cycle_hull` would change `ship`'s hull: another
+// hull that `race` knows holds its gizmos.
+bool ship_design_can_cycle_hull(const Session& session, const Ship& ship, RaceIndex race);
+
 // Returns the gizmos of `category` whose research `race` knows (or that
 // need none), in table order (`ShipDesWnd_fill_gizmo_list` 0x49124).
 std::vector<std::int8_t> ship_design_gizmo_list(const Session& session, std::uint8_t category, RaceIndex race);

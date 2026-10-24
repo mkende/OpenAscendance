@@ -240,6 +240,10 @@ class RaceSelButton final : public GWindow {
   void draw_hilite(int /*mode*/) override;
 
  private:
+  // Greys the button of an extinct species (the remake's; a click on it
+  // does nothing).
+  void sync_greyed();
+
   int slot_ = 0;  // +0xab
 };
 

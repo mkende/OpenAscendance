@@ -1103,6 +1103,7 @@ bool RaceSelButton::handle_event(int type, int a, int b) {
       if (slot_ >= game.race_count()) {
         return false;
       }
+      sync_greyed();
       break;
     case kEventDeactivate:
       active_ = false;
@@ -1127,18 +1128,26 @@ bool RaceSelButton::handle_event(int type, int a, int b) {
       return true;
     case kEventSetSlot:
       slot_ = a;
+      sync_greyed();
       draw(kDrawNormal);
       return true;
     case kEventMouseLeave:
       draw(kDrawNormal);
       return true;
     case kEventRefresh:
+      sync_greyed();
       draw(kDrawNormal);
       break;
     default:
       break;
   }
   return GWindow::handle_event(type, a, b);
+}
+
+void RaceSelButton::sync_greyed() {
+  const game::Session* core = wm_.services().game.core();
+  set_greyed(core != nullptr && slot_ != core->player_race &&
+             core->game->cosmos.races[static_cast<std::size_t>(slot_)].extinct == -1);
 }
 
 void RaceSelButton::draw_hilite(int /*mode*/) {
@@ -1163,7 +1172,7 @@ void RaceSelButton::draw(int mode) {
   const std::uint8_t relation = c.races[core->player_race].relation[slot];
   bool wipe = true;
   bool skip = false;
-  int background = mode != 0 ? mode : kBackColor;
+  int background = mode != 0 && !greyed() ? mode : kBackColor;
   int color = 0;
   std::string text;
   if (relation != 0 && race.extinct == 0) {
@@ -1215,6 +1224,9 @@ void RaceSelButton::draw(int mode) {
     if (mark != -1) {
       vfx_shape_draw(screen, pane_, wm_.shared_shapes(kIntelShapes).at(static_cast<std::size_t>(mark)), 14, 3);
     }
+  }
+  if (greyed()) {
+    grey_out(kBackColor);
   }
 }
 

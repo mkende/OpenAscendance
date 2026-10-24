@@ -218,8 +218,14 @@ PlanShape PlanWnd::square_shape(std::uint16_t square) const {
 bool PlanWnd::handle_event(int type, int a, int b) {
   switch (type) {
     case kEventActivate: {
+      // The remake greys the panels that do nothing on another species'
+      // planet (all but PLPOP's planet dialog).
+      const game::Session* s = session();
+      const game::Planet* p = planet();
+      const bool foreign = s != nullptr && p != nullptr && p->owner != s->player_race;
       for (const char* name : {"PLRES", "PLIND", "PLPRO", "PLPOP", "PLBUILD"}) {
         if (GWindow* w = wm_.find_window(name)) {
+          w->set_greyed(foreign && std::string_view(name) != "PLPOP");
           w->handle_event(kEventActivate, a, b);
         }
       }
@@ -801,7 +807,7 @@ void PlanStatButton::draw(int mode) {
   const GWindow* list = wm_.find_window("PLANLIST");
   const auto* plan = dynamic_cast<const PlanWnd*>(wm_.find_window("PLANETALLOC"));
   const GWindow* square = wm_.find_window("PLSQUARE");
-  if (list->shown() || square->shown()) {
+  if (list->shown() || square->shown() || greyed()) {
     hot = false;
   }
   int kind = param1_ == 4 ? 3 : param1_;
@@ -908,6 +914,9 @@ void PlanStatButton::draw(int mode) {
       vfx_line_draw(screen, pane_, i, i, i, h - i, kHotColor);
       vfx_line_draw(screen, pane_, w - i, i, w - i, h - i, kHotColor);
     }
+  }
+  if (greyed()) {
+    grey_out(kind < 3 ? 0 : kBackColor);
   }
 }
 

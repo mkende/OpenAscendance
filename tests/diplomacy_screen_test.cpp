@@ -490,4 +490,30 @@ TEST_CASE("species selection: a met species' portrait opens the negotiation, the
   CHECK(d.rig.wm.current_screen() == kScreenSpecies);
 }
 
+TEST_CASE("species selection: the remake greys an extinct species' button", "[diplomacy]") {
+  OA_REQUIRE_GAME_FILES(files);
+  DiplomacyRig d(files, files.load("01.SAV"));
+  d.to_star_map();
+  d.race(2).extinct = -1;
+  d.click("RACES");
+  d.wait(40);
+  REQUIRE(d.rig.wm.current_screen() == kScreenSpecies);
+  const GWindow& extinct = *d.rig.wm.find_window("RACE_3");
+  CHECK(extinct.greyed());
+  CHECK_FALSE(d.rig.wm.find_window("RACE_1")->greyed());
+  CHECK_FALSE(d.rig.wm.find_window("RACE_2")->greyed());
+  // Hovered, it does not light up; a click does nothing; its help works.
+  const Pane& p = extinct.pane();
+  d.rig.move(p.x0 + 2, p.y0 + 2);
+  test::write_shot(d.rig, "species_extinct");
+  CHECK(d.rig.wm.screen().at(p.x0 + 2, p.y0 + 2) != GWindow::kHotBackColor);
+  d.click("RACE_3");
+  d.wait(10);
+  CHECK(d.rig.wm.current_screen() == kScreenSpecies);
+  d.rig.queue_help_click(p.x0 + 2, p.y0 + 2);
+  d.rig.queue_click(320, 350);  // the help window's OK
+  d.rig.drain();
+  CHECK(dynamic_cast<HelpWnd&>(*d.rig.wm.find_window("HELPWINDOW")).topic() == "racesel");
+}
+
 }  // namespace oa

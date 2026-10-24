@@ -261,6 +261,11 @@ void ShipDesWnd::draw(int /*mode*/) {
   if (s == nullptr) {
     return;
   }
+  // The remake greys HULL when it would do nothing.
+  if (GWindow* hull = wm_.find_window("HULL")) {
+    hull->set_greyed(read_only_ || mode_ != kNewDesign ||
+                     !game::ship_design_can_cycle_hull(*s, *ship_, s->player_race));
+  }
   Image8& screen = wm_.screen();
   vfx_pane_wipe(screen, kGridRight, 0);
   vfx_pane_wipe(screen, kGridBottom, 0);

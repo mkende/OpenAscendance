@@ -220,11 +220,14 @@ void GWindow::draw(int mode) {
   if (!active_) {
     return;
   }
-  if ((wm_.hot_window() == id_ || mode == kDrawHot) && mouse_focus_ && mode != kDrawNotHot) {
+  if ((wm_.hot_window() == id_ || mode == kDrawHot) && mouse_focus_ && mode != kDrawNotHot && !greyed()) {
     draw_hilite(mode);
   } else if (frame_ != -1) {
     if (const Shape* s = shape(frame_)) {
       vfx_shape_draw(wm_.screen(), pane_, *s, 0, 0);
+      if (greyed()) {
+        grey_out(kBackColor);
+      }
     }
   } else if (!items_.empty()) {
     draw_items(false);

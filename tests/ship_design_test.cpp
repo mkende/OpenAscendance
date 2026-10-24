@@ -213,6 +213,7 @@ TEST_CASE("Ship design costs, hulls and gizmo lists", "[shipdes]") {
   game::Research& research = s.game->research;
   REQUIRE_FALSE(game::ship_design_hull_known(research, player, 2));
   REQUIRE_FALSE(game::ship_design_hull_known(research, player, 3));
+  CHECK(game::ship_design_can_cycle_hull(s, ship, player));
   CHECK(game::ship_design_cycle_hull(s, ship, player));
   CHECK(ship.hull_size == 1);
   CHECK(ship.slot_count == 10);
@@ -238,6 +239,14 @@ TEST_CASE("Ship design costs, hulls and gizmo lists", "[shipdes]") {
   for (std::size_t i = 0; i < 10; ++i) {
     CHECK(ship.slots[i].gizmo == (i < 6 ? kProtonShaver : -1));
   }
+  // Without Large and Enormous, the six gizmos have no other hull: HULL
+  // would do nothing.
+  CHECK(game::ship_design_can_cycle_hull(s, ship, player));
+  research.items[19].known_mask &= static_cast<std::uint8_t>(~(1u << player));
+  research.items[31].known_mask &= static_cast<std::uint8_t>(~(1u << player));
+  CHECK_FALSE(game::ship_design_can_cycle_hull(s, ship, player));
+  CHECK_FALSE(game::ship_design_cycle_hull(s, ship, player));
+  CHECK(ship.hull_size == 1);
 
   // The list of a category: its gizmos without research or known.
   const std::vector<std::int8_t> weapons = game::ship_design_gizmo_list(s, 0, player);
@@ -282,6 +291,8 @@ TEST_CASE("Ships list rows, title and picks", "[shipdes]") {
   REQUIRE(r.rig.wm.current_screen() == kScreenShipDesign);
   ShipDesWnd& design = r.design();
   CHECK(design.read_only());
+  // The remake greys HULL when it does nothing: here, a read-only design.
+  CHECK(r.rig.wm.find_window("HULL")->greyed());
   CHECK(design.ship() == &r.cosmos().ships.at(static_cast<std::size_t>(frigate)));
   CHECK(design.category() == ShipDesWnd::kGenerator);
   write_shot(r.rig, "design_view");
@@ -322,6 +333,7 @@ TEST_CASE("Ship design: a new design named and built", "[shipdes]") {
   CHECK(ship.hull_size == 0);
   CHECK(design.category() == ShipDesWnd::kWeapon);
   CHECK(design.selected_gizmo() == kMassBarrageGun);
+  CHECK_FALSE(r.rig.wm.find_window("HULL")->greyed());
   write_shot(r.rig, "design_new");
   r.rig.move(403, 166);
   CHECK(design.hovered_slot() == 0);
@@ -431,6 +443,7 @@ TEST_CASE("Ship design: a refit at the Orbital Docks", "[shipdes]") {
   CHECK(design.mode() == ShipDesWnd::kRefit);
   CHECK(design.ship() == &ship);
   const std::uint8_t hull = ship.hull_size;
+  CHECK(r.rig.wm.find_window("HULL")->greyed());
   r.rig.click(558, 22);  // HULL: no change in a refit
   CHECK(ship.hull_size == hull);
   CHECK(design.refit_cost(r.s()) == 30);

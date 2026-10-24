@@ -167,6 +167,54 @@ TEST_CASE("Planet screen dialogs and keys", "[planet]") {
   CHECK(r.rig.wm.current_screen() != kScreenPlanet);
 }
 
+TEST_CASE("Planet screen: the remake greys the panels that do nothing on a foreign planet", "[planet]") {
+  OA_REQUIRE_GAME_FILES(files);
+  PlanetRig r(files, "Zoroaster III");
+  const auto greyed = [&](const char* name) { return r.rig.wm.find_window(name)->greyed(); };
+  for (const char* name : {"PLRES", "PLIND", "PLPRO", "PLPOP", "PLBUILD"}) {
+    CHECK_FALSE(greyed(name));
+  }
+  // Another species' planet.
+  game::Session& s = r.session.session();
+  game::Cosmos& c = s.game->cosmos;
+  game::PlanetIndex foreign = game::kNone;
+  for (game::PlanetIndex i = 0; i < c.planet_count && foreign == game::kNone; ++i) {
+    const std::uint8_t owner = c.planets[static_cast<std::size_t>(i)].owner;
+    if (owner != s.player_race && owner != game::kNoOwner) {
+      foreign = i;
+    }
+  }
+  REQUIRE(foreign != game::kNone);
+  r.rig.key(SDLK_ESCAPE);
+  c.selected_planet = foreign;
+  r.rig.wm.set_screen(kScreenPlanet, true);
+  r.rig.pass();
+  for (const char* name : {"PLRES", "PLIND", "PLPRO", "PLBUILD"}) {
+    CHECK(greyed(name));
+  }
+  CHECK_FALSE(greyed("PLPOP"));
+  write_shot(r.rig, "planet_foreign");
+  // Clicks do nothing (as in the original); PLPOP's planet dialog opens.
+  r.rig.click(60, 50);
+  CHECK_FALSE(r.dialog().shown());
+  r.rig.click(540, 50);
+  CHECK_FALSE(r.rig.wm.find_window("PLANLIST")->shown());
+  r.rig.click(400, 50);
+  CHECK(r.dialog().mode() == PlSquareWnd::kPlanet);
+  r.rig.key(SDLK_ESCAPE);
+  // Their help works.
+  r.rig.queue_help_click(60, 50);
+  r.rig.queue_click(320, 350);  // the help window's OK
+  r.rig.drain();
+  CHECK(dynamic_cast<HelpWnd&>(*r.rig.wm.find_window("HELPWINDOW")).topic() == "plres");
+  // Back on the player's planet, they are not greyed.
+  r.rig.key(SDLK_ESCAPE);
+  c.selected_planet = r.planet;
+  r.rig.wm.set_screen(kScreenPlanet, true);
+  r.rig.pass();
+  CHECK_FALSE(greyed("PLBUILD"));
+}
+
 TEST_CASE("Planet screen orbital square dialog", "[planet]") {
   OA_REQUIRE_GAME_FILES(files);
   PlanetRig r(files, "Zoroaster III");

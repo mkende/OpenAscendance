@@ -132,6 +132,16 @@ bool ship_design_cycle_hull(Session& session, Ship& ship, RaceIndex race) {
   }
 }
 
+bool ship_design_can_cycle_hull(const Session& session, const Ship& ship, RaceIndex race) {
+  for (std::uint8_t hull = 0; hull < kHullCount; ++hull) {
+    if (hull != ship.hull_size && ship_design_hull_known(session.game->research, race, hull) &&
+        kHullSlots[hull] >= ship.gizmo_count) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // 0x49124.
 std::vector<std::int8_t> ship_design_gizmo_list(const Session& session, std::uint8_t category, RaceIndex race) {
   std::vector<std::int8_t> list;
