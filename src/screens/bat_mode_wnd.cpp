@@ -19,6 +19,7 @@
 #include "gfx/vfx_poly.h"
 #include "screens/bat_control_wnd.h"
 #include "screens/cos_wnd.h"
+#include "screens/deselect_button.h"
 #include "ui/help_wnd.h"
 
 namespace oa {
@@ -513,6 +514,16 @@ void BatModeWnd::refresh(bool redraw) {
   by_depth(back_);
   if (redraw) {
     draw(kDrawNormal);
+  }
+  sync_buttons();
+}
+
+void BatModeWnd::sync_buttons() {
+  if (GWindow* abandon = wm_.find_window("ABANDON")) {
+    abandon->set_greyed(!can_abandon());
+  }
+  if (GWindow* button = wm_.find_window(DeselectButton::kName)) {
+    button->set_greyed(!can_deselect());
   }
 }
 
@@ -1072,6 +1083,30 @@ void BatModeWnd::open_selected_planet() {
   open_planet_screen(items_[static_cast<std::size_t>(selected_)].object);
   update_cursor();
   refresh();
+}
+
+bool BatModeWnd::can_deselect() const { return selected_ != -1 && state_ != State::kAnimating; }
+
+void BatModeWnd::deselect() {
+  if (!can_deselect()) {
+    return;
+  }
+  wm_.services().sound.play_sfx(kClickSound);
+  drop_selection();
+  state_ = State::kIdle;
+  refresh();
+  update_cursor();
+}
+
+bool BatModeWnd::can_abandon() const {
+  const game::Session* s = core();
+  if (selected_ < 0 || s == nullptr || state_ == State::kAnimating) {
+    return false;
+  }
+  const Item& item = items_[static_cast<std::size_t>(selected_)];
+  const game::Cosmos& c = s->game->cosmos;
+  return (item.kind == ItemKind::kShip && c.ships[static_cast<std::size_t>(item.object)].owner == s->player_race) ||
+         (item.kind == ItemKind::kPlanet && c.planets[static_cast<std::size_t>(item.object)].owner == s->player_race);
 }
 
 void BatModeWnd::abandon_selected() {

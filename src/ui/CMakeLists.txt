@@ -19,6 +19,8 @@ oa_add_module(oa_ui
     # The remake's own settings (options.cfg).
     options.cpp
     shape_cache.cpp
+    # The help topics of the remake's additions.
+    remake_help.cpp
     # TYPE 31 / 32 windows and the placeholders of the screens to come.
     shape_button.cpp
     text_box.cpp

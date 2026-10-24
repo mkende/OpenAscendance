@@ -23,6 +23,8 @@
 #include "replay_rig.h"
 #include "screens/bat_control_wnd.h"
 #include "screens/bat_mode_wnd.h"
+#include "screens/deselect_button.h"
+#include "ui/help_wnd.h"
 #include "ui/list_box.h"
 
 namespace oa {
@@ -94,9 +96,13 @@ game::StarIndex find_star(const game::Cosmos& c, std::string_view name) {
 // The shipped day-820 game (`RESUME.GAM`) on the System Display of Feculon,
 // where the player's two Frigates and two Capelon Mediums are; with `war`,
 // the player at war with the Capelons (race 1) as in the oracle's
-// `resume820_battle` case.
+// `resume820_battle` case; with `deselect`, the remake's deselect button.
 struct SystemRig {
-  SystemRig(const GameFiles& files, bool war) : session(files, files.load("RESUME.GAM")), rig(files, &session) {
+  SystemRig(const GameFiles& files, bool war, bool deselect = false)
+      : session(files, files.load("RESUME.GAM")), rig(files, &session) {
+    if (deselect) {
+      install_deselect_button(rig.wm);
+    }
     game::Cosmos& c = cosmos();
     if (war) {
       c.races[s().player_race].relation[kCapelons] = game::kWar;
@@ -336,6 +342,90 @@ TEST_CASE("the panel's planet picture opens the planet as a second click on it i
   targeting.rig.click(kPictureX, kPictureY);
   targeting.rig.pass();
   CHECK(targeting.rig.wm.current_screen() == kScreenStarSystem);
+}
+
+TEST_CASE("the deselect button drops the selection; it and ABANDON are greyed when they would do nothing",
+          "[star_system]") {
+  OA_REQUIRE_GAME_FILES(files);
+  SystemRig r(files, false, true);
+  WinMgr& wm = r.rig.wm;
+  GWindow& button = *wm.find_window(DeselectButton::kName);
+  GWindow& abandon = *wm.find_window("ABANDON");
+  const Pane p = button.pane();
+  CHECK(p == Pane{557, 442, 587, 472});
+  REQUIRE(button.shown());
+  const Image8& screen = r.rig.gs.screen();
+  // Its stone recess: RECENTER's, one slot to the right.
+  const Pane recenter = wm.find_window("RECENTER")->pane();
+  for (int y = recenter.y0 - 4; y <= recenter.y1 + 4; ++y) {
+    for (const int x : {recenter.x0 - 4, recenter.x0 - 1, recenter.x1 + 1, recenter.x1 + 4}) {
+      CHECK(screen.at(x - (recenter.x0 - p.x0), y) == screen.at(x, y));
+    }
+  }
+  // The pixels of a pane.
+  const auto pixels = [&](const Pane& pane) {
+    std::vector<std::uint8_t> out;
+    for (int y = pane.y0; y <= pane.y1; ++y) {
+      for (int x = pane.x0; x <= pane.x1; ++x) {
+        out.push_back(screen.at(x, y));
+      }
+    }
+    return out;
+  };
+  constexpr std::uint8_t kWhite = 15;
+  // The selection marker's corner (white when not greyed).
+  const auto marker = [&] { return screen.at(p.x0 + 7, p.y0 + 1); };
+
+  // Nothing selected: both greyed, the background kept; a click does
+  // nothing.
+  CHECK(button.greyed());
+  CHECK(abandon.greyed());
+  CHECK(marker() != kWhite);
+  CHECK(screen.at(p.x0, p.y0) == GWindow::kBackColor);
+  const std::vector<std::uint8_t> greyed_abandon = pixels(abandon.pane());
+  r.rig.click(p.x0 + 15, p.y0 + 15);
+  CHECK(screen.at(p.x0, p.y0) == GWindow::kBackColor);  // never hot
+
+  // A Frigate picked (a move): both in colour, the button hot under the
+  // pointer as ABANDON is.
+  r.rig.click(kListX, list_row_y(1));
+  REQUIRE(r.view().state() == BatModeWnd::State::kMovePoint);
+  CHECK_FALSE(button.greyed());
+  CHECK_FALSE(abandon.greyed());
+  CHECK(pixels(abandon.pane()) != greyed_abandon);
+  r.rig.move(p.x0 + 15, p.y0 + 15);
+  CHECK(marker() == kWhite);
+  CHECK(screen.at(p.x0, p.y0) == GWindow::kHotBackColor);
+  // Its click: the move and the selection dropped, both greyed again.
+  r.rig.click(p.x0 + 15, p.y0 + 15);
+  CHECK(r.view().state() == BatModeWnd::State::kIdle);
+  CHECK(r.view().selected() == -1);
+  CHECK(r.panel().selection().kind == BatControlWnd::kObjectNone);
+  CHECK(button.greyed());
+  CHECK(abandon.greyed());
+  CHECK(pixels(abandon.pane()) == greyed_abandon);
+
+  // A Capelon ship selected: nothing to abandon, something to deselect.
+  BatModeWnd& v = r.view();
+  const int capelon = v.find_item(BatModeWnd::ItemKind::kShip, kMedium);
+  REQUIRE(capelon >= 0);
+  v.set_selected(capelon);
+  v.refresh();
+  CHECK_FALSE(button.greyed());
+  CHECK(abandon.greyed());
+  r.rig.click(p.x0 + 15, p.y0 + 15);
+  CHECK(v.selected() == -1);
+
+  // Shift and a click: its help, greyed too.
+  REQUIRE(button.greyed());
+  r.rig.pending.push_back(InputEvent{.type = EventType::kKeyDown, .key = SDLK_LSHIFT, .mods = SDL_KMOD_LSHIFT});
+  r.rig.pending.push_back(InputEvent{.type = EventType::kMouseMove, .x = p.x0 + 15, .y = p.y0 + 15});
+  r.rig.queue_click(p.x0 + 15, p.y0 + 15);
+  r.rig.pending.push_back(InputEvent{.type = EventType::kKeyUp, .key = SDLK_LSHIFT, .mods = 0});
+  r.rig.queue_click(320, 350);  // the help window's OK
+  r.rig.drain();
+  CHECK(dynamic_cast<HelpWnd&>(*wm.find_window("HELPWINDOW")).topic() == "oa_deselect");
+  CHECK_FALSE(wm.in_modal());
 }
 
 TEST_CASE("leaving the System Display during an effect applies the action", "[star_system]") {

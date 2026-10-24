@@ -139,13 +139,18 @@ class GWindow {
   virtual LongPress long_press(int x, int y) const;
   // What a long press at (x, y) on the child window `child` is: a help
   // click by default.
-  virtual LongPress child_long_press(const GWindow& /*child*/, int /*x*/, int /*y*/) const {
-    return LongPress::kHelp;
-  }
+  virtual LongPress child_long_press(const GWindow& /*child*/, int /*x*/, int /*y*/) const { return LongPress::kHelp; }
   // Esc or Back on the window's screen (a remake addition,
   // `WinMgr::cancel_action`): cancels the window's action in progress;
   // returns whether there was one (the screen then stays).
   virtual bool cancel_action() { return false; }
+  // The remake's greyed look of a button whose action is unavailable (not
+  // in the original; never while a trace is replayed): the window's own
+  // `draw` shows it with `grey_out`, the left and right clicks do nothing,
+  // the help click still works. `set_greyed` redraws a shown window whose
+  // look changes.
+  bool greyed() const;
+  void set_greyed(bool greyed);
 
   // The `windows.txt` TYPE (-1 for a window made by the code).
   int type() const { return type_; }
@@ -216,6 +221,9 @@ class GWindow {
   void draw_border(std::uint8_t color);
   // The window's shape (`shapes_` frame `frame`), null when it has none.
   const Shape* shape(int frame) const;
+  // Turns the pane's colours other than `background` into greys faded
+  // toward it (the greyed look).
+  void grey_out(std::uint8_t background);
 
   WinMgr& wm_;
   int type_ = -1;
@@ -235,6 +243,7 @@ class GWindow {
   int text_x_ = -1;
   int text_y_ = -1;
   bool border_ = false;
+  bool greyed_ = false;
   int parent_ = 0;  // 0: none
   std::vector<GWindow*> children_;
   std::vector<WindowItem> items_;

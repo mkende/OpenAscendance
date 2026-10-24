@@ -186,6 +186,15 @@ class BatModeWnd final : public GWindow {
   // view refreshed.
   bool can_open_selected_planet() const;
   void open_selected_planet();
+  // The remake's deselect button (`screens/deselect_button.h`): whether
+  // there is a selection to drop (no animation under way), and the
+  // dropping: its sound, the selection and its move or targeting gone, as
+  // a right click on empty space.
+  bool can_deselect() const;
+  void deselect();
+  // Whether the ABANDON button would abandon something: one of the
+  // player's ships or colonies selected, no animation under way.
+  bool can_abandon() const;
 
   State state() const { return state_; }
   void set_state(State state) { state_ = state; }
@@ -274,6 +283,9 @@ class BatModeWnd final : public GWindow {
   void drop_selection();
   // `BatModeWnd_abandon_selected` (0x172b0).
   void abandon_selected();
+  // The remake's greyed look of ABANDON and the deselect button, from
+  // `can_abandon` and `can_deselect`.
+  void sync_buttons();
   // The BatControlWnd's object kind of item `i` (3 ship, 2 planet, 4 lane, 0).
   int control_kind(int i) const;
   // Activation (event 1) and deactivation (2).

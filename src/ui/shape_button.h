@@ -14,7 +14,7 @@ class RaceColorButton : public GWindow {
   using GWindow::GWindow;
 
   // `ShapeButton_draw` (0x2f2c4): the pane wiped with 0x96 when hot (0xf2
-  // otherwise), the shape race-coloured.
+  // otherwise), the shape race-coloured; never hot when greyed.
   void draw(int mode) override;
   // `ShapeButton_draw_hilite` (0x2f35c): draw(3).
   void draw_hilite(int /*mode*/) override { draw(kDrawHot); }

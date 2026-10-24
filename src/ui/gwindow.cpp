@@ -1,7 +1,9 @@
 #include "ui/gwindow.h"
 
 #include <algorithm>
+#include <array>
 #include <format>
+#include <limits>
 
 #include "core/error.h"
 #include "ui/winmgr.h"
@@ -61,6 +63,53 @@ const Shape* GWindow::shape(int frame) const {
   return &shapes_->at(static_cast<std::size_t>(frame));
 }
 
+bool GWindow::greyed() const { return greyed_ && !wm_.replaying(); }
+
+void GWindow::set_greyed(bool greyed) {
+  if (greyed != greyed_) {
+    greyed_ = greyed;
+    if (shown_ && active_ && !wm_.replaying()) {
+      draw(kDrawNormal);
+    }
+  }
+}
+
+void GWindow::grey_out(std::uint8_t background) {
+  // Each colour to the palette's nearest to its grey (luma) faded
+  // `kGreyFade` percent of the way to `background`.
+  constexpr int kGreyFade = 45;
+  const auto& dac = wm_.services().gsystem.shadow().dac;
+  const auto component = [&](std::size_t i, std::size_t k) { return static_cast<int>(dac[i * 3 + k]); };
+  std::array<std::uint8_t, 256> grey{};
+  for (std::size_t i = 0; i < grey.size(); ++i) {
+    const int luma = (30 * component(i, 0) + 59 * component(i, 1) + 11 * component(i, 2)) / 100;
+    std::array<int, 3> target{};
+    for (std::size_t k = 0; k < 3; ++k) {
+      const int back = component(background, k);
+      target[k] = luma + (back - luma) * kGreyFade / 100;
+    }
+    int best = std::numeric_limits<int>::max();
+    for (std::size_t j = 0; j < grey.size(); ++j) {
+      int d = 0;
+      for (std::size_t k = 0; k < 3; ++k) {
+        d += (component(j, k) - target[k]) * (component(j, k) - target[k]);
+      }
+      if (d < best) {
+        best = d;
+        grey[i] = static_cast<std::uint8_t>(j);
+      }
+    }
+  }
+  Image8& screen = wm_.screen();
+  for (int y = std::max(pane_.y0, 0); y <= std::min(pane_.y1, screen.height() - 1); ++y) {
+    for (int x = std::max(pane_.x0, 0); x <= std::min(pane_.x1, screen.width() - 1); ++x) {
+      if (const std::uint8_t c = screen.at(x, y); c != background) {
+        screen.set(x, y, grey[c]);
+      }
+    }
+  }
+}
+
 void GWindow::send_click(int type) {
   const int msg = message_ == kParamMouseButton ? type : message_;
   const int p1 = param1_ == kParamMouseButton ? type : param1_;
@@ -98,7 +147,9 @@ bool GWindow::handle_event(int type, int a, int b) {
       if (!contains(a, b)) {
         return false;
       }
-      send_click(type);
+      if (!greyed()) {
+        send_click(type);
+      }
       return true;
     case kEventMouseLeave:
       if (active_ && shown_ && mouse_focus_) {

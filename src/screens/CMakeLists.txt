@@ -5,6 +5,8 @@ oa_add_module(oa_screens
     bat_control_wnd.cpp
     bat_fx.cpp
     bat_mode_wnd.cpp
+    # The remake's deselect button on the System Display.
+    deselect_button.cpp
     # The 3D camera of the research tree (Camera, vector helpers).
     camera3d.cpp
     # The star map and the Species button (coswnd.cpp).

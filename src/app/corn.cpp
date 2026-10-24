@@ -28,6 +28,7 @@
 #include "platform/lifecycle.h"
 #include "platform/screenshot.h"
 #include "platform/touch.h"
+#include "screens/deselect_button.h"
 #include "screens/options_wnd.h"
 #include "screens/screens.h"
 #include "ui/game_core_session.h"
@@ -372,6 +373,7 @@ void run(const GameOptions& options, const GameFiles& files) {
   wm.setup_race_shapes();
   host.set_skip_query([&] { return wm.skippable_animation(); });
   host.set_long_press_query([&](int x, int y) { return wm.long_press(x, y); });
+  install_deselect_button(wm);
   if (!options.trace) {
     // A trace of the original clicks on the original opening menu.
     host.set_fullscreen_listener(install_options(
