@@ -21,6 +21,7 @@
 #include "game_data.h"
 #include "platform/touch.h"
 #include "replay_rig.h"
+#include "screen_shots.h"
 #include "screens/bat_control_wnd.h"
 #include "screens/bat_mode_wnd.h"
 #include "screens/deselect_button.h"
@@ -355,13 +356,18 @@ TEST_CASE("the deselect button drops the selection; it and ABANDON are greyed wh
   CHECK(p == Pane{557, 442, 587, 472});
   REQUIRE(button.shown());
   const Image8& screen = r.rig.gs.screen();
-  // Its stone recess: RECENTER's, one slot to the right.
-  const Pane recenter = wm.find_window("RECENTER")->pane();
-  for (int y = recenter.y0 - 4; y <= recenter.y1 + 4; ++y) {
-    for (const int x : {recenter.x0 - 4, recenter.x0 - 1, recenter.x1 + 1, recenter.x1 + 4}) {
-      CHECK(screen.at(x - (recenter.x0 - p.x0), y) == screen.at(x, y));
+  // Its stone recess: the top row's, a side or corner from each slot, the
+  // sides mirrored along the slot.
+  const Pane rotation = wm.find_window("BATROTLEFT")->pane();
+  const Pane grid = wm.find_window("TOGGRID")->pane();
+  const int w = p.x1 - p.x0;
+  for (int d = 1; d <= 4; ++d) {
+    for (int x = 0; x <= w; ++x) {
+      CHECK(screen.at(p.x0 + x, p.y0 - d) == screen.at(rotation.x0 + w - x, rotation.y0 - d));
     }
+    CHECK(screen.at(p.x1 + d, p.y1 + d) == screen.at(grid.x0 + w + d, grid.y0 + w + d));
   }
+  test::write_shot(r.rig, "system_deselect");
   // The pixels of a pane.
   const auto pixels = [&](const Pane& pane) {
     std::vector<std::uint8_t> out;
@@ -418,10 +424,7 @@ TEST_CASE("the deselect button drops the selection; it and ABANDON are greyed wh
 
   // Shift and a click: its help, greyed too.
   REQUIRE(button.greyed());
-  r.rig.pending.push_back(InputEvent{.type = EventType::kKeyDown, .key = SDLK_LSHIFT, .mods = SDL_KMOD_LSHIFT});
-  r.rig.pending.push_back(InputEvent{.type = EventType::kMouseMove, .x = p.x0 + 15, .y = p.y0 + 15});
-  r.rig.queue_click(p.x0 + 15, p.y0 + 15);
-  r.rig.pending.push_back(InputEvent{.type = EventType::kKeyUp, .key = SDLK_LSHIFT, .mods = 0});
+  r.rig.queue_help_click(p.x0 + 15, p.y0 + 15);
   r.rig.queue_click(320, 350);  // the help window's OK
   r.rig.drain();
   CHECK(dynamic_cast<HelpWnd&>(*wm.find_window("HELPWINDOW")).topic() == "oa_deselect");

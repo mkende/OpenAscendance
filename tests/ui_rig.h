@@ -2,6 +2,8 @@
 // clock, with scripted input: the tests of the toolkit and the screens.
 #pragma once
 
+#include <SDL3/SDL_keycode.h>
+
 #include <cstdint>
 #include <deque>
 #include <filesystem>
@@ -101,6 +103,14 @@ struct UiRig {
   void queue_click(int x, int y, MouseButton button = MouseButton::kLeft) {
     pending.push_back(InputEvent{.type = EventType::kMouseDown, .x = x, .y = y, .button = button});
     pending.push_back(InputEvent{.type = EventType::kMouseUp, .x = x, .y = y, .button = button});
+  }
+  // Queues a help click (Shift and a click) at (x, y) without running the
+  // passes.
+  void queue_help_click(int x, int y) {
+    pending.push_back(InputEvent{.type = EventType::kKeyDown, .key = SDLK_LSHIFT, .mods = SDL_KMOD_LSHIFT});
+    pending.push_back(InputEvent{.type = EventType::kMouseMove, .x = x, .y = y});
+    queue_click(x, y);
+    pending.push_back(InputEvent{.type = EventType::kKeyUp, .key = SDLK_LSHIFT, .mods = 0});
   }
   // Presses `sdl_key` with `mods`, then releases the modifiers.
   void key(std::uint32_t sdl_key, std::uint16_t mods = 0) {

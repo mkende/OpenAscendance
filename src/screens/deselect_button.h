@@ -25,8 +25,8 @@ class DeselectButton final : public GWindow {
 };
 
 // Adds the deselect button to the System Display's screen: its slot is
-// TOGGRID's column on RECENTER's row, its stone recess the one around
-// RECENTER, drawn over the background when the screen is entered. Neither
+// TOGGRID's column on RECENTER's row, its stone recess made of pieces of
+// the top row's recesses, drawn over the background when the screen is entered. Neither
 // while a trace is replayed. Throws `DataError` when one of these windows
 // is missing.
 void install_deselect_button(WinMgr& wm);

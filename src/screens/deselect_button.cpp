@@ -1,5 +1,6 @@
 #include "screens/deselect_button.h"
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <format>
@@ -90,15 +91,60 @@ GWindow& require_window(WinMgr& wm, std::string_view name) {
   return *w;
 }
 
-// Copies the `kRecess` pixels around `from` to around `to` (the same size).
-void copy_recess(Image8& screen, const Pane& from, const Pane& to) {
-  const int dx = to.x0 - from.x0;
-  const int dy = to.y0 - from.y0;
-  for (int y = from.y0 - kRecess; y <= from.y1 + kRecess; ++y) {
-    for (int x = from.x0 - kRecess; x <= from.x1 + kRecess; ++x) {
-      const bool inside = x >= from.x0 && x <= from.x1 && y >= from.y0 && y <= from.y1;
-      if (!inside && screen.contains(x, y) && screen.contains(x + dx, y + dy)) {
-        screen.set(x + dx, y + dy, screen.at(x, y));
+// The windows at the top left of the top row's four slots, whose recesses
+// make the new one: each side and corner of the slot's recess comes from
+// another slot (`kRecessParts`), so that it shows no copy of a neighbour.
+constexpr std::array<std::string_view, 4> kRecessSources = {"BATROTLEFT", "BATZOOMIN", "TOGGRID", "TOGELEV"};
+
+// The top left corner of a slot.
+struct SlotCorner {
+  int x;
+  int y;
+};
+
+// A part of a recess: its side (-1, 0 or 1 on each axis, 0 along the
+// slot) and the `kRecessSources` index it is taken from.
+struct RecessPart {
+  int side_x;
+  int side_y;
+  std::size_t source;
+};
+
+constexpr std::array<RecessPart, 8> kRecessParts = {{
+    {0, -1, 0},   // top: the rotation slot's
+    {0, 1, 3},    // bottom: TOGELEV's
+    {-1, 0, 1},   // left: the zoom slot's
+    {1, 0, 0},    // right: the rotation slot's
+    {-1, -1, 3},  // top left: TOGELEV's
+    {1, -1, 1},   // top right: the zoom slot's
+    {-1, 1, 0},   // bottom left: the rotation slot's
+    {1, 1, 2},    // bottom right: TOGGRID's
+}};
+
+// The side (-1, 0 or 1) of `v` relative to [`lo`, `hi`].
+constexpr int side_of(int v, int lo, int hi) { return v < lo ? -1 : (v > hi ? 1 : 0); }
+
+// Draws the `kRecess` pixels around `to` from the recesses around the
+// slots at `from` (top left corners, in `kRecessSources`' order), as `kRecessParts`
+// says. The sides are mirrored along the slot; the light stays on the
+// same side.
+void mix_recess(Image8& screen, const std::array<SlotCorner, kRecessSources.size()>& from, const Pane& to) {
+  const int w = to.x1 - to.x0;
+  const int h = to.y1 - to.y0;
+  for (int y = -kRecess; y <= h + kRecess; ++y) {
+    for (int x = -kRecess; x <= w + kRecess; ++x) {
+      const int sx = side_of(x, 0, w);
+      const int sy = side_of(y, 0, h);
+      if (sx == 0 && sy == 0) {
+        continue;
+      }
+      const auto* part =
+          std::ranges::find_if(kRecessParts, [&](const RecessPart& p) { return p.side_x == sx && p.side_y == sy; });
+      const SlotCorner& src = from[part->source];
+      const int fx = src.x + (sy != 0 && sx == 0 ? w - x : x);
+      const int fy = src.y + (sx != 0 && sy == 0 ? h - y : y);
+      if (screen.contains(fx, fy) && screen.contains(to.x0 + x, to.y0 + y)) {
+        screen.set(to.x0 + x, to.y0 + y, screen.at(fx, fy));
       }
     }
   }
@@ -158,8 +204,13 @@ void install_deselect_button(WinMgr& wm) {
   const Pane column = require_window(wm, "TOGGRID").pane();
   const Pane recenter = require_window(wm, "RECENTER").pane();
   const Pane pane{column.x0, recenter.y0, column.x1, recenter.y1};
+  std::array<SlotCorner, kRecessSources.size()> sources;
+  std::ranges::transform(kRecessSources, sources.begin(), [&wm](std::string_view name) {
+    const Pane& slot = require_window(wm, name).pane();
+    return SlotCorner{slot.x0, slot.y0};
+  });
   const int id = wm.register_window(std::make_unique<DeselectButton>(wm, pane));
-  wm.set_enter_handler(kScreenSystem, [&wm, id, recenter, pane, on_screen = false](int screen) mutable {
+  wm.set_enter_handler(kScreenSystem, [&wm, id, sources, pane, on_screen = false](int screen) mutable {
     wm.draw_background(screen);
     const bool shown = !wm.replaying();
     if (shown != on_screen) {
@@ -172,7 +223,7 @@ void install_deselect_button(WinMgr& wm) {
       on_screen = shown;
     }
     if (shown) {
-      copy_recess(wm.screen(), recenter, pane);
+      mix_recess(wm.screen(), sources, pane);
     }
   });
 }
