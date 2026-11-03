@@ -87,6 +87,9 @@ constexpr int kStringStarLane = 8;
 constexpr int kStringRedLink = 9;
 constexpr int kStringTo = 10;
 constexpr int kStringSpeciesNames = 0x65;
+// The developer caption's names of the standing orders (`0x86298`).
+constexpr std::array<const char*, 8> kOrderNames = {"SONothing", "SOGoStar",       "SOColonize", "SOOrbitPlanet",
+                                                    "SOPatrol",  "SODefendPlanet", "SOAttack",   "SOGoSpace"};
 
 // The click sound.
 constexpr int kClickSound = 0;
@@ -919,6 +922,40 @@ void BatModeWnd::draw(int /*mode*/) {
   }
   draw_caption();
   update_cursor();
+  if (wm_.developer()) {
+    draw_developer_caption();
+  }
+}
+
+void BatModeWnd::draw_developer_caption() {
+  const game::Session* s = core();
+  if (s == nullptr || hovered_ < 0 || items_[static_cast<std::size_t>(hovered_)].kind != ItemKind::kShip) {
+    return;
+  }
+  const game::Cosmos& c = s->game->cosmos;
+  const game::Ship& ship = c.ships[static_cast<std::size_t>(items_[static_cast<std::size_t>(hovered_)].object)];
+  GameFont& font = wm_.small_font();
+  font.pane() = GSystem::kScreenPane;
+  Image8& screen = wm_.screen();
+  const auto line = [&](int x, int y, std::string_view text) {
+    font.draw_wrapped(screen, x, y, text, 0, kDefault, kDefault, 0);
+  };
+  line(250, 10,
+       std::format("{} {}",
+                   wm_.static_string(kStringSpeciesNames + c.races[static_cast<std::size_t>(ship.owner)].species),
+                   game::name_view(ship.name)));
+  line(250, 20, std::format("POWER {} MOVES {} INTEGRITY {}", ship.power, ship.moves, ship.hit_points));
+  const auto order = static_cast<std::size_t>(ship.destination_kind);
+  line(250, 30, order < kOrderNames.size() ? kOrderNames.at(order) : "INVALID ORDER");
+  // The destination of a star or planet order.
+  if (ship.destination < 0) {
+    return;
+  }
+  if (ship.destination_kind == game::ShipOrder::kGoStar) {
+    line(320, 30, game::name_view(c.stars[static_cast<std::size_t>(ship.destination)].name));
+  } else if (ship.destination_kind == game::ShipOrder::kColonize) {
+    line(320, 30, game::name_view(c.planets[static_cast<std::size_t>(ship.destination)].name));
+  }
 }
 
 int BatModeWnd::pick(const std::vector<int>& list, int x, int y) const {

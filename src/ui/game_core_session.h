@@ -70,6 +70,7 @@ class GameCoreSession final : public GameSession {
 
   int next_contested_star() override;
   bool end_day() override;
+  bool save_file(const std::string& name) override;
   bool load_game_file(const std::string& name) override;
   void srand(std::uint32_t seed) override { session_.rng.srand(seed); }
   bool has_game_events() const override { return !session_.events.empty(); }
@@ -81,6 +82,9 @@ class GameCoreSession final : public GameSession {
   // `Game_load` of the save bytes `data` (named `name` in the warnings);
   // returns false when they are not a save.
   bool load_bytes(std::span<const std::uint8_t> data, const std::string& name);
+  // `Game_save` into `file` of the save folder (an existing file of another
+  // case replaced); returns false when it could not be written.
+  bool save_to(const std::string& file);
   // The host path save `slot` is read from, nothing when it does not exist.
   std::optional<std::filesystem::path> find_save(int slot) const;
 

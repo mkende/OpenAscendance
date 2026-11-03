@@ -3,6 +3,8 @@ oa_add_module(oa_ui
     # The ButtonGroup, ToggleButton, ListBox, DigitCounter, EditField and
     # TextBox classes (gwindow.cpp).
     button_group.cpp
+    # The developer's debug window (winmgr.cpp).
+    dbg_wnd.cpp
     digit_counter.cpp
     edit_field.cpp
     # The game-event box (eventwnd.cpp).

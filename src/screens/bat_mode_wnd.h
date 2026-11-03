@@ -267,6 +267,10 @@ class BatModeWnd final : public GWindow {
   void draw_grid();
   void draw_stars();
   void draw_caption();
+  // The developer mode's caption of the hovered ship (`BatModeWnd_draw`
+  // 0x18ca8): its species and name, power, moves and integrity, its
+  // standing order and the order's star or planet.
+  void draw_developer_caption();
   // `DrawList_pick` (0x15808) and `BatModeWnd_pick_item` (0x17204).
   int pick(const std::vector<int>& list, int x, int y) const;
   void pick_item(int x, int y);

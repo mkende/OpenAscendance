@@ -20,6 +20,7 @@
 #include "game/session.h"
 #include "game/tables.h"
 #include "ui/button_group.h"
+#include "ui/dbg_wnd.h"
 #include "ui/edit_field.h"
 #include "ui/event_wnd.h"
 #include "ui/help_wnd.h"
@@ -38,8 +39,15 @@ constexpr std::uint16_t kScanL = 0x26;
 constexpr std::uint16_t kScanX = 0x2d;
 constexpr std::uint16_t kScanN = 0x31;
 constexpr std::uint16_t kScanM = 0x32;
-// Ctrl+P of a replayed trace: the next tutorial help box.
+// Ctrl+P of a replayed trace: the next tutorial help box; Alt+P the
+// developer's replay.
 constexpr std::uint16_t kScanP = 0x19;
+// The developer hotkeys (with `nougat.lf`; swallowed without).
+constexpr std::uint16_t kScanW = 0x11;
+constexpr std::uint16_t kScanE = 0x12;
+constexpr std::uint16_t kScanR = 0x13;
+constexpr std::uint16_t kScanD = 0x20;
+constexpr std::uint16_t kScanF = 0x21;
 
 // The screens of the hotkeys and the screen-specific rules.
 constexpr int kScreenOpening = 0;
@@ -53,8 +61,10 @@ constexpr int kScreenStarSystem = 16;
 constexpr int kScreenPlanet = 17;
 constexpr int kScreenResearch = 20;
 
-// The developer's trace (message 4) and the tutorials' end question.
+// The developer's trace (message 4, Alt+R, Alt+P), its listing and the
+// tutorials' end question.
 constexpr std::string_view kDeveloperTrace = "WINEVENT.BIN";
+constexpr std::string_view kDeveloperTraceText = "WINEVENT.TXT";
 constexpr std::string_view kEndTutorialTopic = "endtut";
 
 // The themes the music picker chooses from (tunes 0..4).
@@ -767,10 +777,12 @@ bool WinMgr::broadcast(int type, int a, int b, bool filter) {
 }
 
 void WinMgr::set_timer(int id, int msg, int p1, int p2, std::uint32_t period) {
-  if (replaying_) {
-    // A replay runs the timers at each pass: the same passes as recorded.
+  if (replaying_ || recording_) {
+    // A replay and a recording run the timers at each pass: the same passes.
     period = 0;
   }
+  record_event(id, TraceEventType::kRequestTimer, msg, static_cast<std::uint32_t>(p1), static_cast<std::uint32_t>(p2),
+               0);
   for (Timer& t : timers_) {
     if (t.window == 0) {
       t = Timer{id, msg, p1, p2, period, services_.ticks() + period};
@@ -786,6 +798,7 @@ void WinMgr::kill_timer(int id, int msg) {
       t.window = 0;
     }
   }
+  record_event(id, TraceEventType::kCancelTimer, msg, 0, 0, 0);
 }
 
 int WinMgr::timer_period(int id, int msg) const {
@@ -818,6 +831,8 @@ void WinMgr::run_timers() {
 }
 
 void WinMgr::request_notify(int id, int mask, int msg, int p1, int p2) {
+  record_event(id, TraceEventType::kRequestNotify, msg, static_cast<std::uint32_t>(p1), static_cast<std::uint32_t>(p2),
+               static_cast<std::uint32_t>(mask));
   for (Notify& n : notifies_) {
     if (n.window == 0) {
       n = Notify{id, mask, msg, p1, p2};
@@ -833,6 +848,7 @@ void WinMgr::cancel_notify(int id, int msg) {
       n.window = 0;
     }
   }
+  record_event(id, TraceEventType::kCancelNotify, msg, 0, 0, 0);
 }
 
 void WinMgr::run_notifies(const InputState& input) {
@@ -934,9 +950,139 @@ bool WinMgr::handle_hotkey(const InputState& input) {
     case kScanM:
       services_.sound.set_music_muted(!services_.sound.music_muted());
       return true;
+    // The developer keys, swallowed without the developer mode.
+    case kScanW:
+      // The debug window over the current screen (the remake runs a single
+      // modal loop at a time: not from one).
+      if (developer() && !modal_) {
+        if (GWindow* debug = find_window("WMGRDEBUG")) {
+          do_modal(*debug);
+        }
+      }
+      return true;
+    case kScanE:
+      if (developer()) {
+        trade_all_ = !trade_all_;
+      }
+      return true;
+    case kScanR:
+      if (developer() && !replaying_) {
+        if (recording_) {
+          stop_recording(true);
+        } else {
+          services_.game.srand(0);
+          rotation_speed_ = 1.0F;
+          start_recording();
+        }
+      }
+      return true;
+    case kScanP:
+      if (developer() && !recording_) {
+        if (replaying_) {
+          replaying_ = false;
+        } else {
+          replay_developer_trace(false);
+        }
+      }
+      return true;
+    case kScanD:
+      if (developer()) {
+        pointer_overlay_ = !pointer_overlay_;
+      }
+      return true;
+    case kScanF:
+      if (developer()) {
+        fps_overlay_ = !fps_overlay_;
+      }
+      return true;
     default:
-      // The developer keys (W, E, R, P, D, F) need `nougat.lf`.
       return false;
+  }
+}
+
+bool WinMgr::developer() const {
+  const game::Session* core = services_.game.core();
+  return core != nullptr && core->developer;
+}
+
+std::vector<int> WinMgr::screen_windows(int screen) const {
+  std::vector<int> ids;
+  const std::array<int, kScreenWindows>& slots = screens_.at(static_cast<std::size_t>(screen)).slots;
+  for (auto it = slots.rbegin(); it != slots.rend(); ++it) {
+    if (*it != 0) {
+      ids.push_back(*it);
+    }
+  }
+  return ids;
+}
+
+void WinMgr::replay_developer_trace(bool loop) {
+  if (replaying_ || recording_) {
+    return;
+  }
+  std::optional<std::vector<std::uint8_t>> trace;
+  if (!services_.user_dir.empty()) {
+    std::ifstream in(services_.user_dir / kDeveloperTrace, std::ios::binary);
+    if (in) {
+      trace.emplace(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    }
+  }
+  if (!trace) {
+    trace = services_.files.try_load(kDeveloperTrace);
+  }
+  if (trace) {
+    start_replay(*trace, kDeveloperTrace, loop);
+  }
+}
+
+void WinMgr::start_recording() {
+  if (recording_ || replaying_) {
+    return;
+  }
+  recording_ = true;
+  records_.clear();
+  replay_pass_ = 0;
+}
+
+void WinMgr::stop_recording(bool listing) {
+  if (!recording_) {
+    return;
+  }
+  recording_ = false;
+  // The header of the last trace read (none: zeros).
+  Trace trace{.header = trace_.header, .records = records_};
+  const std::vector<std::uint8_t> bytes = serialize_trace(trace);
+  write_user_file(kDeveloperTrace, std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()));
+  if (listing) {
+    write_user_file(kDeveloperTraceText, trace_text(trace));
+  }
+}
+
+void WinMgr::record_event(int window, TraceEventType type, int msg, std::uint32_t a, std::uint32_t b, std::uint32_t c) {
+  if (!recording_ || replaying_) {
+    return;
+  }
+  records_.push_back(TraceRecord{.time = replay_pass_,
+                                 .window = static_cast<std::uint32_t>(window),
+                                 .type = type,
+                                 .msg = static_cast<std::uint16_t>(msg),
+                                 .a = a,
+                                 .b = b,
+                                 .c = c});
+  if (records_.size() == kMaxRecords) {
+    stop_recording(false);
+  }
+}
+
+void WinMgr::write_user_file(std::string_view name, std::string_view bytes) const {
+  if (services_.user_dir.empty()) {
+    return;
+  }
+  const std::filesystem::path path = services_.user_dir / name;
+  std::ofstream out(path, std::ios::binary | std::ios::trunc);
+  out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+  if (!out) {
+    log_warning("cannot write {}", path.string());
   }
 }
 
@@ -1068,21 +1214,7 @@ void WinMgr::dispatch_messages() {
         break;
       case kMessageReplay:
         // The developer's replay of WINEVENT.BIN (looping).
-        if (!replaying_) {
-          std::optional<std::vector<std::uint8_t>> trace;
-          if (!services_.user_dir.empty()) {
-            std::ifstream in(services_.user_dir / kDeveloperTrace, std::ios::binary);
-            if (in) {
-              trace.emplace(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
-            }
-          }
-          if (!trace) {
-            trace = services_.files.try_load(kDeveloperTrace);
-          }
-          if (trace) {
-            start_replay(*trace, kDeveloperTrace, true);
-          }
-        }
+        replay_developer_trace(true);
         break;
       case kMessageNextTurn:
         next_turn();
@@ -1111,7 +1243,17 @@ void WinMgr::next_turn() {
     // Cosmos_check_game_over 0x1fec4: the end-of-game screen.
     post_message(kMessageChangeScreen, kScreenEndOfGame, 1);
   }
-  // (The developer's trade-all of every new day, Alt+E, is left out.)
+  if (game::Session* core = game.core(); core != nullptr && trade_all_) {
+    // The developer's trade-all (Alt+E): the player receives stars and
+    // lanes from every other race.
+    game::Race& player = core->game->cosmos.races[core->player_race];
+    for (int r = 0; r < core->game->cosmos.race_count; ++r) {
+      if (r != core->player_race) {
+        game::race_trade_stars(*core, player, static_cast<game::RaceIndex>(r), -1);
+        game::race_trade_lanes(*core, player, static_cast<game::RaceIndex>(r), -1);
+      }
+    }
+  }
   setup_race_shapes();
   broadcast_event(kEventRefresh, 0, 0);
   refresh_screen();
@@ -1232,7 +1374,7 @@ int WinMgr::game_event_screen(const game::GameEvent& event, int result) {
 }
 
 bool WinMgr::start_replay(std::span<const std::uint8_t> trace, std::string_view name, bool loop) {
-  if (replaying_) {
+  if (replaying_ || recording_) {
     return false;
   }
   Trace parsed = parse_trace(trace, name);
@@ -1558,7 +1700,7 @@ void WinMgr::pick_music(const InputState& input) {
 }
 
 void WinMgr::process_input(const InputState& input) {
-  if (replaying_) {
+  if (replaying_ || recording_) {
     ++replay_pass_;
   }
   const PointerPos previous{last_input_.x, last_input_.y};
@@ -1605,13 +1747,21 @@ void WinMgr::process_input(const InputState& input) {
     pointer_on_target_ = target != raw_pointer_;
   }
   if (in.moved) {
+    record_event(0, TraceEventType::kMouseMove, 0, static_cast<std::uint32_t>(in.x), static_cast<std::uint32_t>(in.y),
+                 0);
     update_hover(in);
   }
   if (!modal_) {
     run_notifies(in);
     run_timers();
   }
+  // The records' booleans are the input layer's 0 / -1.
+  constexpr std::uint32_t kTrue = 0xffffffff;
   if (in.key_event) {
+    // The recorder's own Alt+R and Alt+P are not recorded.
+    if (!in.alt || (in.scan_code != kScanR && in.scan_code != kScanP)) {
+      record_event(0, TraceEventType::kKey, in.shift_flags, in.scan_code, in.ascii, in.alt ? kTrue : 0);
+    }
     if (replaying_ && in.ctrl && in.scan_code == kScanP) {
       show_tutorial_box();
     }
@@ -1620,10 +1770,19 @@ void WinMgr::process_input(const InputState& input) {
       broadcast_event(kEventKey, in.ascii, in.scan_code);
     }
   }
+  if (in.left_changed && !in.alt) {
+    record_event(0, TraceEventType::kMouseButton, in.left_down && in.shift ? 1 : 0, 0, in.left_down ? kTrue : 0, 0);
+  }
   if (in.left_changed && in.left_down) {
     if (exit_corner_ == -1) {
-      // Alt + click is the developer's palette pick: nothing otherwise.
-      if (!in.alt) {
+      if (in.alt) {
+        // The developer's palette pick (whatever the mode: only the debug
+        // window shows it).
+        picked_color_ = screen().contains(in.x, in.y) ? screen().at(in.x, in.y) : 0;
+        if (GWindow* debug = find_window("WMGRDEBUG"); debug != nullptr && debug->active()) {
+          send_event(debug->id(), DbgWnd::kMessagePalettePick, in.x, in.y);
+        }
+      } else {
         broadcast_event(help_mode_ && !modal_ ? kEventHelpClick : kEventLeftClick, in.x, in.y);
       }
     } else if (!modal_) {
@@ -1634,6 +1793,9 @@ void WinMgr::process_input(const InputState& input) {
     } else {
       end_modal(-1);
     }
+  }
+  if (in.right_changed) {
+    record_event(0, TraceEventType::kMouseButton, 0, 1, in.right_down ? kTrue : 0, 0);
   }
   if (in.right_changed && in.right_down) {
     if (help_mode_) {
@@ -1821,7 +1983,34 @@ void WinMgr::route_view_gesture(const ViewGesture& gesture) {
   }
 }
 
+void WinMgr::draw_overlays() {
+  // The original leaves the large font's pane at the frame rate's; the
+  // remake's drawers do not all set it: it is restored.
+  GameFont& font = large_font();
+  const Pane pane = font.pane();
+  if (fps_overlay_) {
+    // Every 10 passes: passes per second and the ticks of the 10 passes.
+    if (++fps_passes_ == 10) {
+      const std::uint32_t now = services_.ticks();
+      const std::uint32_t elapsed = std::max<std::uint32_t>(now - fps_tick_, 1);
+      fps_tick_ = now;
+      fps_passes_ = 0;
+      fps_text_ = std::format("FPS {}  {}", 1000 / elapsed, elapsed);
+    }
+    font.pane() = Pane{25, 10, 150, 30};
+    font.draw_wrapped(screen(), 0, 0, fps_text_, 0, kDefault, kDefault, 0);
+  }
+  if (pointer_overlay_) {
+    // At the bottom while the pointer is in the top half.
+    font.pane() = GSystem::kScreenPane;
+    font.draw_wrapped(screen(), 0, last_input_.y < kScreenHeight / 2 ? 460 : 0,
+                      std::format("({},{})", last_input_.x, last_input_.y), 0, kDefault, kDefault, 0);
+  }
+  font.pane() = pane;
+}
+
 void WinMgr::refresh_screen() {
+  draw_overlays();
   if (fade_pending_) {
     services_.gsystem.fade_to_palette_step(fade_step_);
     if (++fade_step_ > 64) {

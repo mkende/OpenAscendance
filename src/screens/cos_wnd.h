@@ -174,6 +174,14 @@ class CosWnd final : public GWindow {
   void draw_items();
   // `CosWnd_draw_race_portraits` (0x236f4).
   void draw_race_portraits();
+  // The developer keys (`CosWnd_handle_event` 0x21fc4, the developer mode
+  // only): contacts, explored stars, known lanes, the statistics overlay,
+  // the player's race; the items rebuilt and drawn.
+  void developer_key(int scan);
+  // The developer's statistics overlay (`CosWnd_draw` 0x23310, key C): the
+  // stars controlled, the player's bio-rhythm mood and the atmosphere, the
+  // player's relation and attitude towards each race.
+  void draw_statistics();
   // The hovered star's name and type at the map's bottom-right corner, on
   // `background` (the font's for the draw, none for the hover).
   void draw_label(int background);
@@ -198,6 +206,7 @@ class CosWnd final : public GWindow {
   std::int32_t empire_ = 0;          // +0x58a
   std::uint8_t race_filter_ = 0xff;  // +0xd8 RACECONTROLS
   std::uint8_t known_races_ = 1;     // +0xd9
+  bool stats_overlay_ = false;       // +0x58e, the developer's statistics
   Camera3d camera_;                  // +0xda
   std::array<std::int32_t, kMaxDrawn> drawn_{};
   std::size_t drawn_count_ = 0;

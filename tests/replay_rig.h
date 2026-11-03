@@ -155,8 +155,9 @@ struct ReplayProgram {
   WinMgr wm;
 };
 
-// Counts the pixels of two screenshots that differ.
-inline int differing_gif_pixels(const std::filesystem::path& ours, const std::filesystem::path& theirs) {
+// Counts the pixels of two screenshots that differ, but in `unchecked`.
+inline int differing_gif_pixels(const std::filesystem::path& ours, const std::filesystem::path& theirs,
+                                std::optional<Pane> unchecked = std::nullopt) {
   const Image8 a = decode_gif(read_file(ours), ours.string());
   const Image8 b = decode_gif(read_file(theirs), theirs.string());
   REQUIRE(a.width() == b.width());
@@ -164,7 +165,9 @@ inline int differing_gif_pixels(const std::filesystem::path& ours, const std::fi
   int n = 0;
   for (int y = 0; y < a.height(); ++y) {
     for (int x = 0; x < a.width(); ++x) {
-      n += a.at(x, y) != b.at(x, y) ? 1 : 0;
+      const bool skipped =
+          unchecked && x >= unchecked->x0 && x <= unchecked->x1 && y >= unchecked->y0 && y <= unchecked->y1;
+      n += !skipped && a.at(x, y) != b.at(x, y) ? 1 : 0;
     }
   }
   return n;
@@ -257,6 +260,11 @@ struct ReplayRun {
   // frames (`Session::stale_dip_arg`, `docs/09-simulation.md`), for runs
   // where an AI race proposes something to the player.
   bool dip_arg_low_word = false;
+  // The developer mode (the oracle's `--dev`, `nougat.lf`): its
+  // `NUMSHIPS.DBG` is compared too.
+  bool developer = false;
+  // A rectangle of the screenshots left out of their comparison.
+  std::optional<Pane> unchecked = std::nullopt;
 };
 
 // Returns `mine` with the high words of its races' pending action arguments
@@ -300,6 +308,7 @@ inline bool replay_oracle_run(const GameFiles& files, const ReplayRun& c, int ma
     }
   }
   ReplayProgram program(files, c.seed, dir.path, c.keep_saves && !antag, c.variant);
+  program.session.core()->developer = c.developer;
   CHECK(program.replay(read_file(*trace), max_passes));
   if (const char* dump = std::getenv("OA_DUMP_DIR"); dump != nullptr && *dump != '\0') {
     const std::filesystem::path to = std::filesystem::path(dump) / c.run;
@@ -339,7 +348,10 @@ inline bool replay_oracle_run(const GameFiles& files, const ReplayRun& c, int ma
         ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
       }
       REQUIRE(std::filesystem::exists(dir.path / lower));
-      CHECK(differing_gif_pixels(dir.path / lower, entry.path()) == 0);
+      CHECK(differing_gif_pixels(dir.path / lower, entry.path(), c.unchecked) == 0);
+    } else if (name == "NUMSHIPS.DBG") {
+      REQUIRE(std::filesystem::exists(dir.path / "numships.dbg"));
+      CHECK(read_file(dir.path / "numships.dbg") == read_file(entry.path()));
     }
   }
   return true;

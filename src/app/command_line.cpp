@@ -199,6 +199,14 @@ CommandLine parse_command_line(std::span<const std::string_view> args) {
       o.setup = true;
       continue;
     }
+    if (a == "--pop") {
+      o.pop = true;
+      continue;
+    }
+    if (a == "--nougat") {
+      o.nougat = true;
+      continue;
+    }
     if (i + 1 >= args.size()) {
       throw usage_error();
     }

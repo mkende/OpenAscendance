@@ -201,7 +201,9 @@ int main(int argc, char** argv) {
                          .frames = options.frames,
                          .user_dir = {},
                          .seed = options.seed,
-                         .trace = {}};
+                         .trace = {},
+                         .autoplay = options.pop,
+                         .developer = options.nougat};
     if (options.trace) {
       game.trace = *options.trace;
     }

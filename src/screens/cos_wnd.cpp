@@ -9,6 +9,7 @@
 #include <string>
 
 #include "core/error.h"
+#include "core/log.h"
 #include "core/watcom_qsort.h"
 #include "game/session.h"
 #include "game/state.h"
@@ -20,6 +21,20 @@ namespace oa {
 namespace {
 
 using game::f32;
+
+// The developer keys (`nougat.lf`): R contact every species, S explore
+// every star, L know every lane, C the statistics overlay, 1..7 play as
+// race slot 0..6, 8 as every race (the AI's alone).
+constexpr int kScanR = 0x13;
+constexpr int kScanS = 0x1f;
+constexpr int kScanL = 0x26;
+constexpr int kScanC = 0x2e;
+constexpr int kScan1 = 0x02;
+constexpr int kScan8 = 0x09;
+// The developer overlay's texts (`CosWnd_draw` 0x23310): the atmosphere's
+// and the relations' names.
+constexpr std::array<const char*, 3> kAtmosphereNames = {"Peaceful", "Neutral", "Hostile"};
+constexpr std::array<const char*, 4> kRelationNames = {"Unknown", "Peace", "War", "Alliance"};
 
 // The screens the map is on.
 constexpr int kScreenStarMap = 1;
@@ -257,7 +272,8 @@ void CosWnd::build_items() {
     // Cosmos_ships_at_star 0x1d794: the first ship in the system or at one
     // of its planets.
     std::int16_t used = 0;
-    for (std::size_t k = 0; k < game::kMaxShips && used < c.ship_count; ++k) {
+    bool found = false;
+    for (std::size_t k = 0; k < game::kMaxShips && used < c.ship_count && !found; ++k) {
       const game::Ship& ship = c.ships[k];
       if (ship.owner == -1) {
         continue;
@@ -269,8 +285,18 @@ void CosWnd::build_items() {
       if ((at_planet && c.planets[static_cast<std::size_t>(ship.location)].star == i) ||
           (kind == game::ShipLocation::kSystem && ship.location == i)) {
         add(ItemKind::kShip, static_cast<std::int16_t>(k));
-        break;
+        found = true;
       }
+    }
+    if (!found && s.developer) {
+      // The developer mode's check: the game saved as `cos%05d.bug`, then
+      // the original's `verify_fail`.
+      const std::string file = std::format("cos{:05d}.bug", c.day);
+      if (!wm_.services().game.save_file(file)) {
+        log_warning("{} not saved", file);
+      }
+      throw std::logic_error(std::format("star map: star {} has the ship flags {} but no ship (saved as {})", i,
+                                         c.stars[static_cast<std::size_t>(i)].ships_mask, file));
     }
   }
   for (std::int16_t i = 0; i < c.lane_count; ++i) {
@@ -722,6 +748,87 @@ void CosWnd::draw_race_portraits() {
   }
 }
 
+void CosWnd::developer_key(int scan) {
+  game::Session& s = *wm_.services().game.core();
+  game::Cosmos& c = s.game->cosmos;
+  const auto bit = static_cast<std::uint8_t>(1U << s.player_race);
+  switch (scan) {
+    case kScanR:
+      // Met at peace, both attitudes the other species' starting one.
+      for (int r = 0; r < c.race_count; ++r) {
+        if (r == s.player_race) {
+          continue;
+        }
+        game::Race& other = c.races[static_cast<std::size_t>(r)];
+        game::Race& player = c.races[s.player_race];
+        player.attitude[static_cast<std::size_t>(r)] = other.start_attitude;
+        other.attitude[s.player_race] = other.start_attitude;
+        player.relation[static_cast<std::size_t>(r)] = game::kPeace;
+        other.relation[s.player_race] = game::kPeace;
+        known_races_ = static_cast<std::uint8_t>((1U << c.race_count) - 1);
+      }
+      break;
+    case kScanS:
+      for (int i = 0; i < c.star_count; ++i) {
+        game::Star& star = c.stars[static_cast<std::size_t>(i)];
+        star.explored_mask |= bit;
+        star.lanes_known_mask |= bit;
+      }
+      break;
+    case kScanL:
+      for (int i = 0; i < c.lane_count; ++i) {
+        c.lanes[static_cast<std::size_t>(i)].known_mask |= bit;
+      }
+      break;
+    case kScanC:
+      stats_overlay_ = !stats_overlay_;
+      draw(kDrawNormal);
+      return;
+    default:
+      if (scan < kScan1 || scan > kScan8) {
+        return;
+      }
+      // Cosmos_set_player_race: a slot past the race count changes nothing
+      // but the redraw.
+      if (scan == kScan8) {
+        s.set_player_race(0xff);
+      } else if (scan - kScan1 < c.race_count) {
+        s.set_player_race(static_cast<std::uint8_t>(scan - kScan1));
+      }
+      if (GWindow* counter = wm_.find_window("TURNCOUNT")) {
+        counter->draw(kDrawNormal);
+      }
+      break;
+  }
+  build_items();
+  project_items();
+  draw(kDrawNormal);
+}
+
+void CosWnd::draw_statistics() {
+  const game::Session& s = *wm_.services().game.core();
+  const game::Cosmos& c = s.game->cosmos;
+  const game::Race& player = c.races[s.player_race];
+  Image8& screen = wm_.screen();
+  // The count the original prints is a global nothing writes (`0xc82e3`);
+  // its percentage of the stars is formatted then overwritten.
+  GameFont& small = wm_.small_font();
+  small.pane() = GSystem::kScreenPane;
+  small.draw_wrapped(screen, 10, 0x18c, std::format("STARS CONTROLLED {}", 0), 0, kDefault, 0xff, 0);
+  GameFont& large = wm_.large_font();
+  large.pane() = GSystem::kScreenPane;
+  large.draw_wrapped(
+      screen, pane_.x0 + 5, pane_.y0 + 30,
+      std::format("{} Biorythym ({})\n", s.player_mood, kAtmosphereNames.at(static_cast<std::size_t>(c.atmosphere))), 0,
+      kDefault, 0xff, 0);
+  std::string relations;
+  for (int r = 0; r < c.race_count; ++r) {
+    const auto slot = static_cast<std::size_t>(r);
+    relations += std::format("R{} {:>10} {}\n", r, kRelationNames.at(player.relation[slot]), player.attitude[slot]);
+  }
+  large.draw_wrapped(screen, pane_.x0 + 5, pane_.y0 + 0x37, relations, 0, kDefault, 0xff, 0);
+}
+
 void CosWnd::draw(int /*mode*/) {
   draw_items();
   const int screen_id = wm_.current_screen();
@@ -739,6 +846,9 @@ void CosWnd::draw(int /*mode*/) {
     wm_.draw_colored(pane_, wm_.shared_shapes(kRaceFlags).at(player.species), 3, 3, player.color);
   }
   draw_label(kDefault);
+  if (stats_overlay_ && wm_.developer()) {
+    draw_statistics();
+  }
 }
 
 void CosWnd::activate(int a, int b) {
@@ -908,8 +1018,7 @@ bool CosWnd::handle_event(int type, int a, int b) {
       }
       return true;
     case kEventKey: {
-      // The rotation speed: `-` slower, `=` faster (the developer keys need
-      // `nougat.lf`).
+      // The rotation speed: `-` slower, `=` faster.
       constexpr int kScanMinus = 0x0c;
       constexpr int kScanEquals = 0x0d;
       const float speed = wm_.rotation_speed();
@@ -917,6 +1026,8 @@ bool CosWnd::handle_event(int type, int a, int b) {
         wm_.set_rotation_speed(f32(static_cast<double>(speed) * 0.8));
       } else if (b == kScanEquals && speed < 10.0F) {
         wm_.set_rotation_speed(f32(static_cast<double>(speed) * 1.25));
+      } else if (wm_.developer()) {
+        developer_key(b);
       }
       return false;
     }

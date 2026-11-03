@@ -151,9 +151,14 @@ class GameSession {
   // (`Cosmos_next_contested_star` 0x20260), -1 for none, and the end of the
   // day (`Cosmos_end_day` 0x203b4), which returns whether it ended the game
   // (`Cosmos_check_game_over` 0x1fec4 set the ending and dropped the game
-  // events: the end-of-game screen follows).
+  // events: the end-of-game screen follows). In the developer mode
+  // (`game::Session::developer`) the day also appends its ship-flag check
+  // (`game::cosmos_ship_flag_report`) to `numships.dbg` in the save folder.
   virtual int next_contested_star() { return -1; }
   virtual bool end_day() { return false; }
+  // `Game_save` into the file `name` of the save folder (the developer
+  // star map's `cos%05d.bug`); returns false when it could not be written.
+  virtual bool save_file(const std::string& /*name*/) { return false; }
   // `Game_load` of the game file `name` of the install (a tutorial's
   // `<name>.tsv`, `LoadWnd_handle_event` 0x30988); returns false when it
   // cannot be read.

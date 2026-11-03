@@ -38,6 +38,8 @@ class SoundSystem {
   // The current (or last) tune (`+0x6fc`), -1 before the first.
   int current_tune() const { return current_tune_; }
   int tune_count() const { return static_cast<int>(tunes_.size()); }
+  // The file of `tune` (`+0x37a + tune * 0x1c`, `music.txt`).
+  const std::string& tune_file(int tune) const { return tunes_.at(static_cast<std::size_t>(tune)).file; }
   // The saved position of `tune` (`+0x392 + tune * 0x1c`), in samples.
   std::size_t saved_position(int tune) const { return tunes_.at(static_cast<std::size_t>(tune)).saved_position; }
 

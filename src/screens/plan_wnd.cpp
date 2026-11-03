@@ -9,6 +9,7 @@
 #include "core/c_format.h"
 #include "core/error.h"
 #include "game/address.h"
+#include "game/cosmos.h"
 #include "game/float_math.h"
 #include "game/planet.h"
 #include "game/player_actions.h"
@@ -110,6 +111,16 @@ constexpr int kStringSpecies = 0x65;
 constexpr int kScanEsc = 0x01;
 constexpr int kScanS = 0x1f;
 constexpr int kScanM = 0x32;
+// The developer keys (`nougat.lf`), whoever owns the planet: R take it, T
+// population + 2 and a Colony Base placed, I project progress + 200 and a
+// planet day, O population at its maximum, N a planet day, Shift+M base
+// population + 1.
+constexpr int kScanR = 0x13;
+constexpr int kScanT = 0x14;
+constexpr int kScanI = 0x17;
+constexpr int kScanO = 0x18;
+constexpr int kScanN = 0x31;
+constexpr std::uint16_t kDeveloperProgress = 200;
 
 constexpr int kScreenShipDesign = 8;
 constexpr int kInputLength = 20;
@@ -564,17 +575,58 @@ void PlanWnd::key(int scan) {
       flags_ ^= kColoredSquares;
       break;
     case kScanM:
-      // Shift+M is a developer key (`nougat.lf`).
       if (!wm_.input().shift) {
         if (game::Planet* p = planet()) {
           game::planet_toggle_self_managed(*p);
         }
+      } else {
+        developer_key(scan);
       }
+      break;
+    default:
+      developer_key(scan);
+      break;
+  }
+  draw(kDrawNormal);
+}
+
+void PlanWnd::developer_key(int scan) {
+  game::Session* s = session();
+  game::Planet* p = planet();
+  if (!wm_.developer() || s == nullptr || p == nullptr) {
+    return;
+  }
+  switch (scan) {
+    case kScanR:
+      // An unowned planet only gets the owner byte (no star bit, no
+      // population).
+      if (p->owner == game::kNoOwner) {
+        p->owner = s->player_race;
+      } else {
+        game::star_set_planet_owner(*s, s->game->cosmos.stars[static_cast<std::size_t>(p->star)], *p, s->player_race);
+      }
+      break;
+    case kScanT:
+      p->population = static_cast<std::uint16_t>(p->population + 2);
+      game::planet_auto_place_item(*s, *p, game::kItemColonyBase, -1);
+      break;
+    case kScanI:
+      p->progress = static_cast<std::uint16_t>(p->progress + kDeveloperProgress);
+      game::planet_daily_update(*s, *p);
+      break;
+    case kScanO:
+      p->population = p->max_population;
+      break;
+    case kScanN:
+      game::planet_daily_update(*s, *p);
+      break;
+    case kScanM:
+      p->base_population = static_cast<std::uint16_t>(p->base_population + 1);
+      game::planet_recalc_output(*s, *p);
       break;
     default:
       break;
   }
-  draw(kDrawNormal);
 }
 
 void PlanWnd::draw(int /*mode*/) {

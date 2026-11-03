@@ -411,11 +411,31 @@ bool ResWnd::handle_event(int type, int a, int b) {
           camera_.position[1] = 1000000.0F;
           draw(kDrawNormal);
           break;
-        // The developer keys (only with `nougat.lf`), not supported here:
-        // D learns, F forgets every item, C completes the project.
+        // The developer keys (`nougat.lf`): D learns, F forgets every item,
+        // C completes the project; each clears the project and its
+        // progress (the tree shows it when next drawn).
         case kScanD:
         case kScanF:
         case kScanC:
+          if (wm_.developer() && session != nullptr) {
+            game::Research& research = session->game->research;
+            const auto bit = static_cast<std::uint8_t>(1U << session->player_race);
+            std::int16_t& project = research.project[session->player_race];
+            if (b == kScanC) {
+              if (project == -1) {
+                break;
+              }
+              research.items.at(static_cast<std::size_t>(project)).known_mask |= bit;
+            } else {
+              for (std::uint16_t i = 0; i < research.count; ++i) {
+                std::uint8_t& known = research.items.at(i).known_mask;
+                known = b == kScanD ? static_cast<std::uint8_t>(known | bit) : static_cast<std::uint8_t>(known & ~bit);
+              }
+            }
+            project = -1;
+            research.progress[session->player_race] = 0;
+          }
+          break;
         default:
           break;
       }

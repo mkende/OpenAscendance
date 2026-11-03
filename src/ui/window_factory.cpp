@@ -1,6 +1,7 @@
 // `WindowFactory::standard`: the toolkit's classes by `windows.txt` TYPE.
 
 #include "ui/button_group.h"
+#include "ui/dbg_wnd.h"
 #include "ui/digit_counter.h"
 #include "ui/event_wnd.h"
 #include "ui/flicwnd.h"
@@ -31,6 +32,7 @@ WindowFactory WindowFactory::standard() {
   });
   f.add(3, creator<ButtonGroup>());
   f.add(10, creator<ListBox>());
+  f.add(13, creator<DbgWnd>());
   f.add(15, creator<DigitCounter>());
   f.add(20, creator<HelpWnd>());
   f.add(23, creator<EventWnd>());
@@ -43,7 +45,7 @@ WindowFactory WindowFactory::standard() {
   // end of game, start of game, battle items) draw nothing
   // until they are added; 5, 6 and 29 (buttons with their own look) are
   // plain buttons until then.
-  for (const int type : {2, 4, 7, 8, 9, 11, 12, 13, 14, 16, 17, 18, 19, 21, 22, 24, 30, 32}) {
+  for (const int type : {2, 4, 7, 8, 9, 11, 12, 14, 16, 17, 18, 19, 21, 22, 24, 30, 32}) {
     f.add(type, creator<PlaceholderWnd>());
   }
   return f;

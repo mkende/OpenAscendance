@@ -4,7 +4,7 @@
 // `docs/07-ui-framework.md`, "Main loop and timing").
 //
 // Left out: the DOS banner and its 2.5 s wait, the memory, CD and VESA
-// checks, the developer flag files but `cosmos.txt`.
+// checks.
 #pragma once
 
 #include <cstdint>
@@ -38,6 +38,11 @@ struct GameOptions {
   std::optional<std::int32_t> seed;
   // A window-event trace replayed from the opening menu's first pass.
   std::optional<std::filesystem::path> trace;
+  // The original's developer files `flash.pop` (the autoplay) and
+  // `nougat.lf` (the developer mode) taken as present, whether they are in
+  // `user_dir` or not.
+  bool autoplay = false;
+  bool developer = false;
 };
 
 // Runs the game from `install` until the player quits; returns the exit

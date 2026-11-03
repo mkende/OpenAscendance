@@ -5,10 +5,13 @@
 // handling and refresh of the main loop (`docs/07-ui-framework.md`, "Window
 // manager").
 //
-// Also the game events of the star map (`WinMgr_show_game_events` 0x50f84)
-// and the replay of window-event traces (the tutorials, `docs/07-ui-framework.md`
-// "Recording and tutorials"). Not here: the developer keys and the
-// recorder.
+// Also the game events of the star map (`WinMgr_show_game_events` 0x50f84),
+// the replay of window-event traces (the tutorials, `docs/07-ui-framework.md`
+// "Recording and tutorials") and, in the developer mode
+// (`game::Session::developer`, the original's `nougat.lf`), the developer
+// hotkeys: Alt+W the debug window (`DbgWnd`), Alt+E the daily trade-all,
+// Alt+R the recorder of `WINEVENT.BIN`, Alt+P its replay, Alt+D and Alt+F
+// the pointer and frame-rate overlays.
 #pragma once
 
 #include <array>
@@ -257,6 +260,22 @@ class WinMgr final : public WindowStateIo {
   void set_target_race(int race) { target_race_ = race; }
   // `WinMgr_set_pointer` (0x55680): the pointer frame, kept in help mode.
   void set_pointer(int frame);
+  // Whether the developer mode is on (`0x90b88`, `game::Session::developer`;
+  // off without a game core).
+  bool developer() const;
+  // The developer toggles: Alt+E's trade-all of each new day (`+0x24da0`:
+  // after the day, the player receives stars and lanes from every race),
+  // Alt+F's frame-rate overlay (`+0x24d98`) and Alt+D's pointer position
+  // (`0x122030`), both drawn on the screen at each refresh, never erased.
+  bool trade_all() const { return trade_all_; }
+  bool fps_overlay() const { return fps_overlay_; }
+  bool pointer_overlay() const { return pointer_overlay_; }
+  // The colour under the pointer at the last Alt + left click (`0x121fe4`,
+  // the developer's palette pick, which the debug window shows).
+  int picked_color() const { return picked_color_; }
+  // The windows of `screen`'s list from its top slot down (the debug
+  // window's list).
+  std::vector<int> screen_windows(int screen) const;
   // The rotation speed factor (`+0x24dac`, saved in `ascend.cfg`).
   float rotation_speed() const { return rotation_speed_; }
   void set_rotation_speed(float speed) { rotation_speed_ = speed; }
@@ -273,6 +292,8 @@ class WinMgr final : public WindowStateIo {
 
   // Returns window `id` (1-based), null when there is none.
   GWindow* window(int id) const;
+  // The ids given so far: windows 1..`window_slots()` (null once released).
+  int window_slots() const { return static_cast<int>(windows_.size()); }
   // `WinMgr_find_window` (0x521b8): the window named `name` (first 10
   // characters, case-insensitive), null when there is none.
   GWindow* find_window(std::string_view name) const;
@@ -361,7 +382,8 @@ class WinMgr final : public WindowStateIo {
   // on the screen is cancelled first, the screen kept (`cancel_action`).
   void system_back();
 
-  // `WinMgr_refresh_screen` (0x5049c): advances the pending fade.
+  // `WinMgr_refresh_screen` (0x5049c): the developer overlays, then the
+  // pending fade's next step.
   void refresh_screen();
   // One pass of the main loop (`main` 0x1c424, `WinMgr_run_modal_loop`
   // 0x50a28): input, `process_input`, `refresh_screen`, presentation.
@@ -388,8 +410,18 @@ class WinMgr final : public WindowStateIo {
   bool start_tutorial(const std::string& name);
   // Whether a trace is being replayed (`+0x48aa`).
   bool replaying() const { return replaying_; }
-  // The counted main-loop passes of the replay (`+0x48b6`).
+  // The counted main-loop passes of the replay or the recording (`+0x48b6`).
   std::uint32_t replay_pass() const { return replay_pass_; }
+  // The developer recorder (Alt+R, `WinMgr_start_recording` 0x54d18): from
+  // the next pass, each input and window timer or notification request is
+  // recorded with its pass (`WinMgr_record_event` 0x55090), the timers
+  // running at each pass; at the second Alt+R, or at 5000 records,
+  // `WINEVENT.BIN` is written in the user folder (the second Alt+R also
+  // writes its listing, `WINEVENT.TXT`).
+  bool recording() const { return recording_; }
+  // The records so far.
+  const std::vector<TraceRecord>& records() const { return records_; }
+  static constexpr std::size_t kMaxRecords = 5000;
 
  private:
   // The buffer `do_modal` and the input box save the screen under their
@@ -473,6 +505,21 @@ class WinMgr final : public WindowStateIo {
   // The Ctrl+P of a replay: the next tutorial help box, run modally with
   // the replay paused.
   void show_tutorial_box();
+  // The developer's replay of `WINEVENT.BIN` (message 4 with `loop`,
+  // Alt+P without), from the user folder or else the install.
+  void replay_developer_trace(bool loop);
+  // `WinMgr_start_recording` (0x54d18) / `WinEvent_stop_recording`
+  // (0x54d44): the recording starts, or ends with `WINEVENT.BIN` written
+  // (and, with `listing`, `WINEVENT.TXT`).
+  void start_recording();
+  void stop_recording(bool listing);
+  // `WinMgr_record_event` (0x55090): a record of the current pass while
+  // recording (not while replaying).
+  void record_event(int window, TraceEventType type, int msg, std::uint32_t a, std::uint32_t b, std::uint32_t c);
+  // Writes `bytes` to `name` in the user folder (nothing without one).
+  void write_user_file(std::string_view name, std::string_view bytes) const;
+  // The Alt+F and Alt+D overlays of `refresh_screen`.
+  void draw_overlays();
   // Alt+G (`screenshot_save_gif` 0x31338): `scr%03d.gif` in the user folder,
   // of the picture on the screen (the frame of the previous pass, with the
   // pointer).
@@ -532,6 +579,18 @@ class WinMgr final : public WindowStateIo {
   Trace trace_;
   std::size_t replay_next_ = 0;
   InputState replay_state_;
+  // The recorder (`+0x48a6`, the records `+0x48c2`).
+  bool recording_ = false;
+  std::vector<TraceRecord> records_;
+  // The developer toggles and the frame-rate overlay's state (`0xfa334`
+  // passes, `0xfa33c` their first tick, the text `0x86a24`).
+  bool trade_all_ = false;
+  bool fps_overlay_ = false;
+  bool pointer_overlay_ = false;
+  int fps_passes_ = 0;
+  std::uint32_t fps_tick_ = 0;
+  std::string fps_text_ = "FPS DUDE";
+  int picked_color_ = 0;
   // The tutorial's help file (`0x121ff4`) and the number of its boxes
   // shown (`0x121ff0`).
   std::string tutorial_help_;

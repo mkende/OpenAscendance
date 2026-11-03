@@ -17,6 +17,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include "game/address.h"
@@ -88,6 +89,14 @@ StarIndex cosmos_next_contested_star(Session& session);
 // ranking, the races' days, controlled lanes, day + 1 and the game-end test.
 // The day's events go to `session.events`.
 void cosmos_end_day(Session& session);
+
+// The developer mode's consistency check of the ships' flags
+// (`Cosmos_end_day` 0x203b4, `numships.dbg`, `docs/09-simulation.md`): per
+// star, a line for each race whose `ships_mask` bit is set without a ship
+// of it at the star, then one for each ship there (not under construction)
+// whose race's bit is clear, naming day `day`. Empty for a consistent
+// galaxy. The original's second line has no line end.
+std::string cosmos_ship_flag_report(const Cosmos& cosmos, std::int32_t day);
 
 // The next-turn command (`WinMgr_dispatch_messages` 0x51290, commands 7
 // and 8) when the player moves on at every contested star: every

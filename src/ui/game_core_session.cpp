@@ -155,7 +155,11 @@ std::vector<SaveSlot> GameCoreSession::list_saves() const {
   return slots;
 }
 
-bool GameCoreSession::save(int slot) {
+bool GameCoreSession::save(int slot) { return save_to(file_name(slot)); }
+
+bool GameCoreSession::save_file(const std::string& name) { return save_to(name); }
+
+bool GameCoreSession::save_to(const std::string& file) {
   if (save_dir_.empty()) {
     return false;
   }
@@ -164,7 +168,7 @@ bool GameCoreSession::save(int slot) {
   }
   const std::vector<std::uint8_t> bytes = game::serialize_save(game::save_game(session_));
   // An existing file of another case is replaced.
-  const std::filesystem::path path = find_in(save_dir_, file_name(slot)).value_or(save_dir_ / file_name(slot));
+  const std::filesystem::path path = find_in(save_dir_, file).value_or(save_dir_ / file);
   std::ofstream out(path, std::ios::binary | std::ios::trunc);
   out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
   if (!out) {
@@ -235,6 +239,17 @@ int GameCoreSession::next_contested_star() { return game::cosmos_next_contested_
 bool GameCoreSession::end_day() {
   const bool playing = session_.game->cosmos.ending == 0;
   game::cosmos_end_day(session_);
+  if (session_.developer && !save_dir_.empty()) {
+    // Cosmos_end_day checks before its last steps, which move no ship: the
+    // lines name the new day. The file is created even when nothing is
+    // wrong.
+    const std::filesystem::path path = save_dir_ / "numships.dbg";
+    std::ofstream out(path, std::ios::app);
+    out << game::cosmos_ship_flag_report(session_.game->cosmos, session_.game->cosmos.day);
+    if (!out) {
+      log_warning("cannot write {}", path.string());
+    }
+  }
   return playing && session_.game->cosmos.ending != 0;
 }
 

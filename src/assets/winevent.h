@@ -1,12 +1,14 @@
 // The window-event traces (`WINEVENT.BIN`, the tutorials' `<name>.bin`,
 // `tools/winevent.py`, `docs/02-audio-formats.md` "Tutorials"): a 16-byte
 // header, then records of 24 bytes, the inputs the window manager replays
-// (`WinEvent_load_trace` 0x5510c, `WinEvent_replay` 0x54f90).
+// (`WinEvent_load_trace` 0x5510c, `WinEvent_replay` 0x54f90) and its
+// developer recorder writes.
 #pragma once
 
 #include <array>
 #include <cstdint>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -15,11 +17,11 @@ namespace oa {
 // Trace record types: the inputs, then the timer and notification requests
 // seen while recording (skipped by the replay).
 enum class TraceEventType : std::uint16_t {
-  kMouseMove = 1,     // a = x, b = y
-  kMouseButton = 2,   // a != 0 right button, b != 0 down, msg != 0 Shift held
-  kKey = 3,           // a = BIOS scan code, b low word = character, msg = BIOS shift flags
-  kRequestTimer = 4,  // EVT_REQ_CONT
-  kCancelTimer = 5,   // EVT_CAN_CONT
+  kMouseMove = 1,      // a = x, b = y
+  kMouseButton = 2,    // a != 0 right button, b != 0 down, msg != 0 Shift held
+  kKey = 3,            // a = BIOS scan code, b low word = character, msg = BIOS shift flags
+  kRequestTimer = 4,   // EVT_REQ_CONT
+  kCancelTimer = 5,    // EVT_CAN_CONT
   kRequestNotify = 6,  // EVT_REQ_CHANGE
   kCancelNotify = 7,   // EVT_CAN_CHANGE
 };
@@ -43,6 +45,14 @@ struct Trace {
   std::array<std::uint8_t, kHeaderSize> header{};
   std::vector<TraceRecord> records;
 };
+
+// The bytes of `trace` (`WinEvent_save_trace` 0x551f0: the header, then
+// the records).
+std::vector<std::uint8_t> serialize_trace(const Trace& trace);
+
+// The text listing of `trace` (`WinEvent_dump_text` 0x55298,
+// `WINEVENT.TXT`): a line per record, its pass and its values.
+std::string trace_text(const Trace& trace);
 
 // Parses a trace. Throws `DataError` naming `context` when the size is not a
 // header plus whole records, there are more than `kMaxRecordBytes` of them,

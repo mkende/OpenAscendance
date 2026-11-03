@@ -48,6 +48,8 @@ add_executable(oa_tests
   day_ui_test.cpp
   # The command line and the install choice.
   app_test.cpp
+  # The developer mode (nougat.lf).
+  developer_test.cpp
   # The remake's options: the opening menu's button, the options screen,
   # options.cfg.
   options_test.cpp

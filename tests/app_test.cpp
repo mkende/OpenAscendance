@@ -61,6 +61,22 @@ TEST_CASE("command line: the oracle's seed and a save folder for headless runs",
   CHECK_THROWS(parse({"--seed", "x"}));
 }
 
+TEST_CASE("command line: the hidden developer flags, left out of the usage line", "[app]") {
+  const CommandLine none = parse({});
+  CHECK_FALSE(none.pop);
+  CHECK_FALSE(none.nougat);
+  const CommandLine both = parse({"--nougat", "--seed", "1", "--pop"});
+  CHECK(both.pop);
+  CHECK(both.nougat);
+  CHECK(both.seed == 1);
+  CHECK(parse({"--pop"}).pop);
+  CHECK_FALSE(parse({"--pop"}).nougat);
+  CHECK(parse({"--nougat"}).nougat);
+  CHECK_FALSE(parse({"--nougat"}).pop);
+  CHECK(kUsageOptions.find("--pop") == std::string_view::npos);
+  CHECK(kUsageOptions.find("--nougat") == std::string_view::npos);
+}
+
 TEST_CASE("command line: a help-mode click holds Shift around the click", "[app]") {
   const CommandLine o = parse({"--keys", "shiftclick:300:295"});
   REQUIRE(o.keys.size() == 5);

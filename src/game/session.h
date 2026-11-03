@@ -43,6 +43,10 @@ struct Session {
   std::int32_t grid = 5;              // 0x86a14, position snap grid
   bool autoplay = false;              // 0x90b8c, the `flash.pop` demo mode
   bool research_tree_loaded = false;  // 0xf4728
+  // 0x90b88, the `nougat.lf` developer mode: the developer keys and
+  // checks of the user interface (`docs/05-subsystems.md`); the day is the
+  // same.
+  bool developer = false;
 
   // The day's simulation state outside the saved records.
   EventQueue events;  // the window manager's game events (UI drains them)

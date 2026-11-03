@@ -16,4 +16,12 @@ const ShapeTable& ShapeCache::get(std::string_view file) {
   return *table;
 }
 
+std::vector<ShapeCache::Entry> ShapeCache::entries() const {
+  std::vector<Entry> out;
+  for (const auto& [file, table] : tables_) {
+    out.push_back(Entry{file, table->data_size()});
+  }
+  return out;
+}
+
 }  // namespace oa

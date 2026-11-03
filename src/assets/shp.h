@@ -49,6 +49,8 @@ class ShapeTable {
   ShapeTable& operator=(ShapeTable&&) = default;
 
   std::size_t size() const { return shapes_.size(); }
+  // The bytes of the file.
+  std::size_t data_size() const { return data_.size(); }
   // Returns shape `n`; throws `std::out_of_range` when there is none.
   const Shape& at(std::size_t n) const { return shapes_.at(n); }
 

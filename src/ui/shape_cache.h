@@ -9,6 +9,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "assets/cfile.h"
 #include "assets/shp.h"
@@ -25,6 +26,14 @@ class ShapeCache {
   // `DataError` when the file is missing or malformed. The reference stays
   // valid as long as the cache.
   const ShapeTable& get(std::string_view file);
+
+  // A loaded table: its file (upper case) and size in bytes.
+  struct Entry {
+    std::string file;
+    std::size_t bytes = 0;
+  };
+  // The loaded tables, by file name (the developer's debug window).
+  std::vector<Entry> entries() const;
 
  private:
   const GameFiles& files_;

@@ -134,6 +134,9 @@ class PlanWnd final : public GWindow {
   void finish_ship_design();
   ShipDesWnd& design_window() const;
   void key(int scan);
+  // The developer keys of `key` (`PlanWnd_handle_event` 0x35e98, the
+  // developer mode only).
+  void developer_key(int scan);
   void draw_surface(const game::Session& s, const game::Planet& p);
   void draw_orbit(const game::Session& s, const game::Planet& p);
   // `plan_draw_build_list_item` (0x35d8c).

@@ -1,6 +1,8 @@
 #include "game/cosmos.h"
 
+#include <algorithm>
 #include <cstring>
+#include <format>
 
 #include "game/ai.h"
 #include "game/galaxy.h"
@@ -429,6 +431,31 @@ void cosmos_end_day(Session& session) {
   if (cosmos.ending == 0 && !session.autoplay) {
     cosmos_check_game_over(session);
   }
+}
+
+std::string cosmos_ship_flag_report(const Cosmos& cosmos, std::int32_t day) {
+  std::string out;
+  for (std::int16_t i = 0; i < cosmos.star_count; ++i) {
+    const Star& star = cosmos.stars[static_cast<std::size_t>(i)];
+    const std::vector<ShipIndex> ships = cosmos_ships_at_star(cosmos, star);
+    const std::string name(name_view(star.name));
+    for (std::int16_t r = 0; r < cosmos.race_count; ++r) {
+      if ((star.ships_mask & bit(static_cast<std::uint32_t>(r))) != 0 && std::ranges::none_of(ships, [&](ShipIndex k) {
+            return cosmos.ships[static_cast<std::size_t>(k)].owner == r;
+          })) {
+        out += std::format("T{:04d}: {} flags ({}) show R{} ship, but none found.\n", day, name, star.ships_mask, r);
+      }
+    }
+    for (const ShipIndex k : ships) {
+      const Ship& ship = cosmos.ships[static_cast<std::size_t>(k)];
+      if (ship.location_kind != ShipLocation::kBuilding &&
+          (star.ships_mask & bit(static_cast<std::uint32_t>(ship.owner))) == 0) {
+        out += std::format("T{:04d}: R{} ship exists at {}, flags ({}) indicate otherwise.", day, ship.owner, name,
+                           star.ships_mask);
+      }
+    }
+  }
+  return out;
 }
 
 void cosmos_next_turn(Session& session) {

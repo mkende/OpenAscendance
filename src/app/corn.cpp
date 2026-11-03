@@ -344,13 +344,16 @@ void run(const GameOptions& options, const GameFiles& files) {
       cosmos_txt = game::parse_cosmos_txt(read_file(path));
     }
   }
-  // `flash.pop` in the user folder sets the developer autoplay flag
-  // (0x90b8c): the AI plays the player's race too (`docs/12-oracle.md`,
-  // "Autoplay runs").
-  if (!options.user_dir.empty()) {
+  // The developer flag files of the user folder (or the options standing
+  // for them): `flash.pop` sets the autoplay (0x90b8c, the AI plays the
+  // player's race too, `docs/12-oracle.md` "Autoplay runs"), `nougat.lf`
+  // the developer mode (0x90b88, `docs/05-subsystems.md`).
+  const auto flag_file = [&](const char* name) {
     std::error_code ec;
-    game.core()->autoplay = std::filesystem::exists(options.user_dir / "flash.pop", ec);
-  }
+    return !options.user_dir.empty() && std::filesystem::exists(options.user_dir / name, ec);
+  };
+  game.core()->autoplay = options.autoplay || flag_file("flash.pop");
+  game.core()->developer = options.developer || flag_file("nougat.lf");
   game.start(static_cast<std::uint32_t>(std::time(nullptr)), cosmos_txt ? &*cosmos_txt : nullptr);
   std::unique_ptr<WinMgr> wm_holder;
   WindowFactory factory = WindowFactory::standard();

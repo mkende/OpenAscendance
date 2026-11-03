@@ -38,6 +38,13 @@
 // `--trace` replays a window-event trace (`tools/winevent.py`, the
 // original's third argument) from the first pass of the opening menu: the
 // traces of the oracle's runs.
+// Two hidden options, left out of the usage line, stand for the original's
+// developer files (also read from the user folder): `--pop` for
+// `flash.pop`, the autoplay (the AI plays the player's race too,
+// `game::Session::autoplay`), and `--nougat` for `nougat.lf`, the developer
+// mode (`game::Session::developer`: the debug window, the recorder, the
+// overlays and the cheat keys of the window manager and the screens, the
+// ship-flag checks of the day and the star map).
 #pragma once
 
 #include <cstdint>
@@ -72,6 +79,8 @@ struct CommandLine {
   std::optional<std::string> save_dir;
   std::optional<std::int32_t> seed;
   std::optional<std::string> trace;
+  bool pop = false;
+  bool nougat = false;
 };
 
 // Parses the arguments after the program name. Throws `std::runtime_error`
