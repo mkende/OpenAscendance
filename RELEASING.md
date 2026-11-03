@@ -17,7 +17,8 @@ repository's root.
   2. builds every package, unsigned (`build.yml`, no secret);
   3. signs the Android package in a job of the `release` environment, the
      only one with the release key, which runs no build
-     (`android/sign_apk.sh`);
+     (`android/sign_apk.sh`: signature schemes v2 and v3, no v1 nor v4, so
+     no `.apk.idsig` file next to the package);
   4. creates a **draft** release: the packages, `SHA256SUMS`, GitHub's build
      provenance attestations of every file, the notes from the version's
      section of `CHANGELOG.md` (empty without one: write them in the draft)

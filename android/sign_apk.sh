@@ -2,7 +2,8 @@
 # Signs the unsigned package of android/build_apk.sh --unsigned with the
 # release key, and checks the signature: APK signature schemes v2 and v3
 # (the packages need Android 7.0, API 24, which reads v2; v3 allows a key
-# rotation), no v1 (JAR) signature. The release workflow's signing job runs
+# rotation), no v1 (JAR) signature and no v4 (its separate `.apk.idsig`
+# file only serves `adb install --incremental`). The release workflow's signing job runs
 # it (.github/workflows/release.yml); it builds nothing.
 #
 # Usage: android/sign_apk.sh <unsigned.apk> <signed.apk>
@@ -38,6 +39,6 @@ fi
 
 "${apksigner}" sign --ks "${OA_RELEASE_KEYSTORE}" --ks-type PKCS12 --ks-key-alias "${OA_RELEASE_KEY_ALIAS}" \
   --ks-pass env:OA_RELEASE_KEYSTORE_PASSWORD --key-pass env:OA_RELEASE_KEY_PASSWORD \
-  --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled true \
+  --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled true --v4-signing-enabled false \
   --out "${out}" "${in}"
 "${apksigner}" verify --verbose --print-certs "${out}"
