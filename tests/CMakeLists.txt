@@ -59,6 +59,9 @@ add_executable(oa_tests
   ability_test.cpp
   # The game-event codes.
   event_codes_test.cpp
+  # The coverage gaps: the oracle runs of the scenarios the other tests
+  # left open.
+  gaps_test.cpp
   # The touch screen, the view gestures, Back and the background (remake
   # additions).
   touch_test.cpp
